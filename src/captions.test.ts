@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { toSrt } from "./captions";
+import { toSrt, captionStyle } from "./captions";
 import type { Alignment } from "./types";
 const al = (text: string, dur: number): Alignment => {
   const chars = [...text]; const per = dur / chars.length;
@@ -17,5 +17,23 @@ describe("toSrt (one cue per shot)", () => {
     const srt = toSrt([{ alignment: { chars: [], startSec: [], endSec: [] }, startSec: 0 }, { alignment: al("ok", 1), startSec: 0 }]);
     expect(srt.trim().startsWith("1\n")).toBe(true);
     expect(srt).toContain("ok");
+  });
+});
+
+describe("captionStyle", () => {
+  it("defaults to a lower-third box band (font, alignment, margin, bg box)", () => {
+    const s = captionStyle({ captionFont: "Arial", captionSize: 24 });
+    expect(s).toContain("FontName=Arial");
+    expect(s).toContain("FontSize=24");
+    expect(s).toContain("Alignment=2");
+    expect(s).toContain("MarginV=20");
+    expect(s).toContain("BorderStyle=3");
+    expect(s).toContain("BackColour=");
+  });
+  it("honours captionMarginV and captionBox=false (plain outline)", () => {
+    const s = captionStyle({ captionFont: "Arial", captionSize: 22, captionBox: false, captionMarginV: 40 });
+    expect(s).toContain("MarginV=40");
+    expect(s).toContain("BorderStyle=1");
+    expect(s).not.toContain("BorderStyle=3");
   });
 });

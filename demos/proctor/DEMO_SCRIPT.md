@@ -12,14 +12,14 @@ Selectors verified against the live DOM:
 
 ### SHOT 01-intro
 - target: dashboard
-- narration: Proctor is an agent that QAs other agents. It catches when a model or prompt change silently breaks a non-deterministic AI automation, without brittle exact-match tests.
+- narration: Proctor is an agent that QAs other agents — it catches when a model or prompt change silently breaks a non-deterministic AI automation.
 - action: goto url="/"
 - action: chapter label="Proctor — the agent that QAs other agents"
 - action: wait ms=3000
 
 ### SHOT 02-learn
 - target: dashboard
-- narration: First, Proctor learns the automation's behavioral contract. Per-field assertions at the right altitude, plus hard domain invariants. Here it bootstraps a versioned contract for an invoice extractor.
+- narration: First, Proctor learns the automation's behavioral contract — per-field assertions at the right altitude, plus hard domain invariants for an invoice extractor.
 - action: goto url="/"
 - action: highlight selector=".card"
 - action: click selector="button.btn-secondary"
@@ -51,7 +51,7 @@ Selectors verified against the live DOM:
 
 ### SHOT 05-close
 - target: dashboard
-- narration: Every layer, the engine, the durable workflows, the dashboard, the UiPath integration, and these tests, was built entirely by Claude Code. Proctor, the agent that QAs other agents.
+- narration: Every layer — engine, durable workflows, dashboard, UiPath integration, and tests — was built entirely by Claude Code.
 - action: goto url="/"
 - action: chapter label="Built entirely by Claude Code"
 - action: wait ms=4000

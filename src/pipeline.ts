@@ -15,7 +15,7 @@ import {
   padAudioArgs,
   probeDurationSec,
 } from "./ffmpeg";
-import { toSrt } from "./captions";
+import { toSrt, captionStyle } from "./captions";
 import { buildTimeline } from "./timeline";
 import { verifyParity } from "./verify";
 
@@ -133,9 +133,8 @@ export async function runPipeline(
   //     We write captions.srt inside `out` and reference it via its absolute path,
   //     escaping any colons that appear on Windows. On Linux/WSL paths are clean.
   const escapedSrt = srtPath.replace(/\\/g, "/").replace(/:/g, "\\:");
-  const captionStyle = `FontName=${config.theme.captionFont},FontSize=${config.theme.captionSize}`;
   const finalPath = join(out, "final.mp4");
-  await ffmpeg(burnSubsArgs(muxedPath, escapedSrt, finalPath, captionStyle));
+  await ffmpeg(burnSubsArgs(muxedPath, escapedSrt, finalPath, captionStyle(config.theme)));
 
   // 13. Parity check
   const videoSec = await probeDurationSec(finalPath);

@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import type { DemoConfig, TtsResult } from "./types";
 import { parseScript } from "./parse-script";
 import { synthShot } from "./tts";
@@ -35,7 +35,7 @@ export async function runPipeline(
   const shots = manifest.shots;
 
   // 2. Make dirs
-  const out = config.out;
+  const out = resolve(config.out);
   const audioDir = join(out, "audio");
   const segDir = join(out, "seg");
   await mkdir(audioDir, { recursive: true });

@@ -1,0 +1,9 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Fixture</title>
+<style>body{font-family:sans-serif;padding:40px;background:#0e1230;color:#fff}button{font-size:20px;padding:12px 20px;margin:10px}</style></head>
+<body><h1>Demo Fixture</h1>
+<button id="bootstrap">Bootstrap</button>
+<button id="degraded">Run degraded</button>
+<div id="status">ready</div>
+<script>document.getElementById('bootstrap').onclick=()=>document.getElementById('status').textContent='bootstrapped';
+document.getElementById('degraded').onclick=()=>document.getElementById('status').textContent='regression';</script>
+</body></html>

@@ -85,10 +85,21 @@ export function overlayInitScript(): string {
     boxSizing: 'border-box',
   });
 
-  document.body.appendChild(cursor);
-  document.body.appendChild(ripple);
-  document.body.appendChild(chapter);
-  document.body.appendChild(highlight);
+  // Attach elements once body is available.
+  // addInitScript runs at document-start before <body> exists, so we must defer.
+  function attachOverlay() {
+    if (document.body) {
+      document.body.appendChild(cursor);
+      document.body.appendChild(ripple);
+      document.body.appendChild(chapter);
+      document.body.appendChild(highlight);
+    }
+  }
+  if (document.body) {
+    attachOverlay();
+  } else {
+    document.addEventListener('DOMContentLoaded', attachOverlay);
+  }
 
   // Store ref on window for guard check
   window.__demoCursor = cursor;

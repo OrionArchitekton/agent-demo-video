@@ -23,6 +23,10 @@ export function burnSubsArgs(video: string, srt: string, output: string, style =
   return [...BASE, "-i", video, "-vf", `subtitles=${srt}:force_style='${style}'`, "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-c:a", "aac", output];
 }
 
+export function padAudioArgs(input: string, output: string, durationSec: number): string[] {
+  return [...BASE, "-i", input, "-af", "apad", "-t", String(durationSec), "-c:a", "libmp3lame", output];
+}
+
 export function silentMp3Args(durationSec: number, output: string): string[] {
   return [...BASE, "-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo", "-t", String(durationSec), "-c:a", "libmp3lame", output];
 }

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { normalizeArgs, concatArgs, muxArgs, burnSubsArgs } from "./ffmpeg";
+import { normalizeArgs, concatArgs, muxArgs, burnSubsArgs, padAudioArgs } from "./ffmpeg";
 
 describe("ffmpeg arg builders", () => {
   it("normalize scales+pads to target and sets fps/h264", () => {
@@ -20,5 +20,10 @@ describe("ffmpeg arg builders", () => {
   });
   it("burn applies the subtitles filter", () => {
     expect(burnSubsArgs("v.mp4", "c.srt", "final.mp4").join(" ")).toContain("subtitles=c.srt");
+  });
+  it("padAudioArgs produces apad filter and -t duration", () => {
+    const s = padAudioArgs("a.mp3", "o.mp3", 3).join(" ");
+    expect(s).toContain("apad");
+    expect(s).toContain("-t 3");
   });
 });

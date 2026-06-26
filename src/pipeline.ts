@@ -1,0 +1,163 @@
+import { readFileSync } from "node:fs";
+import { mkdir, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import type { DemoConfig, TtsResult } from "./types";
+import { parseScript } from "./parse-script";
+import { synthShot } from "./tts";
+import { captureShot } from "./capture";
+import {
+  ffmpeg,
+  normalizeArgs,
+  concatArgs,
+  concatAudioArgs,
+  muxArgs,
+  burnSubsArgs,
+  padAudioArgs,
+  probeDurationSec,
+} from "./ffmpeg";
+import { toSrt } from "./captions";
+import { buildTimeline } from "./timeline";
+import { verifyParity } from "./verify";
+
+export async function runPipeline(
+  config: DemoConfig,
+): Promise<{
+  outPath: string;
+  report: {
+    totalSec: number;
+    segments: number;
+    parity: { ok: boolean; problems: string[] };
+  };
+}> {
+  // 1. Parse script
+  const md = readFileSync(config.script, "utf8");
+  const manifest = parseScript(md);
+  const shots = manifest.shots;
+
+  // 2. Make dirs
+  const out = config.out;
+  const audioDir = join(out, "audio");
+  const segDir = join(out, "seg");
+  await mkdir(audioDir, { recursive: true });
+  await mkdir(segDir, { recursive: true });
+
+  // 3. TTS — sequential to respect ElevenLabs concurrency limits
+  const ttsResults: TtsResult[] = [];
+  for (const shot of shots) {
+    const tts = await synthShot(shot, config, audioDir);
+    ttsResults.push(tts);
+  }
+
+  // 4. Capture — one per shot; startSec unused by capture driver
+  const rawSegments: string[] = [];
+  for (let i = 0; i < shots.length; i++) {
+    const shot = shots[i]!;
+    const tts = ttsResults[i]!;
+    const raw = await captureShot(
+      shot,
+      { shotId: shot.id, startSec: 0, durationSec: tts.durationSec },
+      config,
+      segDir,
+    );
+    rawSegments.push(raw);
+  }
+
+  // 5. Normalize each raw segment to a uniformly-encoded mp4
+  const segMp4s: string[] = [];
+  for (let i = 0; i < rawSegments.length; i++) {
+    const raw = rawSegments[i]!;
+    const segMp4 = join(segDir, `seg_${i}.mp4`);
+    await ffmpeg(
+      normalizeArgs(raw, segMp4, {
+        width: config.resolution.width,
+        height: config.resolution.height,
+        fps: config.fps,
+      }),
+    );
+    segMp4s.push(segMp4);
+  }
+
+  // 6. Measure each normalized segment duration — this is the authoritative shot
+  //    duration (≥ ttsDuration because capture dwells to fill the narration window).
+  const durSecs: number[] = [];
+  for (const segMp4 of segMp4s) {
+    durSecs.push(await probeDurationSec(segMp4));
+  }
+  const timeline = buildTimeline(
+    shots.map((s, i) => ({ shotId: s.id, durationSec: durSecs[i]! })),
+  );
+
+  // 7. Build + write captions
+  const srt = toSrt(
+    ttsResults.map((t, i) => ({
+      alignment: t.alignment,
+      startSec: timeline.entries[i]!.startSec,
+    })),
+  );
+  const srtPath = join(out, "captions.srt");
+  await writeFile(srtPath, srt, "utf8");
+
+  // 8. Pad each audio track to exactly the corresponding video segment duration
+  const paddedAudioPaths: string[] = [];
+  for (let i = 0; i < ttsResults.length; i++) {
+    const paddedAudio = join(audioDir, `pad_${i}.mp3`);
+    await ffmpeg(padAudioArgs(ttsResults[i]!.audioPath, paddedAudio, durSecs[i]!));
+    paddedAudioPaths.push(paddedAudio);
+  }
+
+  // 9. Concat video segments
+  const videoListPath = join(segDir, "list.txt");
+  const videoListContent = segMp4s
+    .map((p) => `file '${p}'`)
+    .join("\n");
+  await writeFile(videoListPath, videoListContent, "utf8");
+  const concatVideoPath = join(out, "video.mp4");
+  await ffmpeg(concatArgs(videoListPath, concatVideoPath));
+
+  // 10. Concat audio segments
+  const audioListPath = join(audioDir, "list.txt");
+  const audioListContent = paddedAudioPaths
+    .map((p) => `file '${p}'`)
+    .join("\n");
+  await writeFile(audioListPath, audioListContent, "utf8");
+  const concatAudioPath = join(out, "audio.mp3");
+  await ffmpeg(concatAudioArgs(audioListPath, concatAudioPath));
+
+  // 11. Mux video + audio
+  const muxedPath = join(out, "muxed.mp4");
+  await ffmpeg(muxArgs(concatVideoPath, concatAudioPath, muxedPath));
+
+  // 12. Burn subtitles
+  //     Use a relative path from cwd for the srt to avoid ffmpeg colon-in-path issues
+  //     (Windows-style absolute paths with drive letters break the subtitles filter).
+  //     We write captions.srt inside `out` and reference it via its absolute path,
+  //     escaping any colons that appear on Windows. On Linux/WSL paths are clean.
+  const escapedSrt = srtPath.replace(/\\/g, "/").replace(/:/g, "\\:");
+  const captionStyle = `FontName=${config.theme.captionFont},FontSize=${config.theme.captionSize}`;
+  const finalPath = join(out, "final.mp4");
+  await ffmpeg(burnSubsArgs(muxedPath, escapedSrt, finalPath, captionStyle));
+
+  // 13. Parity check
+  const videoSec = await probeDurationSec(finalPath);
+  const audioSec = await probeDurationSec(concatAudioPath);
+  const parity = verifyParity({
+    shotCount: shots.length,
+    videoSegments: segMp4s.length,
+    audioSec,
+    videoSec,
+    maxSec: 300,
+  });
+
+  if (!parity.ok) {
+    throw new Error("parity failed: " + parity.problems.join("; "));
+  }
+
+  return {
+    outPath: finalPath,
+    report: {
+      totalSec: timeline.totalSec,
+      segments: segMp4s.length,
+      parity,
+    },
+  };
+}

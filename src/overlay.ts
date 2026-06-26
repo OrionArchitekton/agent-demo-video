@@ -165,3 +165,23 @@ export function chapterExpr(text: string): string {
 export function highlightExpr(selector: string): string {
   return `window.__demoHighlight(${JSON.stringify(selector)})`;
 }
+
+/**
+ * Init script that injects an arbitrary CSS stylesheet into the captured page.
+ * Deferred to DOMContentLoaded when <head> is not yet available (addInitScript
+ * runs at document-start). The CSS is JSON-escaped so quotes in the rules
+ * cannot break out of the injected script. As a stylesheet it persists and
+ * applies to elements React renders later.
+ */
+export function cssInjectScript(css: string): string {
+  return `(() => {
+  const __apply = () => {
+    if (document.getElementById('__demoCustomCss')) return;
+    const s = document.createElement('style');
+    s.id = '__demoCustomCss';
+    s.textContent = ${JSON.stringify(css)};
+    (document.head || document.documentElement).appendChild(s);
+  };
+  if (document.head) __apply(); else document.addEventListener('DOMContentLoaded', __apply);
+})()`;
+}

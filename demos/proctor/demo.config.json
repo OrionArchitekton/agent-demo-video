@@ -1,0 +1,9 @@
+{
+  "script": "demos/proctor/DEMO_SCRIPT.md",
+  "dashboardBaseUrl": "http://localhost:3000",
+  "out": "demos/proctor/out",
+  "resolution": { "width": 1920, "height": 1080 },
+  "fps": 30,
+  "theme": { "captionFont": "Arial", "captionSize": 24, "cursor": true },
+  "captureCss": ".feed{max-height:200px!important;overflow:hidden!important}"
+}

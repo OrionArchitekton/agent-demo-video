@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { overlayInitScript, moveCursorExpr, clickExpr, chapterExpr, highlightExpr } from "./overlay";
+import { overlayInitScript, moveCursorExpr, clickExpr, chapterExpr, highlightExpr, cssInjectScript } from "./overlay";
 describe("overlay", () => {
   it("init script defines the cursor + ripple + chapter API on window", () => {
     const s = overlayInitScript();
@@ -15,5 +15,15 @@ describe("overlay", () => {
     expect(clickExpr()).toContain("__demoClick()");
     expect(chapterExpr("Hello")).toContain('__demoChapter("Hello")');
     expect(highlightExpr("#x")).toContain('__demoHighlight("#x")');
+  });
+  it("cssInjectScript injects the given CSS via a deferred <style> element", () => {
+    const s = cssInjectScript(".feed{max-height:200px}");
+    expect(s).toContain("createElement('style')");
+    expect(s).toContain(".feed{max-height:200px}");
+    expect(s).toContain("DOMContentLoaded");
+  });
+  it("cssInjectScript JSON-escapes the CSS so quotes cannot break the script", () => {
+    const s = cssInjectScript('.x::after{content:"hi"}');
+    expect(s).toContain(JSON.stringify('.x::after{content:"hi"}'));
   });
 });

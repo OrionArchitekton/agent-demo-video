@@ -38,6 +38,12 @@ export const DemoConfigSchema = z.object({
   }).default({}),
   theme: z.object({ captionFont: z.string().default("Arial"), captionSize: z.number().default(24), cursor: z.boolean().default(true) }).default({}),
   clipsDir: z.string().default("clips/prebaked"),
+  // Optional CSS injected into every captured page before interaction. Use to
+  // stabilise capture of dashboards taller than the output frame — e.g. bound a
+  // growing list's height so the document never overflows the viewport (which
+  // otherwise makes the browser scale the page down, producing a "breathing"
+  // zoom between shots).
+  captureCss: z.string().optional(),
 });
 export type DemoConfig = z.infer<typeof DemoConfigSchema>;
 

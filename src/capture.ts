@@ -14,6 +14,7 @@ import {
   clickExpr,
   chapterExpr,
   highlightExpr,
+  cssInjectScript,
 } from "./overlay.js";
 import type { Shot, DemoConfig, TimelineEntry } from "./types.js";
 
@@ -66,6 +67,9 @@ export async function captureShot(
   });
 
   await context.addInitScript(overlayInitScript());
+  if (config.captureCss) {
+    await context.addInitScript(cssInjectScript(config.captureCss));
+  }
   const page = await context.newPage();
 
   const startMs = Date.now();

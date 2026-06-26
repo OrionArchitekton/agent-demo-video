@@ -19,7 +19,7 @@ Selectors verified against the live DOM:
 
 ### SHOT 02-learn
 - target: dashboard
-- narration: First, Proctor learns the automation's behavioral contract — per-field assertions at the right altitude, plus hard domain invariants for an invoice extractor.
+- narration: First, Proctor learns the automation's behavioral contract — a structural assertion per field, plus hard domain invariants for an invoice extractor.
 - action: goto url="/"
 - action: highlight selector=".card"
 - action: click selector="button.btn-secondary"
@@ -29,7 +29,7 @@ Selectors verified against the live DOM:
 
 ### SHOT 03-good-run
 - target: dashboard
-- narration: A clean change is re-evaluated against that contract. Invariants hold and semantics match, so Proctor passes it and reports green to the governance plane.
+- narration: A clean change is re-evaluated against that contract. The field checks and invariants hold, so Proctor passes it and reports green on the local governance dashboard.
 - action: goto url="/"
 - action: highlight selector=".run-controls"
 - action: click selector="button.btn-primary"
@@ -51,7 +51,7 @@ Selectors verified against the live DOM:
 
 ### SHOT 05-close
 - target: dashboard
-- narration: Every layer — engine, durable workflows, dashboard, UiPath integration, and tests — was built entirely by Claude Code.
+- narration: The engine, durable workflows, dashboard, and test suite — built by Claude Code as the coding agent. Proctor: the agent that QAs other agents.
 - action: goto url="/"
-- action: chapter label="Built entirely by Claude Code"
+- action: chapter label="Built with Claude Code"
 - action: wait ms=4000

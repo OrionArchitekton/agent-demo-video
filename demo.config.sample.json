@@ -1,0 +1,10 @@
+{
+  "script": "./DEMO_SCRIPT.md",
+  "dashboardBaseUrl": "http://localhost:3000",
+  "out": "out",
+  "resolution": { "width": 1920, "height": 1080 },
+  "fps": 30,
+  "voice": { "voiceId": "21m00Tcm4TlvDq8ikWAM", "modelId": "eleven_flash_v2_5", "seed": 42, "stability": 0.5, "similarity": 0.75 },
+  "theme": { "captionFont": "Arial", "captionSize": 24, "cursor": true },
+  "clipsDir": "clips/prebaked"
+}

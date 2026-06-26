@@ -1,0 +1,15 @@
+{
+  "name": "agent-demo-video",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": { "demo-video": "src/cli.ts" },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "demo": "tsx src/cli.ts"
+  },
+  "dependencies": { "playwright": "^1.48.0", "zod": "^3.23.0" },
+  "devDependencies": { "typescript": "^5.6.0", "vitest": "^2.1.0", "tsx": "^4.19.0", "@types/node": "^22.0.0" },
+  "packageManager": "pnpm@9.12.0"
+}

@@ -7,3 +7,11 @@ clips/
 .env
 *.tsbuildinfo
 .DS_Store
+
+# Auth-walled SaaS capture (target: "live") — persisted browser profiles hold
+# session cookies/tokens AT REST. The default profileDir is outside the repo
+# (~/.cache/agent-demo-video); these are belt-and-suspenders for an in-repo override.
+.auth/
+*.playwright-profile/
+storageState*.json
+**/userDataDir/

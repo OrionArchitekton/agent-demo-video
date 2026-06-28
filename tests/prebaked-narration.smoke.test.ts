@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import { tmpdir } from "node:os";
@@ -18,8 +18,13 @@ function sh(bin: string, args: string[]): Promise<void> {
 }
 
 describe("runPipeline (prebaked clip shorter than its narration)", () => {
+  // Scope FAKE_TTS to this file and restore it after, so the env does not leak to
+  // other test files in a shared worker.
   beforeAll(() => {
-    process.env.FAKE_TTS = "1";
+    vi.stubEnv("FAKE_TTS", "1");
+  });
+  afterAll(() => {
+    vi.unstubAllEnvs();
   });
 
   it("does not truncate the voiceover — extends the segment to the narration window", async () => {

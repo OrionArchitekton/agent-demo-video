@@ -20,12 +20,11 @@ import { toSrt, captionStyle } from "./captions";
 import { buildTimeline, reconcileSegmentDuration } from "./timeline";
 import { verifyParity } from "./verify";
 
-// Probe-noise floor (seconds): only a shortfall below this is treated as ffprobe/
-// float measurement jitter and left un-extended (a sub-frame difference cannot be
-// represented in the video timeline anyway). This is NOT a truncation budget — any
-// real narration shortfall at or above it extends the clip so the voiceover is
-// never cut, however small the deficit.
-const EXTEND_EPS_SEC = 0.005;
+// Float/probe equality floor (seconds) — NOT a truncation budget. Any clip measurably
+// shorter than its narration is extended so the voiceover is never cut, however small
+// the deficit; only a shortfall below this (i.e. the two measurements are equal to
+// within ffprobe float precision) is treated as "clip already covers the narration".
+const EXTEND_EPS_SEC = 1e-6;
 
 export async function runPipeline(
   config: DemoConfig,
@@ -94,7 +93,7 @@ export async function runPipeline(
   for (let i = 0; i < segMp4s.length; i++) {
     const clipSec = await probeDurationSec(segMp4s[i]!);
     const narrationSec = ttsResults[i]!.durationSec;
-    const { extendBySec } = reconcileSegmentDuration(clipSec, narrationSec);
+    const { durationSec: authoritativeSec, extendBySec } = reconcileSegmentDuration(clipSec, narrationSec);
     if (extendBySec > EXTEND_EPS_SEC) {
       const extended = join(segDir, `seg_${i}.ext.mp4`);
       // tpad clones WHOLE frames and can round the added duration down, which would
@@ -114,7 +113,9 @@ export async function runPipeline(
           `${extendedSec.toFixed(2)}s so the voiceover is not truncated.`,
       );
     } else {
-      durSecs.push(clipSec);
+      // Clip already covers the narration (within float-measurement equality);
+      // record max(clip, narration) so the audio is never capped below narration.
+      durSecs.push(authoritativeSec);
     }
   }
   const timeline = buildTimeline(

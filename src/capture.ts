@@ -144,17 +144,23 @@ async function captureLiveShot(
 ): Promise<string> {
   const auth = config.capture.auth;
   if (!auth) throw new Error(`shot ${shot.id}: target "live" requires config.capture.auth (run "demo-video login <config>" first)`);
-  const profileDir = resolveProfileDir(auth.profileDir);
+  const profileDir = resolveProfileDir(auth.profileDir, auth.loginUrl);
   if (!existsSync(profileDir)) {
     throw new Error(`shot ${shot.id}: no saved auth profile at ${profileDir} — run "demo-video login <config>" first`);
   }
   if (!auth.loggedInSelector) {
-    // Surfaced, not silent: without a marker the record-time expiry guard cannot run,
-    // so an expired session would be recorded. Operators wanting fail-closed expiry
-    // detection must set capture.auth.loggedInSelector.
+    // Fail closed by default: without a marker the record-time expiry guard cannot run,
+    // so an expired session would be recorded silently. Require an explicit opt-in.
+    if (!auth.allowUnguardedLiveCapture) {
+      throw new Error(
+        `shot ${shot.id}: target "live" needs capture.auth.loggedInSelector so the record-time ` +
+          `session-expiry guard can fail closed. Set a loggedInSelector, or set ` +
+          `capture.auth.allowUnguardedLiveCapture:true to record WITHOUT the guard (an expired session would be recorded).`,
+      );
+    }
     console.warn(
-      `[agent-demo-video] shot "${shot.id}": no capture.auth.loggedInSelector — the record-time ` +
-        `session-expiry guard is DISABLED; an expired session would be recorded. Set loggedInSelector to fail closed.`,
+      `[agent-demo-video] shot "${shot.id}": recording live WITHOUT a session-expiry guard ` +
+        `(allowUnguardedLiveCapture) — an expired session would be recorded.`,
     );
   }
 
@@ -202,12 +208,16 @@ async function captureLiveShot(
  * abort rather than ship a broken demo. Without a selector the check is skipped
  * (it cannot be done generically for an app we do not own).
  */
+const AUTH_GUARD_TIMEOUT_MS = 10_000;
+
 async function assertAuthed(page: Page, shot: Shot, loggedInSelector?: string): Promise<void> {
   if (!loggedInSelector) return;
+  // Bounded WAIT, not an instant check: an authenticated SPA shell can still be
+  // hydrating after `load`, so only declare the session expired once the marker has
+  // failed to appear within the timeout (avoids false-positive expiry on slow apps).
   const visible = await page
-    .locator(loggedInSelector)
-    .first()
-    .isVisible()
+    .waitForSelector(loggedInSelector, { state: "visible", timeout: AUTH_GUARD_TIMEOUT_MS })
+    .then(() => true)
     .catch(() => false);
   if (!visible) {
     throw new Error(
@@ -228,7 +238,7 @@ async function assertAuthed(page: Page, shot: Shot, loggedInSelector?: string): 
 export async function captureLogin(config: DemoConfig): Promise<string> {
   const auth = config.capture.auth;
   if (!auth) throw new Error(`captureLogin: config.capture.auth is required`);
-  const profileDir = resolveProfileDir(auth.profileDir);
+  const profileDir = resolveProfileDir(auth.profileDir, auth.loginUrl);
   await mkdir(profileDir, { recursive: true });
 
   const context = await chromium.launchPersistentContext(profileDir, {

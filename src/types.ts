@@ -64,6 +64,10 @@ export const DemoConfigSchema = z.object({
       // Login is headed by default (a human logs in). Tests/unattended selector flows
       // can force headless.
       headlessLogin: z.boolean().default(false),
+      // A live shot REQUIRES loggedInSelector so the record-time expiry guard can run
+      // (fail-closed). Set this true to record without the guard, accepting that an
+      // expired session would be recorded.
+      allowUnguardedLiveCapture: z.boolean().default(false),
     }).optional(),
   }).default({}),
   // Optional CSS injected into every captured page before interaction. Use to

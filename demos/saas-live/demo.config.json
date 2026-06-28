@@ -1,0 +1,12 @@
+{
+  "script": "demos/saas-live/DEMO_SCRIPT.md",
+  "dashboardBaseUrl": "https://app.example.com",
+  "out": "out/saas-live",
+  "resolution": { "width": 1920, "height": 1080 },
+  "capture": {
+    "auth": {
+      "loginUrl": "https://app.example.com/login",
+      "loggedInSelector": "[data-qa=\"workspace_shell\"]"
+    }
+  }
+}

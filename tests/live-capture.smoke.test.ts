@@ -77,6 +77,25 @@ describe("auth-walled SaaS live capture (smoke)", () => {
     ).rejects.toThrow(/profile|login/i);
   }, 60_000);
 
+  it("captureShot target:live FAILS CLOSED by default when no loggedInSelector is set", async () => {
+    const profileDir = await mkdtemp(join(tmpdir(), "advprof-"));
+    await captureLogin(liveCfg(profileDir)); // make a profile (login uses the selector)
+    const dir = await mkdtemp(join(tmpdir(), "advcap-"));
+    // A config WITHOUT loggedInSelector and without the explicit unguarded opt-in.
+    const noSelector = DemoConfigSchema.parse({
+      script: "x",
+      dashboardBaseUrl: "http://localhost:3000",
+      resolution: { width: 640, height: 360 },
+      capture: { auth: { profileDir, loginUrl: appUrl } },
+    });
+    const shot = { id: "L4", target: "live" as const, narration: "demo", actions: [
+      { kind: "goto" as const, url: appUrl },
+    ] };
+    await expect(
+      captureShot(shot, { shotId: "L4", startSec: 0, durationSec: 1 }, noSelector, dir),
+    ).rejects.toThrow(/loggedInSelector|allowUnguardedLiveCapture/i);
+  }, 60_000);
+
   it("runPipeline renders final.mp4 end-to-end from a single live shot (normalize/mux/parity)", async () => {
     const profileDir = await mkdtemp(join(tmpdir(), "advprof-"));
     await captureLogin(liveCfg(profileDir));

@@ -1,5 +1,6 @@
 #!/usr/bin/env -S npx tsx
-import { pathToFileURL } from "node:url";
+import { realpathSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { loadConfig } from "./config";
 import { runPipeline } from "./pipeline";
 import { captureLogin } from "./capture";
@@ -26,8 +27,21 @@ export async function main(argv: string[]): Promise<void> {
   console.log("✓ wrote", r.outPath, "(" + r.report.totalSec.toFixed(1) + "s, " + r.report.segments + " segments)");
 }
 
+/** True when this module is the process entrypoint — symlink-robust so it still fires
+ *  when invoked via the `node_modules/.bin/demo-video` symlink (where process.argv[1]
+ *  is the symlink path but import.meta.url is the real file). */
+function isEntrypoint(): boolean {
+  const argv1 = process.argv[1];
+  if (!argv1) return false;
+  try {
+    return realpathSync(fileURLToPath(import.meta.url)) === realpathSync(argv1);
+  } catch {
+    return false;
+  }
+}
+
 // Auto-run only when invoked as the entrypoint (so test imports don't run anything).
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (isEntrypoint()) {
   main(process.argv.slice(2)).catch((e) => {
     console.error("✗", e instanceof Error ? e.message : e);
     process.exit(1);

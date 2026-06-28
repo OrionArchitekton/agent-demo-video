@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { normalizeArgs, concatArgs, muxArgs, burnSubsArgs, padAudioArgs } from "./ffmpeg";
+import { normalizeArgs, concatArgs, muxArgs, burnSubsArgs, padAudioArgs, extendVideoArgs } from "./ffmpeg";
 
 describe("ffmpeg arg builders", () => {
   it("normalize scales+pads to target and sets fps/h264", () => {
@@ -25,5 +25,13 @@ describe("ffmpeg arg builders", () => {
     const s = padAudioArgs("a.mp3", "o.mp3", 3).join(" ");
     expect(s).toContain("apad");
     expect(s).toContain("-t 3");
+  });
+  it("extendVideoArgs freezes the last frame for the requested seconds, re-encodes, drops audio", () => {
+    const a = extendVideoArgs("seg.mp4", "ext.mp4", 5.6);
+    const s = a.join(" ");
+    expect(s).toContain("tpad=stop_mode=clone:stop_duration=5.6");
+    expect(s).toContain("libx264");
+    expect(a).toContain("-an");
+    expect(a[a.length - 1]).toBe("ext.mp4");
   });
 });

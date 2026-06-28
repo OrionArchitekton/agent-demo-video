@@ -179,6 +179,16 @@ async function captureLiveShot(
     );
   }
 
+  // A "live" shot MUST begin with a `goto`: each shot runs in a fresh persistent
+  // context (blank initial page), and the session can only be verified after a
+  // navigation. Requiring goto-first guarantees the auth guard runs before ANY
+  // side-effecting action, with no unguarded click/type or no-goto path.
+  if (shot.actions[0]?.kind !== "goto") {
+    throw new Error(
+      `shot ${shot.id}: a "live" shot must begin with a "goto" action so the session is verified before any other action runs.`,
+    );
+  }
+
   // Persistent context = the single-instance profile lock; capture is sequential
   // (pipeline records one shot at a time), so this never races a sibling.
   const context = await chromium.launchPersistentContext(profileDir, {
@@ -192,16 +202,12 @@ async function captureLiveShot(
     const page = context.pages()[0] ?? (await context.newPage());
 
     const startMs = Date.now();
-    // Record-time expiry guard, run right after the FIRST navigation and BEFORE any
-    // click/type — so a side-effecting action never executes against a logged-out page
-    // (and the logged-out wall is never recorded). Fails closed.
-    let authChecked = false;
+    // The first action is guaranteed to be a `goto` (validated above), so the expiry
+    // guard runs immediately after that navigation and BEFORE any click/type — never
+    // recording or side-effecting against a logged-out page. Fails closed.
     await runActions(page, shot, config, async () => {
       await assertAuthed(page, shot, auth.loggedInSelector);
-      authChecked = true;
     });
-    // Backstop for a shot with no `goto` action — assert on whatever rendered.
-    if (!authChecked) await assertAuthed(page, shot, auth.loggedInSelector);
     await dwell(page, timelineEntry.durationSec, startMs);
 
     const video = page.video();

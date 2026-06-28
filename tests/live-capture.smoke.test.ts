@@ -96,6 +96,19 @@ describe("auth-walled SaaS live capture (smoke)", () => {
     ).rejects.toThrow(/loggedInSelector|allowUnguardedLiveCapture/i);
   }, 60_000);
 
+  it("captureShot target:live rejects a shot that does not begin with a goto (auth-before-actions)", async () => {
+    const profileDir = await mkdtemp(join(tmpdir(), "advprof-"));
+    await captureLogin(liveCfg(profileDir));
+    const dir = await mkdtemp(join(tmpdir(), "advcap-"));
+    const shot = { id: "L5", target: "live" as const, narration: "demo", actions: [
+      { kind: "wait" as const, ms: 100 },          // a non-goto FIRST action
+      { kind: "goto" as const, url: appUrl },
+    ] };
+    await expect(
+      captureShot(shot, { shotId: "L5", startSec: 0, durationSec: 1 }, liveCfg(profileDir), dir),
+    ).rejects.toThrow(/must begin with a "goto"/i);
+  }, 60_000);
+
   it("runPipeline renders final.mp4 end-to-end from a single live shot (normalize/mux/parity)", async () => {
     const profileDir = await mkdtemp(join(tmpdir(), "advprof-"));
     await captureLogin(liveCfg(profileDir));

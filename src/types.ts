@@ -12,7 +12,9 @@ export type Action = z.infer<typeof ActionSchema>;
 
 export const ShotSchema = z.object({
   id: z.string(),
-  target: z.enum(["dashboard", "uipath", "terminal", "prebaked"]),
+  // "live" drives an authenticated SaaS app via a saved Playwright persistent-context
+  // profile (see capture.auth). Manifest syntax is identical to "dashboard".
+  target: z.enum(["dashboard", "uipath", "terminal", "prebaked", "live"]),
   narration: z.string(),
   actions: z.array(ActionSchema).default([]),
   url: z.string().optional(),
@@ -44,6 +46,26 @@ export const DemoConfigSchema = z.object({
     captionMarginV: z.number().default(20),
   }).default({}),
   clipsDir: z.string().default("clips/prebaked"),
+  // Auth-walled SaaS live capture (target: "live"). The whole section is optional so
+  // existing dashboard/prebaked configs validate unchanged. `auth` is only required
+  // when a manifest contains a "live" shot. The profile holds session cookies/tokens
+  // AT REST, so profileDir is resolved to an absolute, outside-the-repo path in
+  // loadConfig (default ~/.cache/agent-demo-video) — never committed.
+  capture: z.object({
+    auth: z.object({
+      profileDir: z.string().optional(),
+      loginUrl: z.string(),
+      loggedInSelector: z.string().optional(),
+      // operator: human presses Enter (authoritative). selector: wait for loggedInSelector.
+      // auto: accept loggedInSelector with a settle delay. Default operator (robust for
+      // apps we don't own; absorbs MFA/SSO with no special code).
+      confirmMode: z.enum(["operator", "selector", "auto"]).default("operator"),
+      loginTimeoutMs: z.number().default(120000),
+      // Login is headed by default (a human logs in). Tests/unattended selector flows
+      // can force headless.
+      headlessLogin: z.boolean().default(false),
+    }).optional(),
+  }).default({}),
   // Optional CSS injected into every captured page before interaction. Use to
   // stabilise capture of dashboards taller than the output frame — e.g. bound a
   // growing list's height so the document never overflows the viewport (which

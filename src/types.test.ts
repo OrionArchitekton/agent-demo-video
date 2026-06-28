@@ -18,4 +18,16 @@ describe("schemas", () => {
     const c = DemoConfigSchema.parse({ script: "DEMO.md", dashboardBaseUrl: "http://localhost:3000", captureCss: ".feed{max-height:200px}" });
     expect(c.captureCss).toBe(".feed{max-height:200px}");
   });
+  it("accepts the live target on a shot (additive enum)", () => {
+    const m = { shots: [{ id: "s1", target: "live", narration: "x", actions: [{ kind: "goto", url: "/" }] }] };
+    expect(ManifestSchema.parse(m).shots[0]!.target).toBe("live");
+  });
+  it("defaults capture to {} so old configs still validate, and accepts an optional capture.auth", () => {
+    const old = DemoConfigSchema.parse({ script: "DEMO.md", dashboardBaseUrl: "http://x" });
+    expect(old.capture).toEqual({});
+    const withAuth = DemoConfigSchema.parse({ script: "DEMO.md", dashboardBaseUrl: "http://x", capture: { auth: { loginUrl: "https://app/login" } } });
+    expect(withAuth.capture.auth?.loginUrl).toBe("https://app/login");
+    expect(withAuth.capture.auth?.confirmMode).toBe("operator");
+    expect(withAuth.capture.auth?.loginTimeoutMs).toBe(120000);
+  });
 });

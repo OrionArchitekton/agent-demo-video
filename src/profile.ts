@@ -1,5 +1,6 @@
 import { homedir } from "node:os";
 import { existsSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { dirname, isAbsolute, join, resolve, sep } from "node:path";
 
 /** The cache root for auth profiles, always ABSOLUTE. A relative/empty
@@ -11,13 +12,16 @@ function cacheRoot(): string {
   return join(base, "agent-demo-video");
 }
 
-/** A filesystem-safe slug for the login host, so each workspace/app gets its own
- *  default profile (no cross-tenant cookie/localStorage contamination). */
+/** A filesystem-safe slug for the login URL, so each workspace/app gets its OWN default
+ *  profile (no cross-tenant cookie/localStorage contamination). A readable host prefix
+ *  plus a short hash of the FULL url, so two workspaces/tenants/staging-vs-prod on the
+ *  SAME host (e.g. app.slack.com/<workspace>) still resolve to distinct profiles. */
 function hostSlug(loginUrl?: string): string {
   if (!loginUrl) return "default";
   try {
-    const host = new URL(loginUrl).host;
-    return host ? host.replace(/[^a-zA-Z0-9._-]/g, "_") : "default";
+    const host = (new URL(loginUrl).host || "app").replace(/[^a-zA-Z0-9._-]/g, "_");
+    const hash = createHash("sha256").update(loginUrl).digest("hex").slice(0, 8);
+    return `${host}-${hash}`;
   } catch {
     return "default";
   }

@@ -35,12 +35,27 @@ function resolveUrl(u: string, baseUrl: string): string {
   return base + (u.startsWith("/") ? u : "/" + u);
 }
 
-/** Run a shot's declared action sequence against an already-open page. */
-async function runActions(page: Page, shot: Shot, config: DemoConfig): Promise<void> {
+/**
+ * Run a shot's declared action sequence against an already-open page.
+ * `afterFirstGoto` (if given) fires once, immediately after the first navigation
+ * completes and BEFORE any click/type — the live path uses it to verify the session
+ * is authenticated before performing side-effecting actions on a possibly logged-out page.
+ */
+async function runActions(
+  page: Page,
+  shot: Shot,
+  config: DemoConfig,
+  afterFirstGoto?: () => Promise<void>,
+): Promise<void> {
+  let firstGotoDone = false;
   for (const a of shot.actions) {
     switch (a.kind) {
       case "goto":
         await page.goto(resolveUrl(a.url ?? "/", config.dashboardBaseUrl), { waitUntil: "load" });
+        if (!firstGotoDone) {
+          firstGotoDone = true;
+          if (afterFirstGoto) await afterFirstGoto();
+        }
         break;
       case "chapter":
         await page.evaluate(chapterExpr(a.label ?? a.text ?? ""));
@@ -177,16 +192,16 @@ async function captureLiveShot(
     const page = context.pages()[0] ?? (await context.newPage());
 
     const startMs = Date.now();
-    try {
-      await runActions(page, shot, config);
-    } catch (err) {
-      // If the session expired, an action targeting a logged-in-only element throws a
-      // generic "selector not found". Surface the real cause first when that's the case.
+    // Record-time expiry guard, run right after the FIRST navigation and BEFORE any
+    // click/type — so a side-effecting action never executes against a logged-out page
+    // (and the logged-out wall is never recorded). Fails closed.
+    let authChecked = false;
+    await runActions(page, shot, config, async () => {
       await assertAuthed(page, shot, auth.loggedInSelector);
-      throw err;
-    }
-    // Record-time expiry guard: never silently record the logged-out wall.
-    await assertAuthed(page, shot, auth.loggedInSelector);
+      authChecked = true;
+    });
+    // Backstop for a shot with no `goto` action — assert on whatever rendered.
+    if (!authChecked) await assertAuthed(page, shot, auth.loggedInSelector);
     await dwell(page, timelineEntry.durationSec, startMs);
 
     const video = page.video();

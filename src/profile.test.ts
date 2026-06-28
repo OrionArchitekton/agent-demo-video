@@ -22,6 +22,13 @@ describe("resolveProfileDir", () => {
   it("uses a 'default' namespace when no loginUrl is given", () => {
     expect(resolveProfileDir()).toContain(join("agent-demo-video", "default"));
   });
+  it("isolates two workspaces on the SAME host into distinct default profiles", () => {
+    const a = resolveProfileDir(undefined, "https://app.slack.com/client/T-AAA");
+    const b = resolveProfileDir(undefined, "https://app.slack.com/client/T-BBB");
+    expect(a).not.toBe(b);
+    expect(a).toContain("app.slack.com");
+    expect(b).toContain("app.slack.com");
+  });
   it("honors an ABSOLUTE XDG_CACHE_HOME for the default base", () => {
     withEnv("XDG_CACHE_HOME", "/tmp/xdg-adv-test", () => {
       expect(resolveProfileDir()).toBe(join("/tmp/xdg-adv-test", "agent-demo-video", "default"));

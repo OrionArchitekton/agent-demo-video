@@ -13,11 +13,17 @@ import {
   muxArgs,
   burnSubsArgs,
   padAudioArgs,
+  extendVideoArgs,
   probeDurationSec,
 } from "./ffmpeg";
 import { toSrt, captionStyle } from "./captions";
-import { buildTimeline } from "./timeline";
+import { buildTimeline, reconcileSegmentDuration } from "./timeline";
 import { verifyParity } from "./verify";
+
+// Minimum shortfall (seconds) before a prebaked clip is re-encoded to honour its
+// narration window. Below this the clip already effectively covers the narration
+// and a re-encode would be wasted work / risk audio-drift within tolerance.
+const EXTEND_EPS_SEC = 0.1;
 
 export async function runPipeline(
   config: DemoConfig,
@@ -77,11 +83,35 @@ export async function runPipeline(
     segMp4s.push(segMp4);
   }
 
-  // 6. Measure each normalized segment duration — this is the authoritative shot
-  //    duration (≥ ttsDuration because capture dwells to fill the narration window).
+  // 6. Measure each normalized segment duration and reconcile it against the
+  //    narration window. Live capture dwells, so the clip already fills the
+  //    narration; a PREBAKED clip has no dwell and may be shorter — extend it
+  //    (freeze the last frame) so the authoritative duration is never below the
+  //    narration and the voiceover is not silently truncated downstream.
   const durSecs: number[] = [];
-  for (const segMp4 of segMp4s) {
-    durSecs.push(await probeDurationSec(segMp4));
+  for (let i = 0; i < segMp4s.length; i++) {
+    const clipSec = await probeDurationSec(segMp4s[i]!);
+    const narrationSec = ttsResults[i]!.durationSec;
+    const { extendBySec } = reconcileSegmentDuration(clipSec, narrationSec);
+    if (extendBySec > EXTEND_EPS_SEC) {
+      const extended = join(segDir, `seg_${i}.ext.mp4`);
+      // tpad clones WHOLE frames and can round the added duration down, which would
+      // leave the segment a hair under the narration and re-truncate the tail when
+      // the audio is later capped to this segment's duration. Add a one-frame safety
+      // margin so the extended video provably covers the full narration window.
+      const frameSec = 1 / config.fps;
+      await ffmpeg(extendVideoArgs(segMp4s[i]!, extended, extendBySec + frameSec));
+      segMp4s[i] = extended;
+      const extendedSec = await probeDurationSec(extended);
+      durSecs.push(extendedSec);
+      console.warn(
+        `[agent-demo-video] shot "${shots[i]!.id}": prebaked clip (${clipSec.toFixed(2)}s) is shorter than its ` +
+          `narration (${narrationSec.toFixed(2)}s); froze the last frame to extend it to ` +
+          `${extendedSec.toFixed(2)}s so the voiceover is not truncated.`,
+      );
+    } else {
+      durSecs.push(clipSec);
+    }
   }
   const timeline = buildTimeline(
     shots.map((s, i) => ({ shotId: s.id, durationSec: durSecs[i]! })),

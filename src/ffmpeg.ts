@@ -27,6 +27,15 @@ export function padAudioArgs(input: string, output: string, durationSec: number)
   return [...BASE, "-i", input, "-af", "apad", "-t", String(durationSec), "-c:a", "libmp3lame", output];
 }
 
+/**
+ * Extend a (silent) video segment by freezing its last frame for `addSec` more
+ * seconds. Used when a prebaked clip is shorter than its narration so the segment
+ * occupies the full narration window and the voiceover is not truncated.
+ */
+export function extendVideoArgs(input: string, output: string, addSec: number): string[] {
+  return [...BASE, "-i", input, "-vf", `tpad=stop_mode=clone:stop_duration=${addSec}`, "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-an", output];
+}
+
 export function silentMp3Args(durationSec: number, output: string): string[] {
   return [...BASE, "-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo", "-t", String(durationSec), "-c:a", "libmp3lame", output];
 }

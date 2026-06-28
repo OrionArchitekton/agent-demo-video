@@ -67,4 +67,40 @@ describe("runPipeline (prebaked clip shorter than its narration)", () => {
     const audioSec = await probeDurationSec(join(dir, "out", "audio.mp3"));
     expect(audioSec).toBeGreaterThanOrEqual(expectedSec - 0.2);
   }, 120_000);
+
+  it("does not truncate when the clip is only slightly shorter than the narration (sub-tolerance band)", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "prebaked-eps-"));
+
+    // ~3.8s narration (10 words x 0.38); clip ~70ms shorter — a small but REAL
+    // deficit that must not be silently dropped as "within tolerance".
+    const narration = "One two three four five six seven eight nine ten";
+    const expectedSec = estimateDurationSec(narration);
+    const clipSec = expectedSec - 0.07;
+
+    const clip = join(dir, "near.mp4");
+    await sh("ffmpeg", [
+      "-y", "-hide_banner", "-loglevel", "error",
+      "-f", "lavfi", "-i", `color=c=green:s=320x240:d=${clipSec}`,
+      "-c:v", "libx264", "-t", String(clipSec), "-pix_fmt", "yuv420p", clip,
+    ]);
+
+    const md = `# Eps\n### SHOT one\n- target: prebaked\n- clip: ${clip}\n- narration: ${narration}\n`;
+    const scriptPath = join(dir, "demo.md");
+    await writeFile(scriptPath, md);
+
+    const cfg = DemoConfigSchema.parse({
+      script: scriptPath,
+      dashboardBaseUrl: "http://localhost:3000",
+      out: join(dir, "out"),
+      resolution: { width: 640, height: 360 },
+    });
+
+    const r = await runPipeline(cfg);
+
+    // A ~70ms shortfall must still preserve the narration audio — the small-deficit
+    // band is not an acceptable truncation budget.
+    const audioSec = await probeDurationSec(join(dir, "out", "audio.mp3"));
+    expect(audioSec).toBeGreaterThanOrEqual(expectedSec - 0.02);
+    expect(r.report.parity.ok).toBe(true);
+  }, 120_000);
 });

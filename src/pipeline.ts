@@ -20,10 +20,12 @@ import { toSrt, captionStyle } from "./captions";
 import { buildTimeline, reconcileSegmentDuration } from "./timeline";
 import { verifyParity } from "./verify";
 
-// Minimum shortfall (seconds) before a prebaked clip is re-encoded to honour its
-// narration window. Below this the clip already effectively covers the narration
-// and a re-encode would be wasted work / risk audio-drift within tolerance.
-const EXTEND_EPS_SEC = 0.1;
+// Probe-noise floor (seconds): only a shortfall below this is treated as ffprobe/
+// float measurement jitter and left un-extended (a sub-frame difference cannot be
+// represented in the video timeline anyway). This is NOT a truncation budget — any
+// real narration shortfall at or above it extends the clip so the voiceover is
+// never cut, however small the deficit.
+const EXTEND_EPS_SEC = 0.005;
 
 export async function runPipeline(
   config: DemoConfig,
@@ -103,7 +105,9 @@ export async function runPipeline(
       await ffmpeg(extendVideoArgs(segMp4s[i]!, extended, extendBySec + frameSec));
       segMp4s[i] = extended;
       const extendedSec = await probeDurationSec(extended);
-      durSecs.push(extendedSec);
+      // Never record below the narration even if tpad frame-rounding undershot the
+      // target, so the audio pad target downstream can never cap the voiceover.
+      durSecs.push(Math.max(extendedSec, narrationSec));
       console.warn(
         `[agent-demo-video] shot "${shots[i]!.id}": prebaked clip (${clipSec.toFixed(2)}s) is shorter than its ` +
           `narration (${narrationSec.toFixed(2)}s); froze the last frame to extend it to ` +

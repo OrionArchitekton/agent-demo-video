@@ -2,6 +2,18 @@
 
 Turn a `DEMO_SCRIPT.md` and a running web app into a finished, narrated, captioned MP4 (≤5 min) — fully automated and headless.
 
+## Install
+
+```bash
+npm install -g agent-demo-video      # or: npx agent-demo-video <config.json>
+npx playwright install chromium      # one-time: capture browser
+# ffmpeg + ffprobe must be on PATH (e.g. `apt install ffmpeg` / `brew install ffmpeg`)
+```
+
+Then `demo-video <config.json>` to render, or `demo-video login <config.json>` to log in
+for an auth-walled `target: live` demo (see [Authenticated SaaS capture](#authenticated-saas-capture-target-live)).
+An ElevenLabs API key enables real narration; `FAKE_TTS=1` runs keyless.
+
 ## What it does
 
 The pipeline is **audio-first**: narration is synthesised first (via ElevenLabs `with-timestamps`), and the resulting audio duration — including exact per-character timing — becomes the clock that paces both the browser recording and the caption file. Because video dwell time is derived from the narration audio rather than estimated independently, audio, video, and captions are in sync by construction with zero drift.

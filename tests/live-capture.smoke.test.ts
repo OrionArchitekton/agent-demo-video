@@ -109,6 +109,20 @@ describe("auth-walled SaaS live capture (smoke)", () => {
     ).rejects.toThrow(/must begin with a "goto"/i);
   }, 60_000);
 
+  it("captureShot target:live re-checks auth on EVERY goto (a mid-shot re-wall fails closed)", async () => {
+    const profileDir = await mkdtemp(join(tmpdir(), "advprof-"));
+    await captureLogin(liveCfg(profileDir));
+    const dir = await mkdtemp(join(tmpdir(), "advcap-"));
+    const shot = { id: "L6", target: "live" as const, narration: "demo", actions: [
+      { kind: "goto" as const, url: appUrl },         // authed surface (#app-shell present)
+      { kind: "goto" as const, url: loggedOutUrl },   // a SECOND nav to a re-walled page (no #app-shell)
+      { kind: "highlight" as const, selector: "#app-shell" },
+    ] };
+    await expect(
+      captureShot(shot, { shotId: "L6", startSec: 0, durationSec: 1 }, liveCfg(profileDir), dir),
+    ).rejects.toThrow(/expired|log ?in/i);
+  }, 60_000);
+
   it("runPipeline renders final.mp4 end-to-end from a single live shot (normalize/mux/parity)", async () => {
     const profileDir = await mkdtemp(join(tmpdir(), "advprof-"));
     await captureLogin(liveCfg(profileDir));

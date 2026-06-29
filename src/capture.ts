@@ -37,25 +37,22 @@ function resolveUrl(u: string, baseUrl: string): string {
 
 /**
  * Run a shot's declared action sequence against an already-open page.
- * `afterFirstGoto` (if given) fires once, immediately after the first navigation
- * completes and BEFORE any click/type — the live path uses it to verify the session
- * is authenticated before performing side-effecting actions on a possibly logged-out page.
+ * `onGoto` (if given) fires immediately after EACH navigation completes and BEFORE the
+ * next action — the live path uses it to verify the session is authenticated after every
+ * navigation, so a click/type never executes against a (re-walled) logged-out page even
+ * when a single shot navigates more than once.
  */
 async function runActions(
   page: Page,
   shot: Shot,
   config: DemoConfig,
-  afterFirstGoto?: () => Promise<void>,
+  onGoto?: () => Promise<void>,
 ): Promise<void> {
-  let firstGotoDone = false;
   for (const a of shot.actions) {
     switch (a.kind) {
       case "goto":
         await page.goto(resolveUrl(a.url ?? "/", config.dashboardBaseUrl), { waitUntil: "load" });
-        if (!firstGotoDone) {
-          firstGotoDone = true;
-          if (afterFirstGoto) await afterFirstGoto();
-        }
+        if (onGoto) await onGoto();
         break;
       case "chapter":
         await page.evaluate(chapterExpr(a.label ?? a.text ?? ""));
@@ -202,9 +199,10 @@ async function captureLiveShot(
     const page = context.pages()[0] ?? (await context.newPage());
 
     const startMs = Date.now();
-    // The first action is guaranteed to be a `goto` (validated above), so the expiry
-    // guard runs immediately after that navigation and BEFORE any click/type — never
-    // recording or side-effecting against a logged-out page. Fails closed.
+    // The first action is guaranteed to be a `goto` (validated above) and the guard runs
+    // after EVERY navigation — so the expiry check fires before any click/type and a shot
+    // that navigates more than once is re-checked on each goto. Never records or
+    // side-effects against a logged-out page. Fails closed.
     await runActions(page, shot, config, async () => {
       await assertAuthed(page, shot, auth.loggedInSelector);
     });

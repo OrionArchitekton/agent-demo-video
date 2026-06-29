@@ -11,7 +11,7 @@ export function loadConfig(path: string): DemoConfig {
     const cfg = DemoConfigSchema.parse(parsed);
     // Pin the auth profile to an absolute, outside-the-repo path (secrets at rest).
     if (cfg.capture.auth) {
-      cfg.capture.auth.profileDir = resolveProfileDir(cfg.capture.auth.profileDir);
+      cfg.capture.auth.profileDir = resolveProfileDir(cfg.capture.auth.profileDir, cfg.capture.auth.loginUrl);
     }
     return cfg;
   } catch (err) {

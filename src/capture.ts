@@ -35,12 +35,24 @@ function resolveUrl(u: string, baseUrl: string): string {
   return base + (u.startsWith("/") ? u : "/" + u);
 }
 
-/** Run a shot's declared action sequence against an already-open page. */
-async function runActions(page: Page, shot: Shot, config: DemoConfig): Promise<void> {
+/**
+ * Run a shot's declared action sequence against an already-open page.
+ * `onGoto` (if given) fires immediately after EACH navigation completes and BEFORE the
+ * next action — the live path uses it to verify the session is authenticated after every
+ * navigation, so a click/type never executes against a (re-walled) logged-out page even
+ * when a single shot navigates more than once.
+ */
+async function runActions(
+  page: Page,
+  shot: Shot,
+  config: DemoConfig,
+  onGoto?: () => Promise<void>,
+): Promise<void> {
   for (const a of shot.actions) {
     switch (a.kind) {
       case "goto":
         await page.goto(resolveUrl(a.url ?? "/", config.dashboardBaseUrl), { waitUntil: "load" });
+        if (onGoto) await onGoto();
         break;
       case "chapter":
         await page.evaluate(chapterExpr(a.label ?? a.text ?? ""));
@@ -144,17 +156,33 @@ async function captureLiveShot(
 ): Promise<string> {
   const auth = config.capture.auth;
   if (!auth) throw new Error(`shot ${shot.id}: target "live" requires config.capture.auth (run "demo-video login <config>" first)`);
-  const profileDir = resolveProfileDir(auth.profileDir);
+  const profileDir = resolveProfileDir(auth.profileDir, auth.loginUrl);
   if (!existsSync(profileDir)) {
     throw new Error(`shot ${shot.id}: no saved auth profile at ${profileDir} — run "demo-video login <config>" first`);
   }
   if (!auth.loggedInSelector) {
-    // Surfaced, not silent: without a marker the record-time expiry guard cannot run,
-    // so an expired session would be recorded. Operators wanting fail-closed expiry
-    // detection must set capture.auth.loggedInSelector.
+    // Fail closed by default: without a marker the record-time expiry guard cannot run,
+    // so an expired session would be recorded silently. Require an explicit opt-in.
+    if (!auth.allowUnguardedLiveCapture) {
+      throw new Error(
+        `shot ${shot.id}: target "live" needs capture.auth.loggedInSelector so the record-time ` +
+          `session-expiry guard can fail closed. Set a loggedInSelector, or set ` +
+          `capture.auth.allowUnguardedLiveCapture:true to record WITHOUT the guard (an expired session would be recorded).`,
+      );
+    }
     console.warn(
-      `[agent-demo-video] shot "${shot.id}": no capture.auth.loggedInSelector — the record-time ` +
-        `session-expiry guard is DISABLED; an expired session would be recorded. Set loggedInSelector to fail closed.`,
+      `[agent-demo-video] shot "${shot.id}": recording live WITHOUT a session-expiry guard ` +
+        `(allowUnguardedLiveCapture) — an expired session would be recorded.`,
+    );
+  }
+
+  // A "live" shot MUST begin with a `goto`: each shot runs in a fresh persistent
+  // context (blank initial page), and the session can only be verified after a
+  // navigation. Requiring goto-first guarantees the auth guard runs before ANY
+  // side-effecting action, with no unguarded click/type or no-goto path.
+  if (shot.actions[0]?.kind !== "goto") {
+    throw new Error(
+      `shot ${shot.id}: a "live" shot must begin with a "goto" action so the session is verified before any other action runs.`,
     );
   }
 
@@ -171,16 +199,13 @@ async function captureLiveShot(
     const page = context.pages()[0] ?? (await context.newPage());
 
     const startMs = Date.now();
-    try {
-      await runActions(page, shot, config);
-    } catch (err) {
-      // If the session expired, an action targeting a logged-in-only element throws a
-      // generic "selector not found". Surface the real cause first when that's the case.
+    // The first action is guaranteed to be a `goto` (validated above) and the guard runs
+    // after EVERY navigation — so the expiry check fires before any click/type and a shot
+    // that navigates more than once is re-checked on each goto. Never records or
+    // side-effects against a logged-out page. Fails closed.
+    await runActions(page, shot, config, async () => {
       await assertAuthed(page, shot, auth.loggedInSelector);
-      throw err;
-    }
-    // Record-time expiry guard: never silently record the logged-out wall.
-    await assertAuthed(page, shot, auth.loggedInSelector);
+    });
     await dwell(page, timelineEntry.durationSec, startMs);
 
     const video = page.video();
@@ -202,12 +227,16 @@ async function captureLiveShot(
  * abort rather than ship a broken demo. Without a selector the check is skipped
  * (it cannot be done generically for an app we do not own).
  */
+const AUTH_GUARD_TIMEOUT_MS = 10_000;
+
 async function assertAuthed(page: Page, shot: Shot, loggedInSelector?: string): Promise<void> {
   if (!loggedInSelector) return;
+  // Bounded WAIT, not an instant check: an authenticated SPA shell can still be
+  // hydrating after `load`, so only declare the session expired once the marker has
+  // failed to appear within the timeout (avoids false-positive expiry on slow apps).
   const visible = await page
-    .locator(loggedInSelector)
-    .first()
-    .isVisible()
+    .waitForSelector(loggedInSelector, { state: "visible", timeout: AUTH_GUARD_TIMEOUT_MS })
+    .then(() => true)
     .catch(() => false);
   if (!visible) {
     throw new Error(
@@ -228,7 +257,7 @@ async function assertAuthed(page: Page, shot: Shot, loggedInSelector?: string): 
 export async function captureLogin(config: DemoConfig): Promise<string> {
   const auth = config.capture.auth;
   if (!auth) throw new Error(`captureLogin: config.capture.auth is required`);
-  const profileDir = resolveProfileDir(auth.profileDir);
+  const profileDir = resolveProfileDir(auth.profileDir, auth.loginUrl);
   await mkdir(profileDir, { recursive: true });
 
   const context = await chromium.launchPersistentContext(profileDir, {

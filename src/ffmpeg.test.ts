@@ -1,5 +1,15 @@
 import { describe, it, expect } from "vitest";
-import { normalizeArgs, concatArgs, muxArgs, burnSubsArgs, padAudioArgs, extendVideoArgs } from "./ffmpeg";
+import {
+  normalizeArgs,
+  concatArgs,
+  concatListContent,
+  concatListEntry,
+  muxArgs,
+  burnSubsArgs,
+  subtitlesFilterPath,
+  padAudioArgs,
+  extendVideoArgs,
+} from "./ffmpeg";
 
 describe("ffmpeg arg builders", () => {
   it("normalize scales+pads to target and sets fps/h264", () => {
@@ -13,6 +23,21 @@ describe("ffmpeg arg builders", () => {
   });
   it("concat uses the demuxer with the list file", () => {
     expect(concatArgs("list.txt", "v.mp4").join(" ")).toContain("-f concat -safe 0 -i list.txt");
+  });
+  it("formats concat list paths with ffmpeg-safe single quote escaping", () => {
+    expect(concatListEntry("/tmp/demo's/clip.mp4")).toBe("file '/tmp/demo'\\''s/clip.mp4'");
+    expect(concatListContent(["/tmp/a.mp4", "/tmp/demo's/b.mp4"])).toBe(
+      "file '/tmp/a.mp4'\nfile '/tmp/demo'\\''s/b.mp4'",
+    );
+  });
+  it("rejects concat list paths with newlines", () => {
+    expect(() => concatListEntry("/tmp/bad\nclip.mp4")).toThrow("cannot contain newlines");
+  });
+  it("escapes paths for ffmpeg's subtitles filter", () => {
+    expect(subtitlesFilterPath("C:\\Users\\demo's\\captions.srt")).toBe("C\\:/Users/demo\\\\\\'s/captions.srt");
+  });
+  it("rejects subtitles filter paths with newlines", () => {
+    expect(() => subtitlesFilterPath("/tmp/bad\ncaptions.srt")).toThrow("cannot contain newlines");
   });
   it("mux pairs video copy + aac audio, shortest", () => {
     const a = muxArgs("v.mp4", "a.mp3", "final.mp4").join(" ");

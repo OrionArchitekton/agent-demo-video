@@ -9,9 +9,11 @@ import {
   ffmpeg,
   normalizeArgs,
   concatArgs,
+  concatListContent,
   concatAudioArgs,
   muxArgs,
   burnSubsArgs,
+  subtitlesFilterPath,
   padAudioArgs,
   extendVideoArgs,
   probeDurationSec,
@@ -142,18 +144,14 @@ export async function runPipeline(
 
   // 9. Concat video segments
   const videoListPath = join(segDir, "list.txt");
-  const videoListContent = segMp4s
-    .map((p) => `file '${p}'`)
-    .join("\n");
+  const videoListContent = concatListContent(segMp4s);
   await writeFile(videoListPath, videoListContent, "utf8");
   const concatVideoPath = join(out, "video.mp4");
   await ffmpeg(concatArgs(videoListPath, concatVideoPath));
 
   // 10. Concat audio segments
   const audioListPath = join(audioDir, "list.txt");
-  const audioListContent = paddedAudioPaths
-    .map((p) => `file '${p}'`)
-    .join("\n");
+  const audioListContent = concatListContent(paddedAudioPaths);
   await writeFile(audioListPath, audioListContent, "utf8");
   const concatAudioPath = join(out, "audio.mp3");
   await ffmpeg(concatAudioArgs(audioListPath, concatAudioPath));
@@ -163,11 +161,9 @@ export async function runPipeline(
   await ffmpeg(muxArgs(concatVideoPath, concatAudioPath, muxedPath));
 
   // 12. Burn subtitles
-  //     Use a relative path from cwd for the srt to avoid ffmpeg colon-in-path issues
-  //     (Windows-style absolute paths with drive letters break the subtitles filter).
-  //     We write captions.srt inside `out` and reference it via its absolute path,
-  //     escaping any colons that appear on Windows. On Linux/WSL paths are clean.
-  const escapedSrt = srtPath.replace(/\\/g, "/").replace(/:/g, "\\:");
+  //     Escape for ffmpeg's subtitles filter syntax; spawn bypasses shell quoting,
+  //     but the filtergraph parser still treats colons and single quotes specially.
+  const escapedSrt = subtitlesFilterPath(srtPath);
   const finalPath = join(out, "final.mp4");
   await ffmpeg(burnSubsArgs(muxedPath, escapedSrt, finalPath, captionStyle(config.theme)));
 

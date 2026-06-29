@@ -11,6 +11,27 @@ export function concatArgs(listFile: string, output: string): string[] {
   return [...BASE, "-f", "concat", "-safe", "0", "-i", listFile, "-c", "copy", output];
 }
 
+export function concatListEntry(filePath: string): string {
+  if (/[\r\n]/.test(filePath)) {
+    throw new Error("ffmpeg concat list paths cannot contain newlines");
+  }
+  return `file '${filePath.replace(/'/g, "'\\''")}'`;
+}
+
+export function concatListContent(filePaths: string[]): string {
+  return filePaths.map(concatListEntry).join("\n");
+}
+
+export function subtitlesFilterPath(filePath: string): string {
+  if (/[\r\n]/.test(filePath)) {
+    throw new Error("ffmpeg subtitles filter paths cannot contain newlines");
+  }
+  return filePath
+    .replace(/\\/g, "/")
+    .replace(/:/g, "\\:")
+    .replace(/'/g, "\\\\\\'");
+}
+
 export function concatAudioArgs(listFile: string, output: string): string[] {
   return [...BASE, "-f", "concat", "-safe", "0", "-i", listFile, "-c:a", "libmp3lame", output];
 }

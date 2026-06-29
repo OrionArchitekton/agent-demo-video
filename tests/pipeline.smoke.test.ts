@@ -9,7 +9,7 @@ import { DemoConfigSchema } from "../src/types";
 describe("runPipeline (smoke, FAKE_TTS)", () => {
   beforeAll(() => { process.env.FAKE_TTS = "1"; });
   it("produces final.mp4 from a 2-shot script + fixture page", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "pipe-"));
+    const dir = await mkdtemp(join(tmpdir(), "pipe's-"));
     const fixture = pathToFileURL(resolve("tests/fixtures/page.html")).href;
     const tmpl = await readFile(resolve("tests/fixtures/demo.md"), "utf8");
     const scriptPath = join(dir, "demo.md");

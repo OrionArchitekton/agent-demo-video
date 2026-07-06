@@ -69,9 +69,12 @@ running web app and must stay local). Offloading it frees a busy workstation.
      structural checks miss).
 
 3. **Loud, safe failure.** Given an unreachable or failing render host, when the
-   runner runs, then it exits non-zero with a clear diagnostic naming the failed
-   step (rsync-up / ssh-render / rsync-down), and the local inputs are unchanged
-   (verified by content hash before/after).
+   runner runs, then it exits non-zero with a clear diagnostic prefixed
+   `[remote-render]` that names the failed step (for example the font preflight,
+   an rsync transfer, or the remote render), and the local inputs are unchanged
+   (verified by content hash before/after). The runner refuses a work directory
+   that already exists on the host, so cleanup only ever removes a directory it
+   created.
 
 4. **Manifest round-trips.** Given in-memory render inputs (including the caption
    alignment that today is never written to disk), when serialized to a manifest

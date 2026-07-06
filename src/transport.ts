@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { cp, mkdir, rm } from "node:fs/promises";
+import { cp, mkdir, rm, stat } from "node:fs/promises";
 import { dirname } from "node:path";
 
 /**
@@ -16,6 +16,8 @@ export interface Transport {
   exec(cwd: string, cmd: string[]): Promise<string>;
   /** Run a command on the host and return its stdout (used for host preflight checks). */
   capture(cmd: string[]): Promise<string>;
+  /** True if the path already exists on the host. */
+  exists(path: string): Promise<boolean>;
   pullFile(remoteFile: string, localFile: string): Promise<void>;
   remove(dir: string): Promise<void>;
   describe(): string;
@@ -61,6 +63,14 @@ export class LocalTransport implements Transport {
   async capture(cmd: string[]): Promise<string> {
     return run(cmd[0]!, cmd.slice(1), `capture ${cmd[0]}`, { capture: true });
   }
+  async exists(path: string): Promise<boolean> {
+    try {
+      await stat(path);
+      return true;
+    } catch {
+      return false;
+    }
+  }
   async pullFile(remoteFile: string, localFile: string): Promise<void> {
     await mkdir(dirname(localFile), { recursive: true });
     await cp(remoteFile, localFile);
@@ -94,6 +104,13 @@ export class SshTransport implements Transport {
   }
   async capture(cmd: string[]): Promise<string> {
     return run("ssh", [...SSH_OPTS, this.host, cmd.map(shQuote).join(" ")], "ssh capture", { capture: true });
+  }
+  async exists(path: string): Promise<boolean> {
+    return new Promise((res) => {
+      const p = spawn("ssh", [...SSH_OPTS, this.host, `test -e ${shQuote(path)}`]);
+      p.on("error", () => res(false));
+      p.on("close", (code) => res(code === 0));
+    });
   }
   async pullFile(remoteFile: string, localFile: string): Promise<void> {
     await mkdir(dirname(localFile), { recursive: true });

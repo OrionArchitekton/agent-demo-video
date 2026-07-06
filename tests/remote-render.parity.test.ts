@@ -67,7 +67,7 @@ describe("remote render parity", () => {
     const returned = await renderRemote(inputs, {
       transport: new LocalTransport(),
       bundlePath: BUNDLE,
-      workDir: mkdtempSync(join(tmpdir(), "adv-remote-")),
+      workDir: join(tmpdir(), "adv-remote-" + Date.now() + "-" + Math.random().toString(36).slice(2)),
       outPath: remoteOut,
     });
 
@@ -112,6 +112,7 @@ describe("remote render parity", () => {
         throw new Error("[remote-render] ssh exec exited 1: boom");
       },
       capture: async () => "Liberation Sans", // font preflight passes (matches local)
+      exists: async () => false, // work dir does not pre-exist
       pullFile: async () => void calls.push("pullFile"),
       remove: async () => void calls.push("remove"),
     };
@@ -121,5 +122,15 @@ describe("remote render parity", () => {
     ).rejects.toThrow(/\[remote-render\]/);
 
     expect(calls).toContain("remove"); // cleanup ran despite the exec failure
+  }, 60000);
+
+  it("refuses a work dir that already exists (never deletes a caller's dir on cleanup)", async () => {
+    const base = mkdtempSync(join(tmpdir(), "adv-exist-"));
+    const inputs = await makeInputs(base);
+    const existing = mkdtempSync(join(tmpdir(), "adv-preexisting-")); // a real, pre-existing dir
+    await expect(
+      renderRemote(inputs, { transport: new LocalTransport(), bundlePath: BUNDLE, workDir: existing, outPath: join(base, "final.mp4") }),
+    ).rejects.toThrow(/already exists/);
+    expect(existsSync(existing)).toBe(true); // pre-existing dir left intact
   }, 60000);
 });

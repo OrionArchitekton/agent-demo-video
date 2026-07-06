@@ -45,8 +45,11 @@ function run(bin: string, args: string[]): Promise<{ stdout: string; stderr: str
     const p = spawn(bin, args);
     let stdout = "";
     let stderr = "";
-    p.stdout.on("data", (d) => (stdout += d));
-    p.stderr.on("data", (d) => (stderr += d));
+    p.stdout?.on("data", (d) => (stdout += d));
+    p.stderr?.on("data", (d) => (stderr += d));
+    // Surface spawn failures (e.g. ffmpeg/ffprobe missing) as a non-zero exit so
+    // callers fail fast with a clear error instead of hanging forever.
+    p.on("error", (e) => res({ stdout, stderr: `failed to start ${bin}: ${e.message}`, code: 127 }));
     p.on("close", (code) => res({ stdout, stderr, code: code ?? 1 }));
   });
 }

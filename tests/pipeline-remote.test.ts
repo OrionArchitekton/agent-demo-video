@@ -43,4 +43,11 @@ describe("runPipeline remote offload (FAKE_TTS)", () => {
       runPipeline(cfg, { render: { transport: new SshTransport("no-such-host.invalid") } }),
     ).rejects.toThrow();
   }, 120_000);
+
+  it("fails loudly when the render bundle is missing", async () => {
+    const cfg = await fixtureConfig("pipe-remote-nobundle-");
+    await expect(
+      runPipeline(cfg, { render: { transport: new LocalTransport(), bundlePath: "/nonexistent/remote-entry.js" } }),
+    ).rejects.toThrow(/remote render bundle not found/);
+  }, 120_000);
 });

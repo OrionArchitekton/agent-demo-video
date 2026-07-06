@@ -4,7 +4,7 @@
   "description": "Generate narrated, captioned demo videos from a Markdown script and a running web app — Playwright capture + ElevenLabs TTS + ffmpeg. Supports auth-walled SaaS live capture.",
   "type": "module",
   "bin": { "demo-video": "dist/cli.js" },
-  "files": ["dist", "README.md", "LICENSE"],
+  "files": ["dist", "dist-remote", "README.md", "LICENSE"],
   "keywords": [
     "demo-video", "screencast", "playwright", "ffmpeg", "narration",
     "tts", "elevenlabs", "captions", "cli"
@@ -19,7 +19,8 @@
   "scripts": {
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "build": "tsup src/cli.ts --format esm --target node18 --clean",
+    "build": "tsup src/cli.ts --format esm --target node18 --clean && pnpm build:remote-entry",
+    "build:remote-entry": "tsup scripts/remote-entry.ts --format esm --target node18 --out-dir dist-remote --clean",
     "prepack": "pnpm run build",
     "demo": "tsx src/cli.ts"
   },

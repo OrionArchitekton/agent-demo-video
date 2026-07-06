@@ -91,15 +91,15 @@ running web app and must stay local). Offloading it frees a busy workstation.
   the full manifest -> (rsync/ssh to localhost or a local adapter) -> bundle
   render -> ffprobe/SSIM path, with no dependency on any private infrastructure.
 
-**Estate proof (out-of-repo ops step, not a repo test):** the estate validates
-the same runner pointed at `hermes-01` and records the parity result. hermes is
-never referenced in the repo or its tests.
+**Operator proof (out-of-repo ops step, not a repo test):** the operator validates
+the same runner pointed at their own render host and records the parity result.
+No specific host name appears in the repo or its tests.
 
 ## Out of scope for this slice (follow-ups)
 
 - Wiring remote render into `src/pipeline.ts` behind a `--render-host` flag
   (the "integrated" option) - a separate change once this proof holds.
 - Publishing this to the public OSS repo - an explicit operator gate; this slice
-  lands on a branch and is proven locally + against hermes, not pushed public
+  lands on a branch and is proven locally + against a real render host, not pushed public
   without approval.
 - Parallel/queued multi-render, GPU/NVENC encode, or non-SSH transports.

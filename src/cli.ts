@@ -18,11 +18,14 @@ export function parseCommand(argv: string[]): { cmd: "login" | "run"; cfgPath: s
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
     if (a === "--render-host") {
+      const next = argv[i + 1];
+      if (next === undefined || next.startsWith("-")) throw new Error("--render-host requires a host argument");
       renderHost = argv[++i];
       continue;
     }
     if (a.startsWith("--render-host=")) {
       renderHost = a.slice("--render-host=".length);
+      if (!renderHost) throw new Error("--render-host requires a non-empty host argument");
       continue;
     }
     positional.push(a);

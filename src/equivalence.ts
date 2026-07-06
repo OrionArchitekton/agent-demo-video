@@ -20,8 +20,10 @@ export function parseVideoMeta(probe: any): VideoMeta {
   const num = parts[0] ?? 0;
   const den = parts[1] ?? 1;
   const fps = den ? num / den : num;
+  const durationSec = parseFloat(probe.format?.duration);
+  if (Number.isNaN(durationSec)) throw new Error("ffprobe output has invalid or missing duration");
   return {
-    durationSec: parseFloat(probe.format?.duration),
+    durationSec,
     width: v.width,
     height: v.height,
     fps,
@@ -55,10 +57,27 @@ export async function probeVideoMeta(path: string): Promise<VideoMeta> {
   return parseVideoMeta(JSON.parse(stdout));
 }
 
-/** Whole-video structural-similarity (0..1) between two renders via the ffmpeg ssim filter. */
-export async function videoSsim(a: string, b: string): Promise<number> {
-  const { stderr } = await run("ffmpeg", ["-hide_banner", "-i", a, "-i", b, "-lavfi", "[0:v][1:v]ssim", "-f", "null", "-"]);
+/** SSIM (0..1) of the single frame sampled at timestamp `t` from each video. */
+async function frameSsimAt(a: string, b: string, t: number): Promise<number> {
+  const ts = t.toFixed(3);
+  const { stderr, code } = await run("ffmpeg", [
+    "-hide_banner", "-ss", ts, "-i", a, "-ss", ts, "-i", b, "-frames:v", "1", "-lavfi", "[0:v][1:v]ssim", "-f", "null", "-",
+  ]);
+  if (code !== 0) throw new Error(`ffmpeg ssim failed (exit ${code}) at t=${ts}s: ${stderr.slice(0, 400).trim()}`);
   return parseSsimAll(stderr);
+}
+
+/**
+ * Minimum per-frame SSIM across `n` frames evenly sampled over `durationSec`.
+ * Per-frame (not a whole-video aggregate) so a localized caption/font mismatch
+ * cannot be averaged away.
+ */
+export async function sampledFrameSsim(a: string, b: string, durationSec: number, n = 3): Promise<number> {
+  const ssims: number[] = [];
+  for (let i = 1; i <= n; i++) {
+    ssims.push(await frameSsimAt(a, b, (durationSec * i) / (n + 1)));
+  }
+  return Math.min(...ssims);
 }
 
 export interface EquivalenceResult {
@@ -72,15 +91,16 @@ export interface EquivalenceResult {
 /**
  * Two rendered videos are equivalent when they match structurally (duration
  * within one frame, identical resolution/fps/codecs/stream count) AND visually
- * (whole-video SSIM >= ssimMin). Structural checks alone miss caption/font
- * drift; SSIM catches it.
+ * (minimum SSIM across N evenly sampled frames >= ssimMin). Structural checks
+ * alone miss caption/font drift; the per-frame SSIM catches it.
  */
 export async function assertEquivalent(
   a: string,
   b: string,
-  opts: { ssimMin?: number } = {},
+  opts: { ssimMin?: number; frames?: number } = {},
 ): Promise<EquivalenceResult> {
   const ssimMin = opts.ssimMin ?? 0.98;
+  const nFrames = opts.frames ?? 3;
   const ma = await probeVideoMeta(a);
   const mb = await probeVideoMeta(b);
   const problems: string[] = [];
@@ -93,7 +113,7 @@ export async function assertEquivalent(
   if (ma.vcodec !== mb.vcodec) problems.push(`vcodec ${ma.vcodec} vs ${mb.vcodec}`);
   if (ma.acodec !== mb.acodec) problems.push(`acodec ${ma.acodec} vs ${mb.acodec}`);
   if (ma.streamCount !== mb.streamCount) problems.push(`streams ${ma.streamCount} vs ${mb.streamCount}`);
-  const ssim = await videoSsim(a, b);
-  if (ssim < ssimMin) problems.push(`ssim ${ssim.toFixed(4)} < ${ssimMin}`);
+  const ssim = await sampledFrameSsim(a, b, Math.min(ma.durationSec, mb.durationSec), nFrames);
+  if (ssim < ssimMin) problems.push(`min sampled-frame ssim ${ssim.toFixed(4)} < ${ssimMin}`);
   return { ok: problems.length === 0, problems, ssim, a: ma, b: mb };
 }

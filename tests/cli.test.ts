@@ -13,13 +13,17 @@ describe("parseCommand --render-host", () => {
     });
   });
   it("parses the `--render-host=<host>` form and flag-before-config order", () => {
-    expect(parseCommand(["--render-host=hermes-01", "cfg.json"])).toEqual({
+    expect(parseCommand(["--render-host=build-host", "cfg.json"])).toEqual({
       cmd: "run",
       cfgPath: "cfg.json",
-      renderHost: "hermes-01",
+      renderHost: "build-host",
     });
   });
   it("still parses the login verb (render host irrelevant)", () => {
     expect(parseCommand(["login", "cfg.json"])).toEqual({ cmd: "login", cfgPath: "cfg.json", renderHost: undefined });
+  });
+  it("fails loudly when --render-host has no value (no silent local fallback)", () => {
+    expect(() => parseCommand(["cfg.json", "--render-host"])).toThrow(/render-host/);
+    expect(() => parseCommand(["cfg.json", "--render-host="])).toThrow(/render-host/);
   });
 });

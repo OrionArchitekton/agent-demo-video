@@ -1,6 +1,6 @@
 import { cp, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, posix } from "node:path";
 import type { RenderInputs, RenderResult } from "./render";
 import { buildManifest } from "./manifest";
 import { LocalTransport, type Transport } from "./transport";
@@ -45,11 +45,13 @@ async function assertFontParity(transport: Transport, font: string): Promise<voi
  * index-based names (so distinct sources sharing a basename cannot collide),
  * shipped with the render bundle + manifest, rendered by `renderVideo` on the
  * host, and the final.mp4 is retrieved. Any step failure rejects loudly; the
- * original inputs are never touched, so a local render remains a safe fallback.
+ * original inputs are never touched (local render remains a safe fallback), and
+ * the remote work dir is always cleaned up so captured media is never left behind.
  */
 export async function renderRemote(inputs: RenderInputs, opts: RemoteRenderOpts): Promise<RenderResult> {
   const ownsStage = !opts.stageDir;
   const stage = opts.stageDir ?? (await mkdtemp(join(tmpdir(), "adv-stage-")));
+  let workDirCreated = false;
   try {
     if (opts.verifyFont !== false) await assertFontParity(opts.transport, inputs.config.theme.captionFont);
 
@@ -64,22 +66,42 @@ export async function renderRemote(inputs: RenderInputs, opts: RemoteRenderOpts)
     for (let i = 0; i < inputs.tts.length; i++) await cp(inputs.tts[i]!.audioPath, join(stageAudio, manifest.audio[i]!.file));
     await writeFile(join(stage, "manifest.json"), JSON.stringify(manifest), "utf8");
     await cp(opts.bundlePath, join(stage, "remote-entry.js"));
+    // Mark the staged dir as an ES module so the ESM bundle runs as a module even
+    // on a host where a bare .js in a package-less dir would default to CommonJS
+    // (Node < ~22, i.e. the declared node>=18 floor).
+    await writeFile(join(stage, "package.json"), JSON.stringify({ type: "module" }), "utf8");
 
     // Ship -> run -> collect.
     await opts.transport.mkdirp(opts.workDir);
+    workDirCreated = true;
     await opts.transport.pushDir(stage, opts.workDir);
     const stdout = await opts.transport.exec(opts.workDir, ["node", "remote-entry.js"]);
-    await opts.transport.pullFile(join(opts.workDir, "out", "final.mp4"), opts.outPath);
-    // Best-effort remote cleanup; log (do not swallow) so a leaked work dir is traceable.
-    await opts.transport.remove(opts.workDir).catch((e) =>
-      console.warn(`[remote-render] could not remove remote work dir ${opts.workDir}: ${String((e && e.message) || e)}`),
-    );
-    // The bundle prints its RenderResult as the last stdout line; the report is
-    // computed on the host, so surface it with the local output path.
-    const line = stdout.trim().split("\n").filter(Boolean).pop() ?? "{}";
-    const remote = JSON.parse(line) as RenderResult;
+    await opts.transport.pullFile(posix.join(opts.workDir, "out", "final.mp4"), opts.outPath);
+
+    // The bundle prints its RenderResult as a stdout JSON line; scan from the
+    // bottom for the first valid JSON so a stray warning line cannot break parsing.
+    const lines = stdout.trim().split("\n").filter(Boolean);
+    let remote: RenderResult | undefined;
+    for (let i = lines.length - 1; i >= 0; i--) {
+      try {
+        remote = JSON.parse(lines[i]!) as RenderResult;
+        break;
+      } catch {
+        // not the JSON result line
+      }
+    }
+    if (!remote?.report) {
+      throw new Error("[remote-render] could not parse render result from host stdout: " + stdout.slice(0, 400));
+    }
     return { outPath: opts.outPath, report: remote.report };
   } finally {
+    // Always remove the remote work dir (success OR failure) so staged captured
+    // media / narration is never left on the render host. Best-effort; log if it fails.
+    if (workDirCreated) {
+      await opts.transport.remove(opts.workDir).catch((e) =>
+        console.warn(`[remote-render] could not remove remote work dir ${opts.workDir}: ${String((e && e.message) || e)}`),
+      );
+    }
     if (ownsStage) await rm(stage, { recursive: true, force: true }).catch(() => {});
   }
 }

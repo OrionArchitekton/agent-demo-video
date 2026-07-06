@@ -105,14 +105,13 @@ describe("remote render parity", () => {
     // A transport whose exec (the render step) fails after the dir is created.
     const failing: Transport = {
       describe: () => "failing",
-      mkdirp: async () => void calls.push("mkdirp"),
+      mkdirExclusive: async () => void calls.push("mkdirExclusive"),
       pushDir: async () => void calls.push("pushDir"),
       exec: async () => {
         calls.push("exec");
         throw new Error("[remote-render] ssh exec exited 1: boom");
       },
       capture: async () => "Liberation Sans", // font preflight passes (matches local)
-      exists: async () => false, // work dir does not pre-exist
       pullFile: async () => void calls.push("pullFile"),
       remove: async () => void calls.push("remove"),
     };

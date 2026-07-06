@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { cp, mkdir, rm, stat } from "node:fs/promises";
+import { cp, mkdir, rm } from "node:fs/promises";
 import { dirname } from "node:path";
 
 /**
@@ -10,14 +10,13 @@ import { dirname } from "node:path";
  * rejects loudly, naming the step, so a failure is a clear diagnostic.
  */
 export interface Transport {
-  mkdirp(dir: string): Promise<void>;
+  /** Atomically create the work dir; rejects if it already exists (so cleanup only removes a dir we created). */
+  mkdirExclusive(dir: string): Promise<void>;
   pushDir(localDir: string, remoteDir: string): Promise<void>;
   /** Run a command in the given work dir and return its stdout. */
   exec(cwd: string, cmd: string[]): Promise<string>;
   /** Run a command on the host and return its stdout (used for host preflight checks). */
   capture(cmd: string[]): Promise<string>;
-  /** True if the path already exists on the host. */
-  exists(path: string): Promise<boolean>;
   pullFile(remoteFile: string, localFile: string): Promise<void>;
   remove(dir: string): Promise<void>;
   describe(): string;
@@ -50,8 +49,14 @@ export class LocalTransport implements Transport {
   describe(): string {
     return "local";
   }
-  async mkdirp(dir: string): Promise<void> {
-    await mkdir(dir, { recursive: true });
+  async mkdirExclusive(dir: string): Promise<void> {
+    try {
+      await mkdir(dir); // non-recursive: rejects with EEXIST if it already exists
+    } catch (e: any) {
+      if (e?.code === "EEXIST")
+        throw new Error(`[remote-render] work dir already exists; refusing to reuse it (cleanup would delete it): ${dir}`);
+      throw e;
+    }
   }
   async pushDir(localDir: string, remoteDir: string): Promise<void> {
     await mkdir(remoteDir, { recursive: true });
@@ -62,14 +67,6 @@ export class LocalTransport implements Transport {
   }
   async capture(cmd: string[]): Promise<string> {
     return run(cmd[0]!, cmd.slice(1), `capture ${cmd[0]}`, { capture: true });
-  }
-  async exists(path: string): Promise<boolean> {
-    try {
-      await stat(path);
-      return true;
-    } catch {
-      return false;
-    }
   }
   async pullFile(remoteFile: string, localFile: string): Promise<void> {
     await mkdir(dirname(localFile), { recursive: true });
@@ -88,8 +85,9 @@ export class SshTransport implements Transport {
   describe(): string {
     return `ssh:${this.host}`;
   }
-  async mkdirp(dir: string): Promise<void> {
-    await run("ssh", [...SSH_OPTS, this.host, `mkdir -p ${shQuote(dir)}`], "ssh mkdirp");
+  async mkdirExclusive(dir: string): Promise<void> {
+    // mkdir without -p rejects if the dir already exists (atomic create-and-guard).
+    await run("ssh", [...SSH_OPTS, this.host, `mkdir ${shQuote(dir)}`], "ssh mkdir");
   }
   async pushDir(localDir: string, remoteDir: string): Promise<void> {
     await run("ssh", [...SSH_OPTS, this.host, `mkdir -p ${shQuote(remoteDir)}`], "ssh mkdirp");
@@ -104,13 +102,6 @@ export class SshTransport implements Transport {
   }
   async capture(cmd: string[]): Promise<string> {
     return run("ssh", [...SSH_OPTS, this.host, cmd.map(shQuote).join(" ")], "ssh capture", { capture: true });
-  }
-  async exists(path: string): Promise<boolean> {
-    return new Promise((res) => {
-      const p = spawn("ssh", [...SSH_OPTS, this.host, `test -e ${shQuote(path)}`]);
-      p.on("error", () => res(false));
-      p.on("close", (code) => res(code === 0));
-    });
   }
   async pullFile(remoteFile: string, localFile: string): Promise<void> {
     await mkdir(dirname(localFile), { recursive: true });

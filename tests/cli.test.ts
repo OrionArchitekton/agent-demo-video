@@ -22,8 +22,10 @@ describe("parseCommand --render-host", () => {
   it("still parses the login verb (render host irrelevant)", () => {
     expect(parseCommand(["login", "cfg.json"])).toEqual({ cmd: "login", cfgPath: "cfg.json", renderHost: undefined });
   });
-  it("fails loudly when --render-host has no value (no silent local fallback)", () => {
+  it("fails loudly on a missing or option-like --render-host value (no fallback, no ssh option injection)", () => {
     expect(() => parseCommand(["cfg.json", "--render-host"])).toThrow(/render-host/);
     expect(() => parseCommand(["cfg.json", "--render-host="])).toThrow(/render-host/);
+    expect(() => parseCommand(["cfg.json", "--render-host=-oProxyCommand=x"])).toThrow(/render-host/);
+    expect(() => parseCommand(["cfg.json", "--render-host", "-oProxyCommand=x"])).toThrow(/render-host/);
   });
 });

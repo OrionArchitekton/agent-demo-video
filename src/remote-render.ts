@@ -71,12 +71,10 @@ export async function renderRemote(inputs: RenderInputs, opts: RemoteRenderOpts)
     // (Node < ~22, i.e. the declared node>=18 floor).
     await writeFile(join(stage, "package.json"), JSON.stringify({ type: "module" }), "utf8");
 
-    // Ship -> run -> collect. Refuse a pre-existing work dir so cleanup only ever
-    // removes a directory we created, never a caller's shared or existing dir.
-    if (await opts.transport.exists(opts.workDir)) {
-      throw new Error(`[remote-render] work dir already exists on the host; refusing to reuse it (cleanup would delete it): ${opts.workDir}`);
-    }
-    await opts.transport.mkdirp(opts.workDir);
+    // Ship -> run -> collect. Atomically create the work dir (rejects if it already
+    // exists) so cleanup only ever removes a dir this run created, with no TOCTOU
+    // race between a separate existence check and the create.
+    await opts.transport.mkdirExclusive(opts.workDir);
     workDirCreated = true;
     await opts.transport.pushDir(stage, opts.workDir);
     const stdout = await opts.transport.exec(opts.workDir, ["node", "remote-entry.js"]);

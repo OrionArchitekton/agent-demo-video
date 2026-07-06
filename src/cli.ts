@@ -25,7 +25,8 @@ export function parseCommand(argv: string[]): { cmd: "login" | "run"; cfgPath: s
     }
     if (a.startsWith("--render-host=")) {
       renderHost = a.slice("--render-host=".length);
-      if (!renderHost) throw new Error("--render-host requires a non-empty host argument");
+      if (!renderHost || renderHost.startsWith("-"))
+        throw new Error("--render-host requires a non-empty host argument that does not start with '-'");
       continue;
     }
     positional.push(a);

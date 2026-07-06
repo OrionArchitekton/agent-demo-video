@@ -1,13 +1,26 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { DemoConfig, TtsResult } from "./types";
 import { parseScript } from "./parse-script";
 import { synthShot } from "./tts";
 import { captureShot } from "./capture";
 import { renderVideo, type RenderResult } from "./render";
+import { renderRemote } from "./remote-render";
+import type { Transport } from "./transport";
 
-export async function runPipeline(config: DemoConfig): Promise<RenderResult> {
+export interface RunPipelineOpts {
+  /** Offload the render stage to a remote host over the given transport. Absent = local render (default). */
+  render?: { transport: Transport; bundlePath?: string; workDir?: string };
+}
+
+/** Path to the built remote-render bundle, resolved relative to this module. */
+function defaultBundlePath(): string {
+  return fileURLToPath(new URL("../dist-remote/remote-entry.js", import.meta.url));
+}
+
+export async function runPipeline(config: DemoConfig, opts: RunPipelineOpts = {}): Promise<RenderResult> {
   // 1. Parse script
   const md = readFileSync(config.script, "utf8");
   const manifest = parseScript(md);
@@ -35,7 +48,16 @@ export async function runPipeline(config: DemoConfig): Promise<RenderResult> {
     rawSegments.push(raw);
   }
 
-  // 5-13. Render — extracted to renderVideo so the same code path can run on a
-  //       remote render host (see src/remote-render.ts); local render is the default.
-  return renderVideo({ rawSegments, tts: ttsResults, config });
+  // 5-13. Render — locally by default, or offloaded to a render host (same renderVideo
+  //       code path runs there). A remote failure rejects loudly (no silent local fallback).
+  const inputs = { rawSegments, tts: ttsResults, config };
+  if (opts.render) {
+    const bundlePath = opts.render.bundlePath ?? defaultBundlePath();
+    if (!existsSync(bundlePath)) {
+      throw new Error(`[agent-demo-video] remote render bundle not found at ${bundlePath}; run \`pnpm build:remote-entry\` first.`);
+    }
+    const workDir = opts.render.workDir ?? `/tmp/agent-demo-video-render-${Date.now()}-${process.pid}`;
+    return renderRemote(inputs, { transport: opts.render.transport, bundlePath, workDir, outPath: join(out, "final.mp4") });
+  }
+  return renderVideo(inputs);
 }

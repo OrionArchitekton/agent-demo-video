@@ -65,7 +65,8 @@ describe("remote render parity", () => {
       outPath: remoteOut,
     });
 
-    expect(returned).toBe(remoteOut);
+    expect(returned.outPath).toBe(remoteOut);
+    expect(returned.report.segments).toBe(2);
     expect(existsSync(remoteOut)).toBe(true);
 
     const eq = await assertEquivalent(local.outPath, remoteOut);

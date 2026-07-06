@@ -1,7 +1,7 @@
 import { cp, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { RenderInputs } from "./render";
+import type { RenderInputs, RenderResult } from "./render";
 import { buildManifest } from "./manifest";
 import { LocalTransport, type Transport } from "./transport";
 
@@ -47,7 +47,7 @@ async function assertFontParity(transport: Transport, font: string): Promise<voi
  * host, and the final.mp4 is retrieved. Any step failure rejects loudly; the
  * original inputs are never touched, so a local render remains a safe fallback.
  */
-export async function renderRemote(inputs: RenderInputs, opts: RemoteRenderOpts): Promise<string> {
+export async function renderRemote(inputs: RenderInputs, opts: RemoteRenderOpts): Promise<RenderResult> {
   const ownsStage = !opts.stageDir;
   const stage = opts.stageDir ?? (await mkdtemp(join(tmpdir(), "adv-stage-")));
   try {
@@ -68,13 +68,17 @@ export async function renderRemote(inputs: RenderInputs, opts: RemoteRenderOpts)
     // Ship -> run -> collect.
     await opts.transport.mkdirp(opts.workDir);
     await opts.transport.pushDir(stage, opts.workDir);
-    await opts.transport.exec(opts.workDir, ["node", "remote-entry.js"]);
+    const stdout = await opts.transport.exec(opts.workDir, ["node", "remote-entry.js"]);
     await opts.transport.pullFile(join(opts.workDir, "out", "final.mp4"), opts.outPath);
     // Best-effort remote cleanup; log (do not swallow) so a leaked work dir is traceable.
     await opts.transport.remove(opts.workDir).catch((e) =>
       console.warn(`[remote-render] could not remove remote work dir ${opts.workDir}: ${String((e && e.message) || e)}`),
     );
-    return opts.outPath;
+    // The bundle prints its RenderResult as the last stdout line; the report is
+    // computed on the host, so surface it with the local output path.
+    const line = stdout.trim().split("\n").filter(Boolean).pop() ?? "{}";
+    const remote = JSON.parse(line) as RenderResult;
+    return { outPath: opts.outPath, report: remote.report };
   } finally {
     if (ownsStage) await rm(stage, { recursive: true, force: true }).catch(() => {});
   }

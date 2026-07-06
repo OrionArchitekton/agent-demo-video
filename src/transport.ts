@@ -12,7 +12,8 @@ import { dirname } from "node:path";
 export interface Transport {
   mkdirp(dir: string): Promise<void>;
   pushDir(localDir: string, remoteDir: string): Promise<void>;
-  exec(cwd: string, cmd: string[]): Promise<void>;
+  /** Run a command in the given work dir and return its stdout. */
+  exec(cwd: string, cmd: string[]): Promise<string>;
   /** Run a command on the host and return its stdout (used for host preflight checks). */
   capture(cmd: string[]): Promise<string>;
   pullFile(remoteFile: string, localFile: string): Promise<void>;
@@ -54,8 +55,8 @@ export class LocalTransport implements Transport {
     await mkdir(remoteDir, { recursive: true });
     await cp(localDir, remoteDir, { recursive: true });
   }
-  async exec(cwd: string, cmd: string[]): Promise<void> {
-    await run(cmd[0]!, cmd.slice(1), `exec ${cmd[0]}`, { cwd });
+  async exec(cwd: string, cmd: string[]): Promise<string> {
+    return run(cmd[0]!, cmd.slice(1), `exec ${cmd[0]}`, { cwd, capture: true });
   }
   async capture(cmd: string[]): Promise<string> {
     return run(cmd[0]!, cmd.slice(1), `capture ${cmd[0]}`, { capture: true });
@@ -86,8 +87,10 @@ export class SshTransport implements Transport {
     // to protect it from remote-shell word-splitting instead of manual quoting.
     await run("rsync", ["-a", "-s", "-e", rsyncSsh, `${localDir}/`, `${this.host}:${remoteDir}/`], "rsync push");
   }
-  async exec(cwd: string, cmd: string[]): Promise<void> {
-    await run("ssh", [...SSH_OPTS, this.host, `cd ${shQuote(cwd)} && ${cmd.map(shQuote).join(" ")}`], "ssh exec");
+  async exec(cwd: string, cmd: string[]): Promise<string> {
+    return run("ssh", [...SSH_OPTS, this.host, `cd ${shQuote(cwd)} && ${cmd.map(shQuote).join(" ")}`], "ssh exec", {
+      capture: true,
+    });
   }
   async capture(cmd: string[]): Promise<string> {
     return run("ssh", [...SSH_OPTS, this.host, cmd.map(shQuote).join(" ")], "ssh capture", { capture: true });

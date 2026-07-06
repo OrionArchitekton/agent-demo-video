@@ -20,6 +20,7 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "build": "tsup src/cli.ts --format esm --target node18 --clean",
+    "build:remote-entry": "tsup scripts/remote-entry.ts --format esm --target node18 --out-dir dist-remote --clean",
     "prepack": "pnpm run build",
     "demo": "tsx src/cli.ts"
   },

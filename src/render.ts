@@ -55,9 +55,10 @@ export async function renderVideo(inputs: RenderInputs): Promise<RenderResult> {
   const out = resolve(config.out);
   const audioDir = join(out, "audio");
   const segDir = join(out, "seg");
-  // seg/ and audio/ already hold the inputs; ensure out/ exists for our outputs
-  // (necessary on a remote host that only received seg/ + audio/).
-  await mkdir(out, { recursive: true });
+  // Ensure our output dirs exist. In the local pipeline these are pre-created by
+  // step 2; on a remote host renderVideo may be the first to write here.
+  await mkdir(segDir, { recursive: true });
+  await mkdir(audioDir, { recursive: true });
 
   // 5. Normalize each raw segment to a uniformly-encoded mp4
   const segMp4s: string[] = [];

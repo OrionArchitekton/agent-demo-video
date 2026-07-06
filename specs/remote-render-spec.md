@@ -5,10 +5,14 @@
 Add the ability to run the demo-video **render stage** (the CPU-bound ffmpeg
 assembly: normalize, concat, mux, caption burn-in) on a **remote render host**
 reached over SSH, instead of on the local workstation. This first slice is a
-**standalone, generic proof**: it does not modify the existing capture/render
-pipeline (`src/pipeline.ts`) and does not change default behavior. The render
-host is a runtime parameter (any `user@host`, including `localhost`); nothing in
-the code is specific to any one machine or network.
+**standalone, generic proof**. It extracts the render stage into a reusable
+`renderVideo(inputs)` (`src/render.ts`) and rewires `src/pipeline.ts` to call it
+- a behavior-preserving refactor, so default `pnpm demo` output is unchanged -
+then adds a remote runner that offloads `renderVideo()` to a render host. It does
+NOT add a `--render-host` flag to the pipeline; the pipeline still renders
+locally by default. The render host is a runtime parameter of the standalone
+runner (any `user@host`, including `localhost`); nothing in the code is specific
+to any one machine or network.
 
 Motivation: the render stage is pure CPU (libx264 + libass) and is cleanly
 separable from the Playwright capture stage (which needs a browser and the

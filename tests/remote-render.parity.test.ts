@@ -96,6 +96,7 @@ describe("remote render parity", () => {
     ).rejects.toThrow(/\[remote-render\]/); // every step throws a named [remote-render] error
 
     expect(hashInputs(inputs)).toEqual(before); // inputs byte-identical, not just same size
+    expect(existsSync(join(base, "final.mp4"))).toBe(false); // no output produced on failure
   }, 60000);
 
   it("cleans up the remote work dir even when the render step fails (no leaked captured media)", async () => {

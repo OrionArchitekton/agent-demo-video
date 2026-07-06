@@ -19,5 +19,7 @@ async function main(): Promise<void> {
 
 main().catch((e) => {
   console.error(String((e && e.stack) || e));
-  process.exit(1);
+  // Set exitCode (do not process.exit) so stderr flushes before exit; the caller
+  // captures this output over ssh and would otherwise lose a truncated message.
+  process.exitCode = 1;
 });

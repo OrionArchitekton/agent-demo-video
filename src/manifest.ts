@@ -1,11 +1,13 @@
-import { basename, join } from "node:path";
+import { extname, join } from "node:path";
 import type { Alignment } from "./types";
 import type { RenderInputs, RenderConfig } from "./render";
 
 /**
  * The portable, host-independent form of RenderInputs. File references are
- * reduced to basenames (the actual bytes travel alongside under seg/ and
- * audio/); all render-affecting metadata (durations, caption alignment,
+ * renamed to INDEX-based basenames (seg_<i>.<ext> / aud_<i>.<ext>) so two
+ * distinct source files that happen to share a basename cannot collide when
+ * staged flat on the render host; the actual bytes travel alongside under seg/
+ * and audio/. All render-affecting metadata (durations, caption alignment,
  * resolution/fps/theme) travels inline. `out` is deliberately omitted: it is
  * reconstructed relative to the loading host's base dir.
  */
@@ -17,9 +19,9 @@ export interface RenderManifest {
 
 export function buildManifest(inputs: RenderInputs): RenderManifest {
   return {
-    segments: inputs.rawSegments.map((p) => basename(p)),
-    audio: inputs.tts.map((t) => ({
-      file: basename(t.audioPath),
+    segments: inputs.rawSegments.map((p, i) => `seg_${i}${extname(p)}`),
+    audio: inputs.tts.map((t, i) => ({
+      file: `aud_${i}${extname(t.audioPath)}`,
       durationSec: t.durationSec,
       alignment: t.alignment,
       shotId: t.shotId,

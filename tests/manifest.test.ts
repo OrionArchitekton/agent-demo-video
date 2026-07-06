@@ -51,14 +51,14 @@ describe("render manifest", () => {
     expect(loaded.config.fps).toBe(30);
     expect(loaded.config.theme).toEqual(inputs.config.theme);
 
-    // file references relocated under the new base dir, basenames intact
+    // file references relocated under the new base dir with index-based names
     expect(loaded.rawSegments).toEqual([
-      join(base, "seg", "raw_0.webm"),
-      join(base, "seg", "raw_1.webm"),
+      join(base, "seg", "seg_0.webm"),
+      join(base, "seg", "seg_1.webm"),
     ]);
     expect(loaded.tts.map((t) => t.audioPath)).toEqual([
-      join(base, "audio", "one.mp3"),
-      join(base, "audio", "two.mp3"),
+      join(base, "audio", "aud_0.mp3"),
+      join(base, "audio", "aud_1.mp3"),
     ]);
     expect(loaded.config.out).toBe(join(base, "out"));
   });
@@ -66,5 +66,27 @@ describe("render manifest", () => {
   it("serializes to JSON that carries no absolute local paths (host-independent)", () => {
     const json = JSON.stringify(buildManifest(sampleInputs()));
     expect(json).not.toContain("/local/work");
+  });
+
+  it("keeps two source files with the same basename distinct (no remote collision)", () => {
+    const inputs: RenderInputs = {
+      rawSegments: ["/clips/a/intro.mp4", "/clips/b/intro.mp4"],
+      tts: [
+        { shotId: "a", audioPath: "/x/v.mp3", durationSec: 1, alignment: { chars: [], startSec: [], endSec: [] } },
+        { shotId: "b", audioPath: "/y/v.mp3", durationSec: 1, alignment: { chars: [], startSec: [], endSec: [] } },
+      ],
+      config: {
+        resolution: { width: 320, height: 240 },
+        fps: 15,
+        theme: { captionFont: "Liberation Sans", captionSize: 24, cursor: true, captionBox: true, captionMarginV: 20 },
+        out: "/o",
+      },
+    };
+    const m = buildManifest(inputs);
+    expect(new Set(m.segments).size).toBe(2);
+    expect(new Set(m.audio.map((a) => a.file)).size).toBe(2);
+    const loaded = loadManifest(m, "/base");
+    expect(new Set(loaded.rawSegments).size).toBe(2);
+    expect(new Set(loaded.tts.map((t) => t.audioPath)).size).toBe(2);
   });
 });

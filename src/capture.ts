@@ -12,8 +12,11 @@
  */
 
 import { chromium, type Page } from "playwright";
-import { mkdir } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
+import { join } from "node:path";
+import { frameDurations, framesConcatContent } from "./screencast.js";
+import { ffmpeg, framesEncodeArgs } from "./ffmpeg.js";
 import {
   overlayInitScript,
   moveCursorExpr,
@@ -93,6 +96,69 @@ async function runActions(
   }
 }
 
+/**
+ * Record `run()` via the screencast engine: CDP JPEG frames are written to a
+ * per-shot frames dir as they arrive, then assembled with their per-frame
+ * timestamps into an H.264 segment. The last frame's duration runs to the stop
+ * instant, measured as (last CDP timestamp + wall-clock elapsed since that
+ * frame arrived) so all durations live on the capture clock. Fails closed on a
+ * frameless capture — never falls back to another engine.
+ */
+async function recordWithScreencast(
+  page: Page,
+  shotId: string,
+  config: DemoConfig,
+  outDir: string,
+  run: () => Promise<void>,
+): Promise<string> {
+  const framesDir = join(outDir, `frames_${shotId}`);
+  await mkdir(framesDir, { recursive: true });
+
+  const files: string[] = [];
+  const timestamps: number[] = [];
+  const writes: Promise<void>[] = [];
+  let lastFrameWallMs = 0;
+  let index = 0;
+
+  await page.screencast.start({
+    size: config.resolution,
+    quality: config.capture.screencastQuality,
+    onFrame: (frame) => {
+      const file = join(framesDir, `f_${String(index++).padStart(6, "0")}.jpg`);
+      files.push(file);
+      timestamps.push(frame.timestamp);
+      lastFrameWallMs = Date.now();
+      writes.push(writeFile(file, frame.data));
+    },
+  });
+
+  try {
+    await run();
+  } finally {
+    const tailSec = lastFrameWallMs > 0 ? (Date.now() - lastFrameWallMs) / 1000 : 0;
+    await page.screencast.stop();
+    await Promise.all(writes);
+    if (files.length > 0) {
+      const stopTs = timestamps[timestamps.length - 1]! + tailSec;
+      const listPath = join(framesDir, "frames.txt");
+      await writeFile(listPath, framesConcatContent(files, frameDurations(timestamps, stopTs)), "utf8");
+    }
+  }
+
+  if (files.length === 0) {
+    throw new Error(`shot ${shotId}: screencast captured no frames (engine "screencast" fails closed; set capture.engine to "recordvideo" to use the legacy path)`);
+  }
+  const segPath = join(outDir, `shot_${shotId}.mp4`);
+  await ffmpeg(
+    framesEncodeArgs(join(framesDir, "frames.txt"), segPath, {
+      width: config.resolution.width,
+      height: config.resolution.height,
+      fps: config.fps,
+    }),
+  );
+  return segPath;
+}
+
 /** Dwell: pad remaining time to honour the declared shot duration. */
 async function dwell(page: Page, durationSec: number, startMs: number): Promise<void> {
   const remainMs = Math.max(0, durationSec * 1000 - (Date.now() - startMs));
@@ -128,23 +194,39 @@ export async function captureShot(
   } catch {
     browser = await chromium.launch({ headless: true, channel: "chrome" });
   }
+  const useScreencast = config.capture.engine === "screencast";
   const context = await browser.newContext({
     viewport: config.resolution,
-    recordVideo: { dir: outDir, size: config.resolution },
+    ...(useScreencast ? {} : { recordVideo: { dir: outDir, size: config.resolution } }),
   });
   await context.addInitScript(overlayInitScript());
   if (config.captureCss) await context.addInitScript(cssInjectScript(config.captureCss));
   const page = await context.newPage();
 
-  const startMs = Date.now();
-  await runActions(page, shot, config);
-  await dwell(page, timelineEntry.durationSec, startMs);
+  try {
+    if (useScreencast) {
+      return await recordWithScreencast(page, shot.id, config, outDir, async () => {
+        const startMs = Date.now();
+        await runActions(page, shot, config);
+        await dwell(page, timelineEntry.durationSec, startMs);
+      });
+    }
 
-  const video = page.video();
-  await context.close();
-  await browser.close();
-  if (!video) throw new Error(`no video recorded for shot ${shot.id}`);
-  return await video.path();
+    const startMs = Date.now();
+    await runActions(page, shot, config);
+    await dwell(page, timelineEntry.durationSec, startMs);
+
+    const video = page.video();
+    await context.close();
+    await browser.close();
+    if (!video) throw new Error(`no video recorded for shot ${shot.id}`);
+    return await video.path();
+  } finally {
+    // Screencast path (and any failure) still releases the browser; the legacy
+    // path above already closed it, making these no-ops.
+    try { await context.close(); } catch { /* already closed */ }
+    try { await browser.close(); } catch { /* already closed */ }
+  }
 }
 
 /** Record a `live` shot against the saved auth profile (headless persistent context). */
@@ -188,9 +270,10 @@ async function captureLiveShot(
 
   // Persistent context = the single-instance profile lock; capture is sequential
   // (pipeline records one shot at a time), so this never races a sibling.
+  const useScreencast = config.capture.engine === "screencast";
   const context = await chromium.launchPersistentContext(profileDir, {
     viewport: config.resolution,
-    recordVideo: { dir: outDir, size: config.resolution },
+    ...(useScreencast ? {} : { recordVideo: { dir: outDir, size: config.resolution } }),
     headless: true,
   });
   try {
@@ -198,16 +281,25 @@ async function captureLiveShot(
     if (config.captureCss) await context.addInitScript(cssInjectScript(config.captureCss));
     const page = context.pages()[0] ?? (await context.newPage());
 
-    const startMs = Date.now();
     // The first action is guaranteed to be a `goto` (validated above) and the guard runs
     // after EVERY navigation — so the expiry check fires before any click/type and a shot
     // that navigates more than once is re-checked on each goto. Never records or
     // side-effects against a logged-out page. Fails closed.
-    await runActions(page, shot, config, async () => {
-      await assertAuthed(page, shot, auth.loggedInSelector);
-    });
-    await dwell(page, timelineEntry.durationSec, startMs);
+    const runShot = async () => {
+      const startMs = Date.now();
+      await runActions(page, shot, config, async () => {
+        await assertAuthed(page, shot, auth.loggedInSelector);
+      });
+      await dwell(page, timelineEntry.durationSec, startMs);
+    };
 
+    if (useScreencast) {
+      const seg = await recordWithScreencast(page, shot.id, config, outDir, runShot);
+      await context.close();
+      return seg;
+    }
+
+    await runShot();
     const video = page.video();
     // Read the video path BEFORE close (close flushes/finalises the WebM).
     await context.close();

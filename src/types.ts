@@ -52,6 +52,14 @@ export const DemoConfigSchema = z.object({
   // AT REST, so profileDir is resolved to an absolute, outside-the-repo path in
   // loadConfig (default ~/.cache/agent-demo-video) — never committed.
   capture: z.object({
+    // Capture engine. "screencast" (default) assembles CDP JPEG frames with
+    // per-frame timestamps into H.264 directly (crisp text, deterministic
+    // timing). "recordvideo" is the legacy Playwright recordVideo path
+    // (VP8 webm intermediate), kept as an explicit escape hatch. A screencast
+    // failure is an error, never a silent fallback to the other engine.
+    engine: z.enum(["screencast", "recordvideo"]).default("screencast"),
+    // JPEG quality (1-100) for screencast frames before H.264 encode.
+    screencastQuality: z.number().min(1).max(100).default(90),
     auth: z.object({
       profileDir: z.string().optional(),
       loginUrl: z.string(),

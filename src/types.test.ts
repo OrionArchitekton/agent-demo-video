@@ -22,9 +22,10 @@ describe("schemas", () => {
     const m = { shots: [{ id: "s1", target: "live", narration: "x", actions: [{ kind: "goto", url: "/" }] }] };
     expect(ManifestSchema.parse(m).shots[0]!.target).toBe("live");
   });
-  it("defaults capture to {} so old configs still validate, and accepts an optional capture.auth", () => {
+  it("defaults capture so old configs still validate (screencast engine), and accepts an optional capture.auth", () => {
     const old = DemoConfigSchema.parse({ script: "DEMO.md", dashboardBaseUrl: "http://x" });
-    expect(old.capture).toEqual({});
+    expect(old.capture).toEqual({ engine: "screencast", screencastQuality: 90 });
+    expect(old.capture.auth).toBeUndefined();
     const withAuth = DemoConfigSchema.parse({ script: "DEMO.md", dashboardBaseUrl: "http://x", capture: { auth: { loginUrl: "https://app/login" } } });
     expect(withAuth.capture.auth?.loginUrl).toBe("https://app/login");
     expect(withAuth.capture.auth?.confirmMode).toBe("operator");

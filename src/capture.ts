@@ -114,7 +114,22 @@ async function runActions(
         const loc = page.locator(a.selector);
         await loc.scrollIntoViewIfNeeded();
         recordEvent(recorder, "type", await loc.boundingBox());
-        await loc.pressSequentially(a.text ?? "", { delay: 60 });
+        // Native action titles render the action's text on screen; for a type
+        // action that would put the typed string (potentially a credential on
+        // a live shot) INTO the video. Hide decorations while typing.
+        if (mode === "native") await page.screencast.hideActions();
+        try {
+          await loc.pressSequentially(a.text ?? "", { delay: 60 });
+        } finally {
+          if (mode === "native") {
+            await page.screencast.showActions({
+              cursor: "pointer",
+              duration: config.theme.annotations.durationMs,
+              fontSize: config.theme.annotations.fontSize,
+              position: config.theme.annotations.position,
+            });
+          }
+        }
         break;
       }
       case "hover":
@@ -255,27 +270,27 @@ async function recordWithScreencast(
     throw new Error(`shot ${shotId}: screencast captured no frames (engine "screencast" fails closed; set capture.engine to "recordvideo" to use the legacy path)`);
   }
 
-  // Persist the interaction event timeline (bounds + capture-relative offsets)
-  // as a per-shot artifact; it drives zoom-on-action and is reviewable after.
-  await writeFile(join(outDir, `events_${shotId}.json`), JSON.stringify(recorder.events, null, 2), "utf8");
-
-  const durationSec = Math.max(MIN_SEGMENT_SEC, capturedDurationSec);
-  const m = config.motion;
-  const motionVf = m.zoomOnAction
-    ? zoomFilterExpr(recorder.events, {
-        width: config.resolution.width,
-        height: config.resolution.height,
-        fps: config.fps,
-        durationSec,
-        zoom: m.zoomLevel,
-        inSec: m.zoomInMs / 1000,
-        holdSec: m.zoomHoldMs / 1000,
-        outSec: m.zoomOutMs / 1000,
-      })
-    : undefined;
-
   const segPath = join(outDir, `shot_${shotId}.mp4`);
   try {
+    // Persist the interaction event timeline (bounds + capture-relative offsets)
+    // as a per-shot artifact; it drives zoom-on-action and is reviewable after.
+    await writeFile(join(outDir, `events_${shotId}.json`), JSON.stringify(recorder.events, null, 2), "utf8");
+
+    const durationSec = Math.max(MIN_SEGMENT_SEC, capturedDurationSec);
+    const m = config.motion;
+    const motionVf = m.zoomOnAction
+      ? zoomFilterExpr(recorder.events, {
+          width: config.resolution.width,
+          height: config.resolution.height,
+          fps: config.fps,
+          durationSec,
+          zoom: m.zoomLevel,
+          inSec: m.zoomInMs / 1000,
+          holdSec: m.zoomHoldMs / 1000,
+          outSec: m.zoomOutMs / 1000,
+        })
+      : undefined;
+
     await ffmpeg(
       framesEncodeArgs(join(framesDir, "frames.txt"), segPath, {
         width: config.resolution.width,
@@ -286,7 +301,8 @@ async function recordWithScreencast(
     );
   } finally {
     // The mp4 is the artifact; the raw frames (potentially screenshots of an
-    // authenticated app) do not stay at rest either way.
+    // authenticated app) do not stay at rest on ANY exit from this point on,
+    // including a failed events-json write or a failed encode.
     await rm(framesDir, { recursive: true, force: true }).catch(() => {});
   }
   return segPath;

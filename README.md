@@ -28,9 +28,13 @@ DEMO_SCRIPT.md
       ▼
 1. parseScript       — parse shots + actions from Markdown
 2. TTS (ElevenLabs)  — synthShot per shot → audio + per-char alignment
-3. Playwright capture— captureShot per shot: headless Chromium recordVideo,
-                       injected fake cursor/overlays, dwell = narration duration
-4. ffmpeg normalize  — re-encode each WebM segment to uniform MP4 (res/fps)
+3. Playwright capture— captureShot per shot: headless Chromium screencast
+                       (CDP JPEG frames + per-frame timestamps), native
+                       animated cursor + action annotations + chapter cards,
+                       zoom-on-action camera motion, dwell = narration duration
+4. ffmpeg normalize  — encode frames straight to H.264 (per-frame durations
+                       from capture timestamps), uniform res/fps, soft fade-in
+                       between segments
 5. build timeline    — measure probe durations → assemble startSec offsets
 6. captions.srt      — per-char alignment → word-timed SRT
 7. pad audio         — silence-pad each audio track to match video segment
@@ -38,6 +42,32 @@ DEMO_SCRIPT.md
 9. burn captions     — subtitles filter burned into final.mp4
 10. parity verify    — shotCount / videoSegments / audioSec / videoSec / maxSec
 ```
+
+### Capture engines
+
+The default engine is **screencast**: CDP JPEG frames are captured with their
+timestamps and assembled into H.264 directly, so text stays crisp (no VP8
+intermediate) and the frame timeline is deterministic (each frame's display
+time comes from its capture timestamp, which keeps narration and captions in
+sync by construction). It also enables the native liveliness features:
+
+- **Animated cursor + action annotations** (`theme.annotations`, on by
+  default): a pointer travels from action to action, interacted elements are
+  visibly annotated, and `chapter` actions render as centered title cards.
+- **Zoom-on-action** (`motion.zoomOnAction`, on by default): the camera eases
+  toward each clicked/typed/highlighted element and back out, driven by the
+  interaction event timeline persisted as `events_<shot>.json`.
+- **Soft transitions** (`theme.fadeInMs`, default 250): each segment after the
+  first opens with a brief fade-in instead of a hard cut.
+- **Smooth scrolling**: `action: scroll selector="#target"` (or `y=800`)
+  glides instead of jumping.
+
+Set `capture.engine: "recordvideo"` to fall back to the legacy Playwright
+recordVideo path (VP8 WebM intermediate, injected overlay cursor). A
+screencast failure is an error, never a silent engine fallback.
+
+A hermetic end-to-end check lives at `demos/smoke/` (a local `file://` fixture
+page): `FAKE_TTS=1 pnpm demo demos/smoke/demo.config.json`.
 
 Third-party / auth-walled surfaces have two options: drive them **live** behind a real login with `target: live` (a saved Playwright profile — see [Authenticated SaaS capture](#authenticated-saas-capture-target-live)), or, for surfaces you cannot or prefer not to automate, `target: prebaked`: supply a pre-captured clip file and the pipeline splices it in at the right point.
 

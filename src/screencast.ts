@@ -29,6 +29,21 @@ export function frameDurations(timestamps: number[], stopTs: number): number[] {
 }
 
 /**
+ * Which cursor rendering path is active. Exactly one is ever visible:
+ * Playwright's native showActions cursor when the screencast engine runs with
+ * annotations enabled; otherwise the legacy injected overlay cursor per
+ * theme.cursor; otherwise none. Prevents the double-cursor failure mode.
+ */
+export function cursorMode(
+  engine: "screencast" | "recordvideo",
+  annotationsEnabled: boolean,
+  themeCursor: boolean,
+): "native" | "overlay" | "none" {
+  if (engine === "screencast" && annotationsEnabled) return "native";
+  return themeCursor ? "overlay" : "none";
+}
+
+/**
  * Concat-demuxer list content for an image sequence with explicit durations.
  * The demuxer ignores the duration directive after the final entry, so the last
  * file is listed once more to make its duration bind.

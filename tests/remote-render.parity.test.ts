@@ -44,7 +44,14 @@ async function makeInputs(dir: string): Promise<RenderInputs> {
     config: {
       resolution: { width: 320, height: 240 },
       fps: 15,
-      theme: { captionFont: "Liberation Sans", captionSize: 24, cursor: true, captionBox: true, captionMarginV: 20 },
+      theme: {
+        captionFont: "Liberation Sans",
+        captionSize: 24,
+        cursor: true,
+        captionBox: true,
+        captionMarginV: 20,
+        annotations: { enabled: true, durationMs: 500, fontSize: 24, position: "top-right" as const },
+      },
       out: dir,
     },
   };

@@ -44,6 +44,15 @@ export const DemoConfigSchema = z.object({
     cursor: z.boolean().default(true),
     captionBox: z.boolean().default(true),
     captionMarginV: z.number().default(20),
+    // Native screencast action annotations (animated cursor between actions,
+    // interacted-element highlight, action title). Active only under the
+    // screencast engine; suppresses the legacy overlay cursor (see cursorMode).
+    annotations: z.object({
+      enabled: z.boolean().default(true),
+      durationMs: z.number().default(500),
+      fontSize: z.number().default(24),
+      position: z.enum(["top-left", "top", "top-right", "bottom-left", "bottom", "bottom-right"]).default("top-right"),
+    }).default({}),
   }).default({}),
   clipsDir: z.string().default("clips/prebaked"),
   // Auth-walled SaaS live capture (target: "live"). The whole section is optional so

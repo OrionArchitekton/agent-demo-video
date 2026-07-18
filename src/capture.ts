@@ -15,7 +15,7 @@ import { chromium, type Page } from "playwright";
 import { mkdir, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { frameDurations, framesConcatContent } from "./screencast.js";
+import { frameDurations, framesConcatContent, cursorMode } from "./screencast.js";
 import { ffmpeg, framesEncodeArgs } from "./ffmpeg.js";
 import {
   overlayInitScript,
@@ -51,6 +51,7 @@ async function runActions(
   config: DemoConfig,
   onGoto?: () => Promise<void>,
 ): Promise<void> {
+  const mode = cursorMode(config.capture.engine, config.theme.annotations.enabled, config.theme.cursor);
   for (const a of shot.actions) {
     switch (a.kind) {
       case "goto":
@@ -58,18 +59,25 @@ async function runActions(
         if (onGoto) await onGoto();
         break;
       case "chapter":
-        await page.evaluate(chapterExpr(a.label ?? a.text ?? ""));
-        await page.waitForTimeout(800);
+        if (mode === "native") {
+          await page.screencast.showChapter(a.label ?? a.text ?? "");
+          await page.waitForTimeout(2000);
+        } else {
+          await page.evaluate(chapterExpr(a.label ?? a.text ?? ""));
+          await page.waitForTimeout(800);
+        }
         break;
       case "click": {
         if (!a.selector) throw new Error(`shot ${shot.id}: click action missing selector`);
         const box = await page.locator(a.selector).boundingBox();
         if (!box) throw new Error(`shot ${shot.id}: selector not found or has no bounding box: ${a.selector}`);
-        const cx = Math.round(box.x + box.width / 2);
-        const cy = Math.round(box.y + box.height / 2);
-        await page.evaluate(moveCursorExpr(cx, cy));
-        await page.waitForTimeout(300);
-        await page.evaluate(clickExpr());
+        if (mode === "overlay") {
+          const cx = Math.round(box.x + box.width / 2);
+          const cy = Math.round(box.y + box.height / 2);
+          await page.evaluate(moveCursorExpr(cx, cy));
+          await page.waitForTimeout(300);
+          await page.evaluate(clickExpr());
+        }
         await page.click(a.selector);
         break;
       }
@@ -119,6 +127,16 @@ async function recordWithScreencast(
   const writes: Promise<void>[] = [];
   let lastFrameWallMs = 0;
   let index = 0;
+
+  const ann = config.theme.annotations;
+  if (cursorMode(config.capture.engine, ann.enabled, config.theme.cursor) === "native") {
+    await page.screencast.showActions({
+      cursor: "pointer",
+      duration: ann.durationMs,
+      fontSize: ann.fontSize,
+      position: ann.position,
+    });
+  }
 
   await page.screencast.start({
     size: config.resolution,

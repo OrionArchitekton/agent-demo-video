@@ -45,3 +45,15 @@ describe("framesConcatContent", () => {
     expect(() => framesConcatContent([], [])).toThrow(/no frames/i);
   });
 });
+
+describe("cursorMode", () => {
+  it("routes to exactly one cursor path: native under screencast+annotations, overlay otherwise per theme.cursor", async () => {
+    const { cursorMode } = await import("./screencast");
+    expect(cursorMode("screencast", true, true)).toBe("native");
+    expect(cursorMode("screencast", true, false)).toBe("native");
+    expect(cursorMode("screencast", false, true)).toBe("overlay");
+    expect(cursorMode("recordvideo", true, true)).toBe("overlay");
+    expect(cursorMode("recordvideo", true, false)).toBe("none");
+    expect(cursorMode("screencast", false, false)).toBe("none");
+  });
+});

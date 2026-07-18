@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import { ZodError } from "zod";
 import { DemoConfigSchema } from "./types";
 import type { DemoConfig } from "./types";
@@ -9,6 +10,11 @@ export function loadConfig(path: string): DemoConfig {
   const parsed = JSON.parse(raw);
   try {
     const cfg = DemoConfigSchema.parse(parsed);
+    // A "./"-relative base resolves against the config file's directory into a
+    // file:// URL, so a hermetic fixture demo runs identically from any cwd.
+    if (cfg.dashboardBaseUrl.startsWith("./") || cfg.dashboardBaseUrl === ".") {
+      cfg.dashboardBaseUrl = `file://${resolve(join(dirname(resolve(path)), cfg.dashboardBaseUrl))}`;
+    }
     // Pin the auth profile to an absolute, outside-the-repo path (secrets at rest).
     if (cfg.capture.auth) {
       cfg.capture.auth.profileDir = resolveProfileDir(cfg.capture.auth.profileDir, cfg.capture.auth.loginUrl);

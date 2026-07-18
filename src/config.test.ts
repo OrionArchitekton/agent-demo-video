@@ -39,3 +39,17 @@ describe("loadConfig", () => {
     expect(cfg.capture.auth).toBeUndefined();
   });
 });
+
+describe("relative dashboardBaseUrl", () => {
+  it("resolves a ./ base against the config file's directory as a file:// URL", async () => {
+    const { mkdtempSync, writeFileSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const { loadConfig } = await import("./config");
+    const dir = mkdtempSync(join(tmpdir(), "adv-cfg-"));
+    const p = join(dir, "demo.config.json");
+    writeFileSync(p, JSON.stringify({ script: "DEMO.md", dashboardBaseUrl: "./site" }));
+    const cfg = loadConfig(p);
+    expect(cfg.dashboardBaseUrl).toBe(`file://${join(dir, "site")}`);
+  });
+});

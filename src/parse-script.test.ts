@@ -24,3 +24,18 @@ describe("parseScript", () => {
     expect(m.shots[1]!.actions[0]).toMatchObject({ kind: "click", selector: "#degraded" });
   });
 });
+
+describe("scroll action", () => {
+  it("parses scroll with a selector and scroll with a y offset", async () => {
+    const { parseScript } = await import("./parse-script");
+    const md = [
+      "### SHOT s1",
+      "- narration: n",
+      '- action: scroll selector="#target"',
+      "- action: scroll y=500",
+    ].join("\n");
+    const m = parseScript(md);
+    expect(m.shots[0]!.actions[0]).toMatchObject({ kind: "scroll", selector: "#target" });
+    expect(m.shots[0]!.actions[1]).toMatchObject({ kind: "scroll", y: 500 });
+  });
+});

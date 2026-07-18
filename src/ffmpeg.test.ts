@@ -60,3 +60,18 @@ describe("ffmpeg arg builders", () => {
     expect(a[a.length - 1]).toBe("ext.mp4");
   });
 });
+
+describe("normalizeArgs fade-in", () => {
+  it("appends a fade-in filter when fadeInSec is set, without changing segment duration semantics", async () => {
+    const { normalizeArgs } = await import("./ffmpeg");
+    const args = normalizeArgs("in.webm", "out.mp4", { width: 1920, height: 1080, fps: 30, fadeInSec: 0.25 });
+    const vf = args[args.indexOf("-vf") + 1]!;
+    expect(vf).toContain("fade=t=in:st=0:d=0.25");
+  });
+  it("emits the exact legacy chain when fadeInSec is absent (backward compatible)", async () => {
+    const { normalizeArgs } = await import("./ffmpeg");
+    const args = normalizeArgs("in.webm", "out.mp4", { width: 1920, height: 1080, fps: 30 });
+    const vf = args[args.indexOf("-vf") + 1]!;
+    expect(vf).toBe("scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,fps=30,format=yuv420p");
+  });
+});

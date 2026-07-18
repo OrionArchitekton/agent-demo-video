@@ -69,6 +69,9 @@ export async function renderVideo(inputs: RenderInputs): Promise<RenderResult> {
         width: config.resolution.width,
         height: config.resolution.height,
         fps: config.fps,
+        // Soft transition: every segment after the first opens with a brief
+        // fade-in. Purely visual; duration and segment count are unchanged.
+        ...(i > 0 && config.theme.fadeInMs > 0 ? { fadeInSec: config.theme.fadeInMs / 1000 } : {}),
       }),
     );
     segMp4s.push(segMp4);

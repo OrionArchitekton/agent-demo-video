@@ -2,8 +2,13 @@ import { spawn } from "node:child_process";
 
 const BASE = ["-y", "-hide_banner", "-loglevel", "error"];
 
-export function normalizeArgs(input: string, output: string, o: { width: number; height: number; fps: number }): string[] {
-  const vf = `scale=${o.width}:${o.height}:force_original_aspect_ratio=decrease,pad=${o.width}:${o.height}:(ow-iw)/2:(oh-ih)/2,fps=${o.fps},format=yuv420p`;
+export function normalizeArgs(
+  input: string,
+  output: string,
+  o: { width: number; height: number; fps: number; fadeInSec?: number },
+): string[] {
+  const fade = o.fadeInSec && o.fadeInSec > 0 ? `,fade=t=in:st=0:d=${o.fadeInSec}` : "";
+  const vf = `scale=${o.width}:${o.height}:force_original_aspect_ratio=decrease,pad=${o.width}:${o.height}:(ow-iw)/2:(oh-ih)/2,fps=${o.fps}${fade},format=yuv420p`;
   return [...BASE, "-i", input, "-vf", vf, "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-an", output];
 }
 

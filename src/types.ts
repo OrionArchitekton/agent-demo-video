@@ -1,12 +1,14 @@
 import { z } from "zod";
 
 export const ActionSchema = z.object({
-  kind: z.enum(["goto", "click", "type", "wait", "hover", "highlight", "chapter"]),
+  kind: z.enum(["goto", "click", "type", "wait", "hover", "highlight", "chapter", "scroll"]),
   selector: z.string().optional(),
   text: z.string().optional(),
   url: z.string().optional(),
   ms: z.number().optional(),
   label: z.string().optional(),
+  /** scroll: absolute vertical target in px (used when no selector is given). */
+  y: z.number().optional(),
 });
 export type Action = z.infer<typeof ActionSchema>;
 
@@ -44,6 +46,9 @@ export const DemoConfigSchema = z.object({
     cursor: z.boolean().default(true),
     captionBox: z.boolean().default(true),
     captionMarginV: z.number().default(20),
+    // Fade-in at the start of every segment after the first (soft transition
+    // instead of a hard cut). 0 disables. Never alters segment durations.
+    fadeInMs: z.number().default(250),
     // Native screencast action annotations (animated cursor between actions,
     // interacted-element highlight, action title). Active only under the
     // screencast engine; suppresses the legacy overlay cursor (see cursorMode).

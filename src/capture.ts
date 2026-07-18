@@ -114,6 +114,15 @@ async function runActions(
         recordEvent(recorder, "highlight", await page.locator(a.selector).boundingBox());
         await page.evaluate(highlightExpr(a.selector));
         break;
+      case "scroll":
+        if (a.selector) {
+          await page.locator(a.selector).evaluate((el) => el.scrollIntoView({ behavior: "smooth", block: "center" }));
+        } else {
+          await page.evaluate(`window.scrollTo({ top: ${a.y ?? 0}, behavior: "smooth" })`);
+        }
+        // Let the smooth scroll animation play out on camera.
+        await page.waitForTimeout(a.ms ?? 800);
+        break;
       case "wait":
         await page.waitForTimeout(a.ms ?? 500);
         break;

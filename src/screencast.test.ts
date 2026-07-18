@@ -57,3 +57,10 @@ describe("cursorMode", () => {
     expect(cursorMode("screencast", false, false)).toBe("none");
   });
 });
+
+describe("frameTimestampsToSec", () => {
+  it("converts CDP millisecond timestamps to seconds (smoke regression: 40ms gaps read as 40s inflated a 8s demo to 7726s)", async () => {
+    const { frameTimestampsToSec } = await import("./screencast");
+    expect(frameTimestampsToSec([1000, 1040, 1500])).toEqual([1.0, 1.04, 1.5]);
+  });
+});

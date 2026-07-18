@@ -15,6 +15,16 @@ import { concatListEntry } from "./ffmpeg";
 export const MIN_FRAME_SEC = 0.001;
 
 /**
+ * Screencast onFrame timestamps arrive in MILLISECONDS (playwright
+ * monotonicTime). Convert at the ingestion boundary; every pure helper below
+ * operates in seconds. Regression guard: treating ms as seconds inflated an
+ * 8-second smoke demo to 7726s (caught by the parity max-duration gate).
+ */
+export function frameTimestampsToSec(timestampsMs: number[]): number[] {
+  return timestampsMs.map((t) => t / 1000);
+}
+
+/**
  * Per-frame durations from capture timestamps (seconds). Frame i is displayed
  * from ts[i] to ts[i+1]; the last frame runs until stopTs. Non-positive gaps
  * (clock skew, duplicate timestamps, stopTs before the last frame) clamp to

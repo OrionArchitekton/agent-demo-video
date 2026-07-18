@@ -15,7 +15,7 @@ import { chromium, type Page } from "playwright";
 import { mkdir, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { frameDurations, framesConcatContent, cursorMode } from "./screencast.js";
+import { frameDurations, framesConcatContent, frameTimestampsToSec, cursorMode } from "./screencast.js";
 import { ffmpeg, framesEncodeArgs } from "./ffmpeg.js";
 import { zoomFilterExpr, type InteractionEvent } from "./motion.js";
 
@@ -190,10 +190,11 @@ async function recordWithScreencast(
     await page.screencast.stop();
     await Promise.all(writes);
     if (files.length > 0) {
-      const stopTs = timestamps[timestamps.length - 1]! + tailSec;
-      capturedDurationSec = Math.max(0, stopTs - timestamps[0]!);
+      const tsSec = frameTimestampsToSec(timestamps);
+      const stopTs = tsSec[tsSec.length - 1]! + tailSec;
+      capturedDurationSec = Math.max(0, stopTs - tsSec[0]!);
       const listPath = join(framesDir, "frames.txt");
-      await writeFile(listPath, framesConcatContent(files, frameDurations(timestamps, stopTs)), "utf8");
+      await writeFile(listPath, framesConcatContent(files, frameDurations(tsSec, stopTs)), "utf8");
     }
   }
 

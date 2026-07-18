@@ -7,7 +7,7 @@ import { DemoConfigSchema } from "../src/types";
 
 describe("captureShot (smoke)", () => {
   beforeAll(() => { process.env.FAKE_TTS = "1"; });
-  it("records a webm driving the fixture page", async () => {
+  it("records an h264 mp4 segment plus an events artifact driving the fixture page (screencast engine)", async () => {
     const dir = await mkdtemp(join(tmpdir(), "cap-"));
     const fixture = pathToFileURL(resolve("tests/fixtures/page.html")).href;
     const cfg = DemoConfigSchema.parse({ script: "x", dashboardBaseUrl: "http://localhost:3000", resolution: { width: 1280, height: 720 } });
@@ -16,8 +16,9 @@ describe("captureShot (smoke)", () => {
       { kind: "click" as const, selector: "#bootstrap", label: "Bootstrap" },
       { kind: "click" as const, selector: "#degraded" },
     ] };
-    const webm = await captureShot(shot, { shotId: "s1", startSec: 0, durationSec: 2 }, cfg, dir);
-    expect(webm.endsWith(".webm")).toBe(true);
-    expect((await stat(webm)).size).toBeGreaterThan(0);
+    const seg = await captureShot(shot, { shotId: "s1", startSec: 0, durationSec: 2 }, cfg, dir);
+    expect(seg.endsWith(".mp4")).toBe(true);
+    expect((await stat(seg)).size).toBeGreaterThan(0);
+    expect((await stat(join(dir, "events_s1.json"))).size).toBeGreaterThan(0);
   }, 60_000);
 });

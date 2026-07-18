@@ -41,7 +41,7 @@ describe("auth-walled SaaS live capture (smoke)", () => {
     expect(existsSync(join(profileDir, "Default"))).toBe(true); // chromium profile dir
   }, 60_000);
 
-  it("captureShot target:live records a webm driving the authed profile", async () => {
+  it("captureShot target:live records an h264 mp4 segment driving the authed profile (screencast engine)", async () => {
     const profileDir = await mkdtemp(join(tmpdir(), "advprof-"));
     await captureLogin(liveCfg(profileDir));
     const dir = await mkdtemp(join(tmpdir(), "advcap-"));
@@ -49,9 +49,9 @@ describe("auth-walled SaaS live capture (smoke)", () => {
       { kind: "goto" as const, url: appUrl },
       { kind: "highlight" as const, selector: "#app-shell" },
     ] };
-    const webm = await captureShot(shot, { shotId: "L1", startSec: 0, durationSec: 2 }, liveCfg(profileDir), dir);
-    expect(webm.endsWith(".webm")).toBe(true);
-    expect((await stat(webm)).size).toBeGreaterThan(0);
+    const seg = await captureShot(shot, { shotId: "L1", startSec: 0, durationSec: 2 }, liveCfg(profileDir), dir);
+    expect(seg.endsWith(".mp4")).toBe(true);
+    expect((await stat(seg)).size).toBeGreaterThan(0);
   }, 60_000);
 
   it("captureShot target:live fails CLOSED when the session is expired (logged-out wall)", async () => {

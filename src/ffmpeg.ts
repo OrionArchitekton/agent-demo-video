@@ -2,8 +2,13 @@ import { spawn } from "node:child_process";
 
 const BASE = ["-y", "-hide_banner", "-loglevel", "error"];
 
-export function normalizeArgs(input: string, output: string, o: { width: number; height: number; fps: number }): string[] {
-  const vf = `scale=${o.width}:${o.height}:force_original_aspect_ratio=decrease,pad=${o.width}:${o.height}:(ow-iw)/2:(oh-ih)/2,fps=${o.fps},format=yuv420p`;
+export function normalizeArgs(
+  input: string,
+  output: string,
+  o: { width: number; height: number; fps: number; fadeInSec?: number },
+): string[] {
+  const fade = o.fadeInSec && o.fadeInSec > 0 ? `,fade=t=in:st=0:d=${o.fadeInSec}` : "";
+  const vf = `scale=${o.width}:${o.height}:force_original_aspect_ratio=decrease,pad=${o.width}:${o.height}:(ow-iw)/2:(oh-ih)/2,fps=${o.fps}${fade},format=yuv420p`;
   return [...BASE, "-i", input, "-vf", vf, "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-an", output];
 }
 
@@ -42,6 +47,28 @@ export function muxArgs(video: string, audio: string, output: string): string[] 
 
 export function burnSubsArgs(video: string, srt: string, output: string, style = "FontName=Arial,FontSize=24"): string[] {
   return [...BASE, "-i", video, "-vf", `subtitles=${srt}:force_style='${style}'`, "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-c:a", "aac", output];
+}
+
+/**
+ * Encode a screencast frame sequence (concat-demuxer list with per-frame
+ * durations) straight to H.264. `motionVf` (optional, zoompan) is inserted
+ * AFTER CFR resampling: on the VFR concat input zoompan would discard the
+ * per-frame durations (a long-held still would collapse to one frame), so the
+ * zoom hook must see constant-rate frames where input time == capture time.
+ */
+export function framesEncodeArgs(
+  listFile: string,
+  output: string,
+  o: { width: number; height: number; fps: number; motionVf?: string },
+): string[] {
+  const chain = [
+    `scale=${o.width}:${o.height}:force_original_aspect_ratio=decrease`,
+    `pad=${o.width}:${o.height}:(ow-iw)/2:(oh-ih)/2`,
+    `fps=${o.fps}`,
+    ...(o.motionVf ? [o.motionVf] : []),
+    "format=yuv420p",
+  ];
+  return [...BASE, "-f", "concat", "-safe", "0", "-i", listFile, "-vf", chain.join(","), "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-an", output];
 }
 
 export function padAudioArgs(input: string, output: string, durationSec: number): string[] {

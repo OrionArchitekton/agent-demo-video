@@ -5,6 +5,7 @@ function parseAction(rest: string): Action {
   const attrs: Record<string, string> = {};
   for (const m of rest.matchAll(/(\w+)="([^"]*)"/g)) attrs[m[1]!] = m[2]!;
   const msMatch = rest.match(/\bms=(\d+)/);
+  const yMatch = rest.match(/\by=(\d+)/);
   return {
     kind,
     ...(attrs.selector ? { selector: attrs.selector } : {}),
@@ -12,6 +13,7 @@ function parseAction(rest: string): Action {
     ...(attrs.url ? { url: attrs.url } : {}),
     ...(attrs.label ? { label: attrs.label } : {}),
     ...(msMatch ? { ms: Number(msMatch[1]) } : {}),
+    ...(yMatch ? { y: Number(yMatch[1]) } : {}),
   };
 }
 

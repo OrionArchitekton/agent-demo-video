@@ -1,17 +1,22 @@
 import { z } from "zod";
 
 export const ActionSchema = z.object({
-  kind: z.enum(["goto", "click", "type", "wait", "hover", "highlight", "chapter"]),
+  kind: z.enum(["goto", "click", "type", "wait", "hover", "highlight", "chapter", "scroll"]),
   selector: z.string().optional(),
   text: z.string().optional(),
   url: z.string().optional(),
   ms: z.number().optional(),
   label: z.string().optional(),
+  /** scroll: absolute vertical target in px (used when no selector is given). */
+  y: z.number().optional(),
 });
 export type Action = z.infer<typeof ActionSchema>;
 
 export const ShotSchema = z.object({
-  id: z.string(),
+  // The id is embedded in on-disk artifact names (shot_<id>.mp4, frames_<id>/,
+  // events_<id>.json): restrict to filename-safe characters so it can never
+  // traverse out of the output directory.
+  id: z.string().regex(/^[A-Za-z0-9._-]+$/, "shot id must be filename-safe (letters, digits, . _ -)"),
   // "live" drives an authenticated SaaS app via a saved Playwright persistent-context
   // profile (see capture.auth). Manifest syntax is identical to "dashboard".
   target: z.enum(["dashboard", "uipath", "terminal", "prebaked", "live"]),
@@ -22,7 +27,11 @@ export const ShotSchema = z.object({
 });
 export type Shot = z.infer<typeof ShotSchema>;
 
-export const ManifestSchema = z.object({ shots: z.array(ShotSchema).min(1) });
+export const ManifestSchema = z
+  .object({ shots: z.array(ShotSchema).min(1) })
+  .refine((m) => new Set(m.shots.map((s) => s.id)).size === m.shots.length, {
+    message: "duplicate shot id: every shot writes shot_<id>.mp4 / frames_<id>/ / events_<id>.json, so ids must be unique",
+  });
 export type Manifest = z.infer<typeof ManifestSchema>;
 
 export const DemoConfigSchema = z.object({
@@ -44,14 +53,43 @@ export const DemoConfigSchema = z.object({
     cursor: z.boolean().default(true),
     captionBox: z.boolean().default(true),
     captionMarginV: z.number().default(20),
+    // Fade-in at the start of every segment after the first (soft transition
+    // instead of a hard cut). 0 disables. Never alters segment durations.
+    fadeInMs: z.number().default(250),
+    // Native screencast action annotations (animated cursor between actions,
+    // interacted-element highlight, action title). Active only under the
+    // screencast engine; suppresses the legacy overlay cursor (see cursorMode).
+    annotations: z.object({
+      enabled: z.boolean().default(true),
+      durationMs: z.number().default(500),
+      fontSize: z.number().default(24),
+      position: z.enum(["top-left", "top", "top-right", "bottom-left", "bottom", "bottom-right"]).default("top-right"),
+    }).default({}),
   }).default({}),
   clipsDir: z.string().default("clips/prebaked"),
+  // Camera motion. Zoom-on-action eases the frame toward each interacted
+  // element and back (screencast engine only); never changes segment duration.
+  motion: z.object({
+    zoomOnAction: z.boolean().default(true),
+    zoomLevel: z.number().min(1).max(3).default(1.35),
+    zoomInMs: z.number().min(0).default(600),
+    zoomHoldMs: z.number().min(0).default(900),
+    zoomOutMs: z.number().min(0).default(600),
+  }).default({}),
   // Auth-walled SaaS live capture (target: "live"). The whole section is optional so
   // existing dashboard/prebaked configs validate unchanged. `auth` is only required
   // when a manifest contains a "live" shot. The profile holds session cookies/tokens
   // AT REST, so profileDir is resolved to an absolute, outside-the-repo path in
   // loadConfig (default ~/.cache/agent-demo-video) — never committed.
   capture: z.object({
+    // Capture engine. "screencast" (default) assembles CDP JPEG frames with
+    // per-frame timestamps into H.264 directly (crisp text, deterministic
+    // timing). "recordvideo" is the legacy Playwright recordVideo path
+    // (VP8 webm intermediate), kept as an explicit escape hatch. A screencast
+    // failure is an error, never a silent fallback to the other engine.
+    engine: z.enum(["screencast", "recordvideo"]).default("screencast"),
+    // JPEG quality (1-100) for screencast frames before H.264 encode.
+    screencastQuality: z.number().min(1).max(100).default(90),
     auth: z.object({
       profileDir: z.string().optional(),
       loginUrl: z.string(),

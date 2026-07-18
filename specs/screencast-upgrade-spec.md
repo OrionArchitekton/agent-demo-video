@@ -43,7 +43,9 @@ duration, title font size, and overlay position are configurable.
 Given a shot whose actions interact with specific elements, when the demo renders
 with zoom-on-action enabled (the default), then for each qualifying interaction the
 frame smoothly zooms toward the element's region and eases back out, with zoom level
-and easing duration configurable. The interaction event timeline (element bounds +
+and easing duration configurable. An interaction that begins while a zoom is already
+active extends the active window's hold through it (the camera stays in) rather than
+re-zooming or being ignored; zero-length phase configurations disable zoom cleanly. The interaction event timeline (element bounds +
 time offset per action) is persisted alongside the segment as a JSON artifact. Shots
 with no qualifying events render unchanged. Zoom never alters segment duration, so
 narration and captions stay in sync.
@@ -59,9 +61,11 @@ jumping.
 ## Acceptance criteria
 
 1. Raw captured segments are H.264 MP4 (probe: codec h264), not WebM (S1).
-2. Segment duration matches the narration window within one frame period; short
-   segments still extend by last-frame freeze, never by trimming audio (S1, existing
-   guarantee preserved).
+2. A segment is never shorter than its narration window: short segments extend by
+   last-frame freeze. An action run longer than its narration keeps its full length
+   (actions are never trimmed mid-flight) and the audio pads with silence, so
+   narration is never truncated in either direction (S1, existing guarantee
+   preserved).
 3. Legacy configs validate unchanged; every new knob has a default (S1-S4).
 4. Exactly one cursor rendering path is active in any configuration (S2).
 5. The interaction event timeline artifact exists for every screencast shot and each

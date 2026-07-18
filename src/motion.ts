@@ -48,18 +48,24 @@ function ease(p: number): number {
 
 /**
  * One window per qualifying event, sorted by time. An event starting inside an
- * earlier window is dropped (the earlier event keeps the camera); events at or
+ * active window EXTENDS that window's hold through the new event (the camera
+ * stays in rather than re-zooming or dropping the interaction); events at or
  * beyond the segment end are dropped; window ends clamp to the segment end.
+ * Zero total span (all phase durations 0) means zoom is a no-op: no windows.
  */
 export function zoomWindows(events: InteractionEvent[], opts: ZoomOpts): ZoomWindow[] {
   const span = opts.inSec + opts.holdSec + opts.outSec;
+  if (span <= 0) return [];
   const windows: ZoomWindow[] = [];
   const sorted = [...events].sort((a, b) => a.tMs - b.tMs);
   for (const e of sorted) {
     const startSec = e.tMs / 1000;
     if (startSec >= opts.durationSec) continue;
     const last = windows[windows.length - 1];
-    if (last && startSec < last.endSec) continue;
+    if (last && startSec < last.endSec) {
+      last.endSec = Math.min(Math.max(last.endSec, startSec + span), opts.durationSec);
+      continue;
+    }
     const endSec = Math.min(startSec + span, opts.durationSec);
     const scale = (endSec - startSec) / span;
     windows.push({

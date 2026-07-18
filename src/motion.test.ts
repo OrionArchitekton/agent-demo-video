@@ -64,3 +64,17 @@ describe("zero-length ease phases", () => {
     expect(expr).not.toContain("NaN");
   });
 });
+
+describe("pipeline findings", () => {
+  it("returns no windows (and no NaN) when all phase durations are zero", () => {
+    const opts = { ...OPTS, inSec: 0, holdSec: 0, outSec: 0 };
+    expect(zoomWindows([ev(1000)], opts)).toEqual([]);
+    expect(zoomFilterExpr([ev(1000)], opts)).toBeUndefined();
+  });
+
+  it("extends the active window through an overlapping event instead of dropping it", () => {
+    const w = zoomWindows([ev(1000), ev(1200)], OPTS);
+    expect(w).toHaveLength(1);
+    expect(w[0]!.endSec).toBeCloseTo(1.2 + 2.1, 6);
+  });
+});

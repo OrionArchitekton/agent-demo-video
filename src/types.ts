@@ -55,6 +55,15 @@ export const DemoConfigSchema = z.object({
     }).default({}),
   }).default({}),
   clipsDir: z.string().default("clips/prebaked"),
+  // Camera motion. Zoom-on-action eases the frame toward each interacted
+  // element and back (screencast engine only); never changes segment duration.
+  motion: z.object({
+    zoomOnAction: z.boolean().default(true),
+    zoomLevel: z.number().min(1).max(3).default(1.35),
+    zoomInMs: z.number().default(600),
+    zoomHoldMs: z.number().default(900),
+    zoomOutMs: z.number().default(600),
+  }).default({}),
   // Auth-walled SaaS live capture (target: "live"). The whole section is optional so
   // existing dashboard/prebaked configs validate unchanged. `auth` is only required
   // when a manifest contains a "live" shot. The profile holds session cookies/tokens

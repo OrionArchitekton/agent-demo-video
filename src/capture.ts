@@ -17,6 +17,23 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { frameDurations, framesConcatContent, cursorMode } from "./screencast.js";
 import { ffmpeg, framesEncodeArgs } from "./ffmpeg.js";
+import { zoomFilterExpr, type InteractionEvent } from "./motion.js";
+
+/** Collects capture-relative interaction events during a screencast recording. */
+interface EventRecorder {
+  /** Wall-clock ms when the screencast started; 0 until recording begins. */
+  t0: number;
+  events: InteractionEvent[];
+}
+
+function recordEvent(
+  recorder: EventRecorder | undefined,
+  kind: string,
+  box: { x: number; y: number; width: number; height: number } | null,
+): void {
+  if (!recorder || recorder.t0 === 0 || !box) return;
+  recorder.events.push({ kind, tMs: Date.now() - recorder.t0, box });
+}
 import {
   overlayInitScript,
   moveCursorExpr,
@@ -50,6 +67,7 @@ async function runActions(
   shot: Shot,
   config: DemoConfig,
   onGoto?: () => Promise<void>,
+  recorder?: EventRecorder,
 ): Promise<void> {
   const mode = cursorMode(config.capture.engine, config.theme.annotations.enabled, config.theme.cursor);
   for (const a of shot.actions) {
@@ -71,6 +89,7 @@ async function runActions(
         if (!a.selector) throw new Error(`shot ${shot.id}: click action missing selector`);
         const box = await page.locator(a.selector).boundingBox();
         if (!box) throw new Error(`shot ${shot.id}: selector not found or has no bounding box: ${a.selector}`);
+        recordEvent(recorder, "click", box);
         if (mode === "overlay") {
           const cx = Math.round(box.x + box.width / 2);
           const cy = Math.round(box.y + box.height / 2);
@@ -83,6 +102,7 @@ async function runActions(
       }
       case "type":
         if (!a.selector) throw new Error(`shot ${shot.id}: type action missing selector`);
+        recordEvent(recorder, "type", await page.locator(a.selector).boundingBox());
         await page.locator(a.selector).pressSequentially(a.text ?? "", { delay: 60 });
         break;
       case "hover":
@@ -91,6 +111,7 @@ async function runActions(
         break;
       case "highlight":
         if (!a.selector) throw new Error(`shot ${shot.id}: highlight action missing selector`);
+        recordEvent(recorder, "highlight", await page.locator(a.selector).boundingBox());
         await page.evaluate(highlightExpr(a.selector));
         break;
       case "wait":
@@ -117,6 +138,7 @@ async function recordWithScreencast(
   shotId: string,
   config: DemoConfig,
   outDir: string,
+  recorder: EventRecorder,
   run: () => Promise<void>,
 ): Promise<string> {
   const framesDir = join(outDir, `frames_${shotId}`);
@@ -127,6 +149,7 @@ async function recordWithScreencast(
   const writes: Promise<void>[] = [];
   let lastFrameWallMs = 0;
   let index = 0;
+  let capturedDurationSec = 0;
 
   const ann = config.theme.annotations;
   if (cursorMode(config.capture.engine, ann.enabled, config.theme.cursor) === "native") {
@@ -149,6 +172,7 @@ async function recordWithScreencast(
       writes.push(writeFile(file, frame.data));
     },
   });
+  recorder.t0 = Date.now();
 
   try {
     await run();
@@ -158,6 +182,7 @@ async function recordWithScreencast(
     await Promise.all(writes);
     if (files.length > 0) {
       const stopTs = timestamps[timestamps.length - 1]! + tailSec;
+      capturedDurationSec = Math.max(0, stopTs - timestamps[0]!);
       const listPath = join(framesDir, "frames.txt");
       await writeFile(listPath, framesConcatContent(files, frameDurations(timestamps, stopTs)), "utf8");
     }
@@ -166,16 +191,39 @@ async function recordWithScreencast(
   if (files.length === 0) {
     throw new Error(`shot ${shotId}: screencast captured no frames (engine "screencast" fails closed; set capture.engine to "recordvideo" to use the legacy path)`);
   }
+
+  // Persist the interaction event timeline (bounds + capture-relative offsets)
+  // as a per-shot artifact; it drives zoom-on-action and is reviewable after.
+  await writeFile(join(outDir, `events_${shotId}.json`), JSON.stringify(recorder.events, null, 2), "utf8");
+
+  const durationSec = Math.max(MIN_SEGMENT_SEC, capturedDurationSec);
+  const m = config.motion;
+  const motionVf = m.zoomOnAction
+    ? zoomFilterExpr(recorder.events, {
+        width: config.resolution.width,
+        height: config.resolution.height,
+        fps: config.fps,
+        durationSec,
+        zoom: m.zoomLevel,
+        inSec: m.zoomInMs / 1000,
+        holdSec: m.zoomHoldMs / 1000,
+        outSec: m.zoomOutMs / 1000,
+      })
+    : undefined;
+
   const segPath = join(outDir, `shot_${shotId}.mp4`);
   await ffmpeg(
     framesEncodeArgs(join(framesDir, "frames.txt"), segPath, {
       width: config.resolution.width,
       height: config.resolution.height,
       fps: config.fps,
+      motionVf,
     }),
   );
   return segPath;
 }
+
+const MIN_SEGMENT_SEC = 0.1;
 
 /** Dwell: pad remaining time to honour the declared shot duration. */
 async function dwell(page: Page, durationSec: number, startMs: number): Promise<void> {
@@ -223,9 +271,10 @@ export async function captureShot(
 
   try {
     if (useScreencast) {
-      return await recordWithScreencast(page, shot.id, config, outDir, async () => {
+      const recorder: EventRecorder = { t0: 0, events: [] };
+      return await recordWithScreencast(page, shot.id, config, outDir, recorder, async () => {
         const startMs = Date.now();
-        await runActions(page, shot, config);
+        await runActions(page, shot, config, undefined, recorder);
         await dwell(page, timelineEntry.durationSec, startMs);
       });
     }
@@ -303,16 +352,23 @@ async function captureLiveShot(
     // after EVERY navigation — so the expiry check fires before any click/type and a shot
     // that navigates more than once is re-checked on each goto. Never records or
     // side-effects against a logged-out page. Fails closed.
+    const recorder: EventRecorder = { t0: 0, events: [] };
     const runShot = async () => {
       const startMs = Date.now();
-      await runActions(page, shot, config, async () => {
-        await assertAuthed(page, shot, auth.loggedInSelector);
-      });
+      await runActions(
+        page,
+        shot,
+        config,
+        async () => {
+          await assertAuthed(page, shot, auth.loggedInSelector);
+        },
+        recorder,
+      );
       await dwell(page, timelineEntry.durationSec, startMs);
     };
 
     if (useScreencast) {
-      const seg = await recordWithScreencast(page, shot.id, config, outDir, runShot);
+      const seg = await recordWithScreencast(page, shot.id, config, outDir, recorder, runShot);
       await context.close();
       return seg;
     }

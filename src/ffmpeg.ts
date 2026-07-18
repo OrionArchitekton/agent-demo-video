@@ -46,8 +46,10 @@ export function burnSubsArgs(video: string, srt: string, output: string, style =
 
 /**
  * Encode a screencast frame sequence (concat-demuxer list with per-frame
- * durations) straight to H.264. `motionVf` (optional) is inserted after the
- * scale/pad normalization and before CFR resampling — the zoom-on-action hook.
+ * durations) straight to H.264. `motionVf` (optional, zoompan) is inserted
+ * AFTER CFR resampling: on the VFR concat input zoompan would discard the
+ * per-frame durations (a long-held still would collapse to one frame), so the
+ * zoom hook must see constant-rate frames where input time == capture time.
  */
 export function framesEncodeArgs(
   listFile: string,
@@ -57,8 +59,8 @@ export function framesEncodeArgs(
   const chain = [
     `scale=${o.width}:${o.height}:force_original_aspect_ratio=decrease`,
     `pad=${o.width}:${o.height}:(ow-iw)/2:(oh-ih)/2`,
-    ...(o.motionVf ? [o.motionVf] : []),
     `fps=${o.fps}`,
+    ...(o.motionVf ? [o.motionVf] : []),
     "format=yuv420p",
   ];
   return [...BASE, "-f", "concat", "-safe", "0", "-i", listFile, "-vf", chain.join(","), "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-an", output];

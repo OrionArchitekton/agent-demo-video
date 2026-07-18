@@ -21,8 +21,10 @@ import { zoomFilterExpr, type InteractionEvent } from "./motion.js";
 
 /** Collects capture-relative interaction events during a screencast recording. */
 interface EventRecorder {
-  /** Wall-clock ms when the screencast started; 0 until recording begins. */
+  /** Wall-clock ms of the first frame's arrival; 0 until it lands. */
   t0: number;
+  /** Wall-clock ms just after start() resolved; anchor for events that fire before the first frame. */
+  fallbackT0: number;
   events: InteractionEvent[];
 }
 
@@ -31,8 +33,10 @@ function recordEvent(
   kind: string,
   box: { x: number; y: number; width: number; height: number } | null,
 ): void {
-  if (!recorder || recorder.t0 === 0 || !box) return;
-  recorder.events.push({ kind, tMs: Date.now() - recorder.t0, box });
+  if (!recorder || !box) return;
+  const anchor = recorder.t0 || recorder.fallbackT0;
+  if (anchor === 0) return;
+  recorder.events.push({ kind, tMs: Math.max(0, Date.now() - anchor), box });
 }
 import {
   overlayInitScript,
@@ -195,13 +199,20 @@ async function recordWithScreencast(
       files.push(file);
       timestamps.push(frame.timestamp);
       lastFrameWallMs = Date.now();
-      writes.push(
-        writeFile(file, frame.data).catch((e) => {
-          if (writeErr === undefined) writeErr = e;
-        }),
-      );
+      const write = writeFile(file, frame.data).catch((e) => {
+        if (writeErr === undefined) writeErr = e;
+      });
+      writes.push(write);
+      // Returning the promise lets Playwright apply backpressure: the next
+      // frame is not delivered until this one is on disk, so a long or
+      // high-motion capture cannot outrun storage.
+      return write;
     },
   });
+  // Fallback event anchor for interactions that fire before the first frame
+  // lands; slightly early relative to video time (frame latency), and the
+  // first-frame arrival above takes over as the precise anchor.
+  recorder.fallbackT0 = Date.now();
 
   // Teardown never masks a run() failure: the shot error is what the operator
   // must see (e.g. the live-path auth guard), not a secondary I/O error.
@@ -329,7 +340,7 @@ export async function captureShot(
 
   try {
     if (useScreencast) {
-      const recorder: EventRecorder = { t0: 0, events: [] };
+      const recorder: EventRecorder = { t0: 0, fallbackT0: 0, events: [] };
       return await recordWithScreencast(page, shot.id, config, outDir, recorder, async () => {
         const startMs = Date.now();
         await runActions(page, shot, config, undefined, recorder);
@@ -410,7 +421,7 @@ async function captureLiveShot(
     // after EVERY navigation — so the expiry check fires before any click/type and a shot
     // that navigates more than once is re-checked on each goto. Never records or
     // side-effects against a logged-out page. Fails closed.
-    const recorder: EventRecorder = { t0: 0, events: [] };
+    const recorder: EventRecorder = { t0: 0, fallbackT0: 0, events: [] };
     const runShot = async () => {
       const startMs = Date.now();
       await runActions(

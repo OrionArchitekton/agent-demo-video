@@ -24,7 +24,7 @@
     "prepack": "pnpm run build",
     "demo": "tsx src/cli.ts"
   },
-  "dependencies": { "playwright": "^1.48.0", "zod": "^3.23.0" },
+  "dependencies": { "playwright": "^1.59.0", "zod": "^3.23.0" },
   "devDependencies": {
     "typescript": "^5.6.0",
     "vitest": "^2.1.0",

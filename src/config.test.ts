@@ -53,3 +53,20 @@ describe("relative dashboardBaseUrl", () => {
     expect(cfg.dashboardBaseUrl).toBe(`file://${join(dir, "site")}`);
   });
 });
+
+describe("relative base with URL-significant characters", () => {
+  it("produces a valid file URL even when the config dir contains spaces", async () => {
+    const { mkdtempSync, writeFileSync, mkdirSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const { loadConfig } = await import("./config");
+    const base = mkdtempSync(join(tmpdir(), "adv cfg "));
+    mkdirSync(join(base, "site"), { recursive: true });
+    const p = join(base, "demo.config.json");
+    writeFileSync(p, JSON.stringify({ script: "DEMO.md", dashboardBaseUrl: "./site" }));
+    const cfg = loadConfig(p);
+    expect(cfg.dashboardBaseUrl).toMatch(/^file:\/\//);
+    expect(cfg.dashboardBaseUrl).not.toContain(" ");
+    expect(decodeURIComponent(cfg.dashboardBaseUrl)).toContain("site");
+  });
+});

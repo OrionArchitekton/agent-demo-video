@@ -13,7 +13,10 @@ export const ActionSchema = z.object({
 export type Action = z.infer<typeof ActionSchema>;
 
 export const ShotSchema = z.object({
-  id: z.string(),
+  // The id is embedded in on-disk artifact names (shot_<id>.mp4, frames_<id>/,
+  // events_<id>.json): restrict to filename-safe characters so it can never
+  // traverse out of the output directory.
+  id: z.string().regex(/^[A-Za-z0-9._-]+$/, "shot id must be filename-safe (letters, digits, . _ -)"),
   // "live" drives an authenticated SaaS app via a saved Playwright persistent-context
   // profile (see capture.auth). Manifest syntax is identical to "dashboard".
   target: z.enum(["dashboard", "uipath", "terminal", "prebaked", "live"]),
@@ -24,7 +27,11 @@ export const ShotSchema = z.object({
 });
 export type Shot = z.infer<typeof ShotSchema>;
 
-export const ManifestSchema = z.object({ shots: z.array(ShotSchema).min(1) });
+export const ManifestSchema = z
+  .object({ shots: z.array(ShotSchema).min(1) })
+  .refine((m) => new Set(m.shots.map((s) => s.id)).size === m.shots.length, {
+    message: "duplicate shot id: every shot writes shot_<id>.mp4 / frames_<id>/ / events_<id>.json, so ids must be unique",
+  });
 export type Manifest = z.infer<typeof ManifestSchema>;
 
 export const DemoConfigSchema = z.object({
@@ -65,9 +72,9 @@ export const DemoConfigSchema = z.object({
   motion: z.object({
     zoomOnAction: z.boolean().default(true),
     zoomLevel: z.number().min(1).max(3).default(1.35),
-    zoomInMs: z.number().default(600),
-    zoomHoldMs: z.number().default(900),
-    zoomOutMs: z.number().default(600),
+    zoomInMs: z.number().min(0).default(600),
+    zoomHoldMs: z.number().min(0).default(900),
+    zoomOutMs: z.number().min(0).default(600),
   }).default({}),
   // Auth-walled SaaS live capture (target: "live"). The whole section is optional so
   // existing dashboard/prebaked configs validate unchanged. `auth` is only required

@@ -115,8 +115,16 @@ export function zoomFilterExpr(events: InteractionEvent[], opts: ZoomOpts): stri
     const inLen = w.inLen;
     const outLen = w.outLen;
     const Z = opts.zoom;
-    const easeIn = `st(0,clip((it-${f3(a)})/${f3(inLen)},0,1));1+${f3(Z - 1)}*ld(0)*ld(0)*(3-2*ld(0))`;
-    const easeOut = `st(0,clip((it-${f3(outStart)})/${f3(outLen)},0,1));${f3(Z)}-${f3(Z - 1)}*ld(0)*ld(0)*(3-2*ld(0))`;
+    // A phase whose length rounds to 0 at expression precision would emit a
+    // 0/0 division; snap straight to the target level instead (matches the TS
+    // twin's zero-length guards in zoomLevelAt).
+    const zeroLen = (n: number) => n < 0.0005;
+    const easeIn = zeroLen(inLen)
+      ? f3(Z)
+      : `st(0,clip((it-${f3(a)})/${f3(inLen)},0,1));1+${f3(Z - 1)}*ld(0)*ld(0)*(3-2*ld(0))`;
+    const easeOut = zeroLen(outLen)
+      ? f3(Z)
+      : `st(0,clip((it-${f3(outStart)})/${f3(outLen)},0,1));${f3(Z)}-${f3(Z - 1)}*ld(0)*ld(0)*(3-2*ld(0))`;
     const phase = `if(lt(it,${f3(inEnd)}),${easeIn},if(lt(it,${f3(outStart)}),${f3(Z)},${easeOut}))`;
     z = `if(between(it,${f3(a)},${f3(b)}),${phase},${z})`;
     fx = `if(between(it,${f3(a)},${f3(b)}),${f3(w.fx)},${fx})`;

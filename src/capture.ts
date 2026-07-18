@@ -12,7 +12,7 @@
  */
 
 import { chromium, type Page } from "playwright";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { frameDurations, framesConcatContent, frameTimestampsToSec, cursorMode } from "./screencast.js";
@@ -87,7 +87,12 @@ async function runActions(
         break;
       case "click": {
         if (!a.selector) throw new Error(`shot ${shot.id}: click action missing selector`);
-        const box = await page.locator(a.selector).boundingBox();
+        // Scroll first so the measured box matches what the viewer sees:
+        // Playwright would auto-scroll during the action anyway, and a
+        // pre-scroll box would aim the zoom at the wrong screen region.
+        const loc = page.locator(a.selector);
+        await loc.scrollIntoViewIfNeeded();
+        const box = await loc.boundingBox();
         if (!box) throw new Error(`shot ${shot.id}: selector not found or has no bounding box: ${a.selector}`);
         recordEvent(recorder, "click", box);
         if (mode === "overlay") {
@@ -100,20 +105,26 @@ async function runActions(
         await page.click(a.selector);
         break;
       }
-      case "type":
+      case "type": {
         if (!a.selector) throw new Error(`shot ${shot.id}: type action missing selector`);
-        recordEvent(recorder, "type", await page.locator(a.selector).boundingBox());
-        await page.locator(a.selector).pressSequentially(a.text ?? "", { delay: 60 });
+        const loc = page.locator(a.selector);
+        await loc.scrollIntoViewIfNeeded();
+        recordEvent(recorder, "type", await loc.boundingBox());
+        await loc.pressSequentially(a.text ?? "", { delay: 60 });
         break;
+      }
       case "hover":
         if (!a.selector) throw new Error(`shot ${shot.id}: hover action missing selector`);
         await page.hover(a.selector);
         break;
-      case "highlight":
+      case "highlight": {
         if (!a.selector) throw new Error(`shot ${shot.id}: highlight action missing selector`);
-        recordEvent(recorder, "highlight", await page.locator(a.selector).boundingBox());
+        const loc = page.locator(a.selector);
+        await loc.scrollIntoViewIfNeeded();
+        recordEvent(recorder, "highlight", await loc.boundingBox());
         await page.evaluate(highlightExpr(a.selector));
         break;
+      }
       case "scroll":
         if (a.selector) {
           await page.locator(a.selector).evaluate((el) => el.scrollIntoView({ behavior: "smooth", block: "center" }));
@@ -159,6 +170,9 @@ async function recordWithScreencast(
   let lastFrameWallMs = 0;
   let index = 0;
   let capturedDurationSec = 0;
+  // First write failure, captured so a rejected writeFile never becomes an
+  // unhandled rejection mid-capture; surfaced shot-scoped after teardown.
+  let writeErr: unknown;
 
   const ann = config.theme.annotations;
   if (cursorMode(config.capture.engine, ann.enabled, config.theme.cursor) === "native") {
@@ -174,21 +188,40 @@ async function recordWithScreencast(
     size: config.resolution,
     quality: config.capture.screencastQuality,
     onFrame: (frame) => {
+      // Anchor the event clock to the first frame's arrival: video time zero
+      // is the first captured frame, not the moment start() resolved.
+      if (recorder.t0 === 0) recorder.t0 = Date.now();
       const file = join(framesDir, `f_${String(index++).padStart(6, "0")}.jpg`);
       files.push(file);
       timestamps.push(frame.timestamp);
       lastFrameWallMs = Date.now();
-      writes.push(writeFile(file, frame.data));
+      writes.push(
+        writeFile(file, frame.data).catch((e) => {
+          if (writeErr === undefined) writeErr = e;
+        }),
+      );
     },
   });
-  recorder.t0 = Date.now();
 
+  // Teardown never masks a run() failure: the shot error is what the operator
+  // must see (e.g. the live-path auth guard), not a secondary I/O error.
+  let runErr: unknown;
   try {
     await run();
-  } finally {
-    const tailSec = lastFrameWallMs > 0 ? (Date.now() - lastFrameWallMs) / 1000 : 0;
+  } catch (e) {
+    runErr = e;
+  }
+  let teardownErr: unknown;
+  try {
+    // stop() first so no further frames arrive, THEN measure the tail and
+    // snapshot the arrays: a frame flushed during stop() is both included in
+    // the timeline and has its write awaited (no truncated JPEG in frames.txt).
     await page.screencast.stop();
+    const tailSec = lastFrameWallMs > 0 ? (Date.now() - lastFrameWallMs) / 1000 : 0;
     await Promise.all(writes);
+    if (writeErr !== undefined) {
+      throw new Error(`shot ${shotId}: failed to persist screencast frames`, { cause: writeErr });
+    }
     if (files.length > 0) {
       const tsSec = frameTimestampsToSec(timestamps);
       const stopTs = tsSec[tsSec.length - 1]! + tailSec;
@@ -196,6 +229,15 @@ async function recordWithScreencast(
       const listPath = join(framesDir, "frames.txt");
       await writeFile(listPath, framesConcatContent(files, frameDurations(tsSec, stopTs)), "utf8");
     }
+  } catch (e) {
+    teardownErr = e;
+  }
+  if (runErr !== undefined || teardownErr !== undefined) {
+    // Best-effort wipe: on the live path the frames are at-rest screenshots of
+    // an authenticated app; never leave them behind on a failed shot.
+    await rm(framesDir, { recursive: true, force: true }).catch(() => {});
+    if (runErr !== undefined) throw runErr;
+    throw teardownErr;
   }
 
   if (files.length === 0) {
@@ -222,14 +264,20 @@ async function recordWithScreencast(
     : undefined;
 
   const segPath = join(outDir, `shot_${shotId}.mp4`);
-  await ffmpeg(
-    framesEncodeArgs(join(framesDir, "frames.txt"), segPath, {
-      width: config.resolution.width,
-      height: config.resolution.height,
-      fps: config.fps,
-      motionVf,
-    }),
-  );
+  try {
+    await ffmpeg(
+      framesEncodeArgs(join(framesDir, "frames.txt"), segPath, {
+        width: config.resolution.width,
+        height: config.resolution.height,
+        fps: config.fps,
+        motionVf,
+      }),
+    );
+  } finally {
+    // The mp4 is the artifact; the raw frames (potentially screenshots of an
+    // authenticated app) do not stay at rest either way.
+    await rm(framesDir, { recursive: true, force: true }).catch(() => {});
+  }
   return segPath;
 }
 

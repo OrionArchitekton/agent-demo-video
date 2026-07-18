@@ -55,3 +55,12 @@ describe("zoomFilterExpr", () => {
     expect(expr).not.toContain("--");
   });
 });
+
+describe("zero-length ease phases", () => {
+  it("emits no division by a zero phase length (snap zoom instead of 0/0 NaN)", () => {
+    const opts = { ...OPTS, inSec: 0, outSec: 0 };
+    const expr = zoomFilterExpr([ev(1000)], opts)!;
+    expect(expr).not.toMatch(/\/0\.000/);
+    expect(expr).not.toContain("NaN");
+  });
+});

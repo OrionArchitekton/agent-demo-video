@@ -32,3 +32,22 @@ describe("schemas", () => {
     expect(withAuth.capture.auth?.loginTimeoutMs).toBe(120000);
   });
 });
+
+describe("hardening", () => {
+  it("rejects shot ids containing path separators or parent refs", () => {
+    const bad = { shots: [{ id: "../evil", target: "dashboard", narration: "x", actions: [] }] };
+    expect(() => ManifestSchema.parse(bad)).toThrow();
+    const alsoBad = { shots: [{ id: "a/b", target: "dashboard", narration: "x", actions: [] }] };
+    expect(() => ManifestSchema.parse(alsoBad)).toThrow();
+  });
+  it("rejects duplicate shot ids (silent artifact overwrite)", () => {
+    const dup = { shots: [
+      { id: "s1", target: "dashboard", narration: "x", actions: [] },
+      { id: "s1", target: "dashboard", narration: "y", actions: [] },
+    ] };
+    expect(() => ManifestSchema.parse(dup)).toThrow(/duplicate/i);
+  });
+  it("rejects negative zoom phase durations", () => {
+    expect(() => DemoConfigSchema.parse({ script: "x", dashboardBaseUrl: "http://x", motion: { zoomInMs: -1 } })).toThrow();
+  });
+});

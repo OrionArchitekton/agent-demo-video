@@ -94,6 +94,8 @@ jumping.
 
 - Virtual desktop capture (Xvfb/VNC/OBS): explicitly rejected by the research for
   this pipeline; headless screencast covers the need.
-- ffmpeg zoompan (designed for stills), xfade overlap transitions (alters duration
-  and audio sync), TTS/caption changes beyond timing anchors.
+- Slideshow-style still-image Ken Burns (zoompan over static images with long
+  per-image dwell); the implementation deliberately uses zoompan only per-frame
+  (d=1) on constant-rate video. Also out of scope: xfade overlap transitions
+  (alter duration and audio sync), TTS/caption changes beyond timing anchors.
 - Editing the Whisperways submission repo (validation films it read-only).

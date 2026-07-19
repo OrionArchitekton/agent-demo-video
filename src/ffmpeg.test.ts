@@ -75,3 +75,9 @@ describe("normalizeArgs fade-in", () => {
     expect(vf).toBe("scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2,fps=30,format=yuv420p");
   });
 });
+
+describe("filter path escaping of graph separators (pipeline finding)", () => {
+  it("escapes comma, semicolon, and link-label brackets so a path cannot split the chain", () => {
+    expect(subtitlesFilterPath("/a,b;c[d]/x.srt")).toBe("/a\\,b\\;c\\[d\\]/x.srt");
+  });
+});

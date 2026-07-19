@@ -17,7 +17,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { frameDurations, framesConcatContent, frameTimestampsToSec, cursorMode } from "./screencast.js";
 import { ffmpeg, framesEncodeArgs } from "./ffmpeg.js";
-import { zoomFilterExpr, type InteractionEvent } from "./motion.js";
+import { zoomFilterExpr, cameraFilterExpr, cameraMode, type InteractionEvent } from "./motion.js";
 
 /** Collects capture-relative interaction events during a screencast recording. */
 interface EventRecorder {
@@ -278,18 +278,28 @@ async function recordWithScreencast(
 
     const durationSec = Math.max(MIN_SEGMENT_SEC, capturedDurationSec);
     const m = config.motion;
-    const motionVf = m.zoomOnAction
-      ? zoomFilterExpr(recorder.events, {
-          width: config.resolution.width,
-          height: config.resolution.height,
-          fps: config.fps,
-          durationSec,
-          zoom: m.zoomLevel,
-          inSec: m.zoomInMs / 1000,
-          holdSec: m.zoomHoldMs / 1000,
-          outSec: m.zoomOutMs / 1000,
-        })
-      : undefined;
+    const zoomShape = {
+      width: config.resolution.width,
+      height: config.resolution.height,
+      fps: config.fps,
+      durationSec,
+      zoom: m.zoomLevel,
+      inSec: m.zoomInMs / 1000,
+      holdSec: m.zoomHoldMs / 1000,
+      outSec: m.zoomOutMs / 1000,
+    };
+    const mode = cameraMode(m.zoomOnAction, m.livingCamera);
+    const motionVf =
+      mode === "living"
+        ? cameraFilterExpr(recorder.events, {
+            ...zoomShape,
+            baseZoom: m.baseZoom,
+            driftAmp: m.driftAmp,
+            driftPeriodSec: m.driftPeriodSec,
+          })
+        : mode === "legacy"
+          ? zoomFilterExpr(recorder.events, zoomShape)
+          : undefined;
 
     await ffmpeg(
       framesEncodeArgs(join(framesDir, "frames.txt"), segPath, {
@@ -326,6 +336,11 @@ export async function captureShot(
   config: DemoConfig,
   outDir: string,
 ): Promise<string> {
+  // A previous run's events artifact must never leak into this one: a shot
+  // switched away from the screencast engine would otherwise feed the sound
+  // stage obsolete click offsets from whatever run last wrote the file.
+  await rm(join(outDir, `events_${shot.id}.json`), { force: true });
+
   // Short-circuit for prebaked clips — caller uses the existing file.
   if (shot.target === "prebaked") {
     if (!shot.clip) throw new Error(`prebaked shot ${shot.id} has no clip path`);

@@ -28,9 +28,10 @@ function sampleInputs(): RenderInputs {
       },
     ],
     config: {
+      audio: { soundDesign: false, bedDb: -28, ticks: true, sweeps: true },
       resolution: { width: 1280, height: 720 },
       fps: 30,
-      theme: { captionFont: "Liberation Sans", captionSize: 24, cursor: true, captionBox: true, captionMarginV: 20, fadeInMs: 250, annotations: { enabled: true, durationMs: 500, fontSize: 24, position: "top-right" as const } },
+      theme: { captionFont: "Liberation Sans", captionSize: 24, cursor: true, captionBox: true, captionMarginV: 20, captions: "block" as const, captionAccent: "#3fb950", fadeInMs: 250, frame: { enabled: false, scale: 0.86, radius: 24, backdropTop: "#101418", backdropBottom: "#1d2733", shadow: true }, annotations: { enabled: true, durationMs: 500, fontSize: 24, position: "top-right" as const } },
       out: "/local/work/out",
     },
   };
@@ -76,9 +77,10 @@ describe("render manifest", () => {
         { shotId: "b", audioPath: "/y/v.mp3", durationSec: 1, alignment: { chars: [], startSec: [], endSec: [] } },
       ],
       config: {
+        audio: { soundDesign: false, bedDb: -28, ticks: true, sweeps: true },
         resolution: { width: 320, height: 240 },
         fps: 15,
-        theme: { captionFont: "Liberation Sans", captionSize: 24, cursor: true, captionBox: true, captionMarginV: 20, fadeInMs: 250, annotations: { enabled: true, durationMs: 500, fontSize: 24, position: "top-right" as const } },
+        theme: { captionFont: "Liberation Sans", captionSize: 24, cursor: true, captionBox: true, captionMarginV: 20, captions: "block" as const, captionAccent: "#3fb950", fadeInMs: 250, frame: { enabled: false, scale: 0.86, radius: 24, backdropTop: "#101418", backdropBottom: "#1d2733", shadow: true }, annotations: { enabled: true, durationMs: 500, fontSize: 24, position: "top-right" as const } },
         out: "/o",
       },
     };

@@ -1,5 +1,10 @@
 import { z } from "zod";
 
+// Values spliced into ffmpeg filtergraphs are validated at the boundary: hex
+// colors and font names may not carry filtergraph metacharacters.
+const hexColor = () => z.string().regex(/^#[0-9a-fA-F]{6}$/, "expected #rrggbb");
+const fontName = () => z.string().regex(/^[A-Za-z0-9 ._-]+$/, "font name may contain letters, digits, spaces, . _ -");
+
 export const ActionSchema = z.object({
   kind: z.enum(["goto", "click", "type", "wait", "hover", "highlight", "chapter", "scroll"]),
   selector: z.string().optional(),
@@ -16,7 +21,10 @@ export const ShotSchema = z.object({
   // The id is embedded in on-disk artifact names (shot_<id>.mp4, frames_<id>/,
   // events_<id>.json): restrict to filename-safe characters so it can never
   // traverse out of the output directory.
-  id: z.string().regex(/^[A-Za-z0-9._-]+$/, "shot id must be filename-safe (letters, digits, . _ -)"),
+  id: z
+    .string()
+    .regex(/^[A-Za-z0-9._-]+$/, "shot id must be filename-safe (letters, digits, . _ -)")
+    .refine((id) => !id.startsWith("__"), 'shot ids starting with "__" are reserved for pipeline segments (brand cards)'),
   // "live" drives an authenticated SaaS app via a saved Playwright persistent-context
   // profile (see capture.auth). Manifest syntax is identical to "dashboard".
   target: z.enum(["dashboard", "uipath", "terminal", "prebaked", "live"]),
@@ -42,13 +50,15 @@ export const DemoConfigSchema = z.object({
   fps: z.number().default(30),
   voice: z.object({
     voiceId: z.string().default("21m00Tcm4TlvDq8ikWAM"),
-    modelId: z.string().default("eleven_flash_v2_5"),
+    // Quality tier by default (production-polish S6): flash is the latency
+    // tier and audibly flatter for narration. Explicit config still wins.
+    modelId: z.string().default("eleven_multilingual_v2"),
     seed: z.number().default(42),
     stability: z.number().default(0.5),
     similarity: z.number().default(0.75),
   }).default({}),
   theme: z.object({
-    captionFont: z.string().default("Arial"),
+    captionFont: fontName().default("Arial"),
     captionSize: z.number().default(24),
     cursor: z.boolean().default(true),
     captionBox: z.boolean().default(true),
@@ -56,6 +66,21 @@ export const DemoConfigSchema = z.object({
     // Fade-in at the start of every segment after the first (soft transition
     // instead of a hard cut). 0 disables. Never alters segment durations.
     fadeInMs: z.number().default(250),
+    // Caption mode (production-polish S3): "wordpop" renders word-by-word ASS
+    // captions synced to TTS alignment; "block" is the legacy SRT burn.
+    captions: z.enum(["wordpop", "block"]).default("wordpop"),
+    // Accent color for the actively-spoken word in wordpop mode.
+    captionAccent: hexColor().default("#3fb950"),
+    // Scene framing (production-polish S1): the capture floats as a rounded,
+    // shadowed window on a gradient backdrop. Disable to restore full-bleed.
+    frame: z.object({
+      enabled: z.boolean().default(true),
+      scale: z.number().min(0.5).max(1).default(0.86),
+      radius: z.number().min(0).default(24),
+      backdropTop: hexColor().default("#101418"),
+      backdropBottom: hexColor().default("#1d2733"),
+      shadow: z.boolean().default(true),
+    }).default({}),
     // Native screencast action annotations (animated cursor between actions,
     // interacted-element highlight, action title). Active only under the
     // screencast engine; suppresses the legacy overlay cursor (see cursorMode).
@@ -67,6 +92,16 @@ export const DemoConfigSchema = z.object({
     }).default({}),
   }).default({}),
   clipsDir: z.string().default("clips/prebaked"),
+  // Sound design (production-polish S2): synthesized ambient bed auto-ducked
+  // under narration, soft ticks on recorded clicks, quiet sweeps at segment
+  // boundaries. musicPath swaps the synthesized bed for an operator file.
+  audio: z.object({
+    soundDesign: z.boolean().default(true),
+    bedDb: z.number().max(0).default(-28),
+    ticks: z.boolean().default(true),
+    sweeps: z.boolean().default(true),
+    musicPath: z.string().optional(),
+  }).default({}),
   // Camera motion. Zoom-on-action eases the frame toward each interacted
   // element and back (screencast engine only); never changes segment duration.
   motion: z.object({
@@ -75,7 +110,15 @@ export const DemoConfigSchema = z.object({
     zoomInMs: z.number().min(0).default(600),
     zoomHoldMs: z.number().min(0).default(900),
     zoomOutMs: z.number().min(0).default(600),
-  }).default({}),
+    // Living camera (production-polish S4): continuous camera at a gentle
+    // base zoom with slow drift, traveling between action targets instead of
+    // resetting to wide. false restores the per-event zoom windows.
+    livingCamera: z.boolean().default(true),
+    baseZoom: z.number().min(1).max(1.5).default(1.08),
+    driftAmp: z.number().min(0).max(0.05).default(0.012),
+    driftPeriodSec: z.number().min(2).default(11),
+  }).default({})
+    .refine((m) => m.baseZoom - m.driftAmp >= 1, { message: "baseZoom - driftAmp must stay >= 1 (drift may never zoom out past full frame)" }),
   // Auth-walled SaaS live capture (target: "live"). The whole section is optional so
   // existing dashboard/prebaked configs validate unchanged. `auth` is only required
   // when a manifest contains a "live" shot. The profile holds session cookies/tokens
@@ -108,6 +151,17 @@ export const DemoConfigSchema = z.object({
       allowUnguardedLiveCapture: z.boolean().default(false),
     }).optional(),
   }).default({}),
+  // Brand cards (production-polish S5): cold-open title card + closing URL
+  // card, rendered on the backdrop gradient as ordinary silent segments.
+  brand: z.object({
+    title: z.string(),
+    subtitle: z.string().optional(),
+    url: z.string().optional(),
+    accent: hexColor().default("#3fb950"),
+    cards: z.boolean().default(true),
+    titleSec: z.number().min(0.5).default(2.2),
+    endSec: z.number().min(0.5).default(3.0),
+  }).optional(),
   // Optional CSS injected into every captured page before interaction. Use to
   // stabilise capture of dashboards taller than the output frame — e.g. bound a
   // growing list's height so the document never overflows the viewport (which

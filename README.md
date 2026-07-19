@@ -43,6 +43,20 @@ DEMO_SCRIPT.md
 10. parity verify    — shotCount / videoSegments / audioSec / videoSec / maxSec
 ```
 
+### Production polish
+
+Renders are produced pieces by default: the capture floats as a rounded,
+shadowed window on a gradient backdrop (`theme.frame`), a synthesized ambient
+bed ducks under the narration with soft click ticks and boundary sweeps
+(`audio.*`; `audio.musicPath` swaps in your own track, local renders only),
+captions pop word-by-word in sync with speech (`theme.captions: "wordpop"`,
+accent via `theme.captionAccent`), a living camera keeps a gentle base zoom and
+travels between action targets (`motion.livingCamera`), and optional brand
+cards open and close the video (`brand: { title, subtitle, url, accent }`).
+Narration defaults to ElevenLabs' quality tier (`eleven_multilingual_v2`).
+Every knob has a legacy off-switch. Requires ffmpeg >= 5.1 (amix normalize,
+gradients, zoompan input-time are all in use).
+
 ### Capture engines
 
 The default engine is **screencast**: CDP JPEG frames are captured with their
@@ -199,13 +213,18 @@ Key fields in `demo.config.json` (full schema in `src/types.ts`):
 | `resolution` | `1920×1080` | Capture resolution |
 | `fps` | `30` | Frame rate |
 | `voice.voiceId` | Rachel (ElevenLabs) | ElevenLabs voice ID |
-| `voice.modelId` | `eleven_flash_v2_5` | ElevenLabs model |
+| `voice.modelId` | `eleven_multilingual_v2` | ElevenLabs model (`eleven_flash_v2_5` stays selectable for cheap drafts) |
 | `voice.seed` | `42` | Seed for reproducible synthesis |
 | `voice.stability` | `0.5` | Voice stability |
 | `voice.similarity` | `0.75` | Voice similarity boost |
 | `theme.captionFont` | `"Arial"` | ffmpeg subtitle font |
 | `theme.captionSize` | `24` | Subtitle font size (pt) |
 | `theme.cursor` | `true` | Show fake cursor overlay |
+| `theme.captions` | `"wordpop"` | Word-pop ASS captions synced to TTS alignment; `"block"` restores the legacy SRT burn |
+| `theme.frame.enabled` | `true` | Scene framing: the capture floats as a rounded, shadowed window on a gradient backdrop |
+| `audio.soundDesign` | `true` | Synthesized ambient bed ducked under narration, click ticks, segment sweeps |
+| `motion.livingCamera` | `true` | Continuous camera path with drift; `motion.zoomOnAction: false` disables all camera motion |
+| `brand` | (off) | `{ title, subtitle, url, accent, cards }` adds branded title and end cards |
 | `clipsDir` | `"clips/prebaked"` | Directory scanned for prebaked clips |
 
 Sample: `demo.config.sample.json`.

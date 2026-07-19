@@ -51,3 +51,22 @@ describe("runPipeline remote offload (FAKE_TTS)", () => {
     ).rejects.toThrow(/remote render bundle not found/);
   }, 120_000);
 });
+
+describe("audio.musicPath remote gate (pipeline finding)", () => {
+  it("rejects a remote render when sound design would read musicPath", async () => {
+    const cfg = await fixtureConfig("pipe-remote-music-");
+    (cfg.audio as { musicPath?: string }).musicPath = "/tmp/nope.mp3";
+    await expect(runPipeline(cfg, { render: { transport: new LocalTransport() } })).rejects.toThrow(/musicPath/);
+  });
+  it("does not fire the musicPath gate when sound design is off (the file is never read)", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "pipe-remote-music-off-"));
+    const cfg = DemoConfigSchema.parse({
+      script: join(dir, "missing.md"),
+      dashboardBaseUrl: "http://localhost:3000",
+      out: join(dir, "out"),
+      audio: { soundDesign: false, musicPath: "/tmp/nope.mp3" },
+    });
+    // The pipeline proceeds past the gate and fails on the missing script instead.
+    await expect(runPipeline(cfg, { render: { transport: new LocalTransport() } })).rejects.toThrow(/ENOENT|no such file/i);
+  });
+});

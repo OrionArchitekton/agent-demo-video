@@ -100,6 +100,165 @@ export function zoomLevelAt(t: number, windows: ZoomWindow[], zoom: number): num
 
 const f3 = (n: number) => n.toFixed(3);
 
+// ---------------------------------------------------------------------------
+// Living camera (production-polish S4): a continuous camera at a gentle base
+// zoom that eases toward each action target and on to the next, instead of
+// zooming in and out per event. Keyframes are pure and unit-tested; the ffmpeg
+// expression interpolates the same keyframes with smoothstep, plus a slow
+// additive drift in z (expression-only; the TS twin models the keyframe path).
+// ---------------------------------------------------------------------------
+
+export interface CameraOpts {
+  width: number;
+  height: number;
+  fps: number;
+  durationSec: number;
+  baseZoom: number;
+  zoom: number;
+  inSec: number;
+  holdSec: number;
+  outSec: number;
+  driftAmp: number;
+  driftPeriodSec: number;
+}
+
+export interface CamKeyframe { t: number; z: number; fx: number; fy: number }
+
+/** Piecewise camera keyframes: hold base, ease to targets, travel directly between nearby events, return to base. */
+export function cameraKeyframes(events: InteractionEvent[], o: CameraOpts): CamKeyframe[] {
+  const base = { z: o.baseZoom, fx: 0.5, fy: 0.5 };
+  const kf: CamKeyframe[] = [{ t: 0, ...base }];
+  let last = { ...base };
+  let cursor = 0;
+
+  const sorted = [...events]
+    .filter((e) => e.tMs / 1000 < o.durationSec)
+    .sort((a, b) => a.tMs - b.tMs);
+
+  const push = (t: number, s: { z: number; fx: number; fy: number }) => {
+    const prev = kf[kf.length - 1]!;
+    if (t <= prev.t + 1e-6) return;
+    kf.push({ t, ...s });
+  };
+
+  // The camera must be back at base by the end of the shot (spec S4): events
+  // whose full ease cycle cannot fit are clamped so the ease-back always runs.
+  const lastEaseStart = o.durationSec - o.outSec;
+
+  // Merge pass BEFORE building the path: an event arriving while the camera is
+  // still easing toward the previous target would force a near-instant re-pan,
+  // so it is dropped here — where it cannot also masquerade as the survivor's
+  // `next` and suppress that event's hold/ease-back cycle.
+  const kept: InteractionEvent[] = [];
+  let prevInEnd = -Infinity;
+  for (const e of sorted) {
+    const evT = e.tMs / 1000;
+    if (evT < prevInEnd) continue;
+    // An event inside the final ease-back window has no room for ANY cycle
+    // (ease-in would collide with the mandatory return to base). Dropping it
+    // here is deliberate: the alternative — retargeting the collided keyframe —
+    // would re-slope the entire preceding span into a shot-long creep toward
+    // the focus, which is far worse than skipping one last-instant zoom.
+    if (evT >= lastEaseStart) continue;
+    kept.push(e);
+    prevInEnd = Math.min(evT + o.inSec, Math.max(evT, lastEaseStart));
+  }
+
+  for (let i = 0; i < kept.length; i++) {
+    const e = kept[i]!;
+    const evT = e.tMs / 1000;
+    const focus = {
+      z: o.zoom,
+      fx: Math.min(1, Math.max(0, (e.box.x + e.box.width / 2) / o.width)),
+      fy: Math.min(1, Math.max(0, (e.box.y + e.box.height / 2) / o.height)),
+    };
+    if (evT > cursor) push(evT, last);
+    const inEnd = Math.min(evT + o.inSec, Math.max(evT, lastEaseStart));
+    push(inEnd, focus);
+    last = focus;
+    const holdEnd = Math.min(inEnd + o.holdSec, Math.max(inEnd, lastEaseStart));
+    // Survivors of the merge pass always start at or after this event's inEnd.
+    const next = kept[i + 1];
+    if (next && next.tMs / 1000 <= holdEnd + o.outSec) {
+      // Travel directly to the next target: hold here until its ease begins.
+      cursor = Math.max(inEnd, Math.min(next.tMs / 1000, holdEnd));
+      push(cursor, last);
+    } else {
+      push(holdEnd, last);
+      const outEnd = Math.min(holdEnd + o.outSec, o.durationSec);
+      push(outEnd, base);
+      last = { ...base };
+      cursor = outEnd;
+    }
+  }
+  push(o.durationSec, last);
+  // Guarantee the final state is base even when a late event's ease-back was
+  // squeezed: replace a non-base terminal keyframe with an explicit ramp.
+  const terminal = kf[kf.length - 1]!;
+  if (terminal.z !== o.baseZoom || terminal.fx !== 0.5 || terminal.fy !== 0.5) {
+    terminal.z = o.baseZoom;
+    terminal.fx = 0.5;
+    terminal.fy = 0.5;
+  }
+  return kf;
+}
+
+/** Camera-motion engine selection. `zoomOnAction` is the master motion
+ *  off-switch (the documented pre-slate contract): false disables ALL camera
+ *  motion, living camera included, so legacy configs keep a still capture. */
+export type CameraMode = "living" | "legacy" | "none";
+export function cameraMode(zoomOnAction: boolean, livingCamera: boolean): CameraMode {
+  if (!zoomOnAction) return "none";
+  return livingCamera ? "living" : "legacy";
+}
+
+/** TS twin of the generated expression's keyframe path (drift excluded). */
+export function cameraStateAt(t: number, kf: CamKeyframe[]): { z: number; fx: number; fy: number } {
+  if (t <= kf[0]!.t) return kf[0]!;
+  for (let i = 0; i < kf.length - 1; i++) {
+    const a = kf[i]!;
+    const b = kf[i + 1]!;
+    if (t >= a.t && t <= b.t) {
+      const span = b.t - a.t;
+      const p = ease(span === 0 ? 1 : (t - a.t) / span);
+      return { z: a.z + (b.z - a.z) * p, fx: a.fx + (b.fx - a.fx) * p, fy: a.fy + (b.fy - a.fy) * p };
+    }
+  }
+  return kf[kf.length - 1]!;
+}
+
+/** Nested piecewise smoothstep expression over keyframes for one channel. */
+function piecewiseExpr(kf: CamKeyframe[], pick: (k: CamKeyframe) => number): string {
+  let expr = f3(pick(kf[kf.length - 1]!));
+  for (let i = kf.length - 2; i >= 0; i--) {
+    const a = kf[i]!;
+    const b = kf[i + 1]!;
+    const av = f3(pick(a));
+    const bv = f3(pick(b));
+    const span = b.t - a.t;
+    const seg =
+      av === bv || span <= 0
+        ? av
+        : `st(0,clip((it-${f3(a.t)})/${f3(span)},0,1));${av}+(${bv}-${av})*ld(0)*ld(0)*(3-2*ld(0))`;
+    expr = `if(lt(it,${f3(b.t)}),${seg},${expr})`;
+  }
+  return expr;
+}
+
+/**
+ * zoompan filter for the living camera. Never returns undefined: with no
+ * events the base zoom and drift still apply (no static full-wide shots).
+ */
+export function cameraFilterExpr(events: InteractionEvent[], o: CameraOpts): string {
+  const kf = cameraKeyframes(events, o);
+  const z = `(${piecewiseExpr(kf, (k) => k.z)})+${o.driftAmp}*sin(2*PI*it/${f3(o.driftPeriodSec)})`;
+  const fx = piecewiseExpr(kf, (k) => k.fx);
+  const fy = piecewiseExpr(kf, (k) => k.fy);
+  const x = `clip((${fx})*iw-iw/zoom/2,0,iw-iw/zoom)`;
+  const y = `clip((${fy})*ih-ih/zoom/2,0,ih-ih/zoom)`;
+  return `zoompan=z='${z}':x='${x}':y='${y}':d=1:s=${o.width}x${o.height}:fps=${o.fps}`;
+}
+
 /**
  * Build the zoompan filter string for the event timeline, or undefined when no
  * window qualifies (the segment renders unchanged). Expressions are anchored on

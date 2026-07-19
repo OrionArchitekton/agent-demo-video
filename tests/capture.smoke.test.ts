@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll } from "vitest";
-import { mkdtemp, stat } from "node:fs/promises";
+import { mkdtemp, stat, writeFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import { tmpdir } from "node:os"; import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { captureShot } from "../src/capture";
@@ -21,4 +22,15 @@ describe("captureShot (smoke)", () => {
     expect((await stat(seg)).size).toBeGreaterThan(0);
     expect((await stat(join(dir, "events_s1.json"))).size).toBeGreaterThan(0);
   }, 60_000);
+});
+
+describe("stale events artifact (pipeline finding)", () => {
+  it("clears a previous run's events file before capture so obsolete click ticks never leak", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "cap-stale-"));
+    await writeFile(join(dir, "events_p1.json"), JSON.stringify([{ kind: "click", tMs: 500 }]));
+    const cfg = DemoConfigSchema.parse({ script: "x", dashboardBaseUrl: "http://localhost:3000" });
+    const shot = { id: "p1", target: "prebaked" as const, clip: "clips/none.mp4", narration: "demo", actions: [] };
+    await captureShot(shot, { shotId: "p1", startSec: 0, durationSec: 1 }, cfg, dir);
+    expect(existsSync(join(dir, "events_p1.json"))).toBe(false);
+  });
 });

@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import type { DemoConfig, TtsResult } from "./types";
 import {
@@ -14,12 +14,14 @@ import {
   extendVideoArgs,
   probeDurationSec,
 } from "./ffmpeg";
-import { toSrt, captionStyle } from "./captions";
+import { toSrt, toWordAss, captionStyle } from "./captions";
 import { buildTimeline, reconcileSegmentDuration } from "./timeline";
 import { verifyParity } from "./verify";
+import { maskGenArgs, shadowGenArgs, frameArgs } from "./framing";
+import { ambientBedArgs, tickWavArgs, sweepWavArgs, soundscapeArgs } from "./sound";
 
 /** The render-affecting subset of the demo config (no capture/tts/auth fields). */
-export type RenderConfig = Pick<DemoConfig, "resolution" | "fps" | "theme" | "out">;
+export type RenderConfig = Pick<DemoConfig, "resolution" | "fps" | "theme" | "out" | "audio">;
 
 /**
  * Everything the render stage consumes, independent of how it was produced.
@@ -30,11 +32,15 @@ export interface RenderInputs {
   rawSegments: string[];
   tts: TtsResult[];
   config: RenderConfig;
+  /** Per-segment kind; "card" segments are already final compositions and skip framing. Absent = all "shot". */
+  segmentKinds?: ("shot" | "card")[];
+  /** Per-segment click offsets (seconds, capture-relative) for sound-design ticks; preferred over reading events files so remote renders match local ones. */
+  clickOffsets?: number[][];
 }
 
 export interface RenderResult {
   outPath: string;
-  report: { totalSec: number; segments: number; parity: { ok: boolean; problems: string[] } };
+  report: { totalSec: number; segments: number; ticks: number; parity: { ok: boolean; problems: string[] } };
 }
 
 // Float/probe equality floor (seconds) — NOT a truncation budget. Any clip measurably
@@ -60,20 +66,59 @@ export async function renderVideo(inputs: RenderInputs): Promise<RenderResult> {
   await mkdir(segDir, { recursive: true });
   await mkdir(audioDir, { recursive: true });
 
-  // 5. Normalize each raw segment to a uniformly-encoded mp4
+  // 5. Normalize each raw segment to a uniformly-encoded mp4. With framing
+  //    enabled the segment is composited into the framed scene instead; the
+  //    rounded mask and shadow plate are generated once and reused.
+  const frame = config.theme.frame;
+  const frameOpts = {
+    width: config.resolution.width,
+    height: config.resolution.height,
+    scale: frame.scale,
+    radius: frame.radius,
+    backdropTop: frame.backdropTop,
+    backdropBottom: frame.backdropBottom,
+    shadow: frame.shadow,
+  };
+  let maskPng: string | null = null;
+  let shadowPng: string | null = null;
+  if (frame.enabled) {
+    maskPng = join(segDir, "frame_mask.png");
+    await ffmpeg(maskGenArgs(frameOpts, maskPng));
+    if (frame.shadow) {
+      shadowPng = join(segDir, "frame_shadow.png");
+      await ffmpeg(shadowGenArgs(frameOpts, shadowPng));
+    }
+  }
+
   const segMp4s: string[] = [];
   for (let i = 0; i < rawSegments.length; i++) {
     const segMp4 = join(segDir, `seg_${i}.mp4`);
-    await ffmpeg(
-      normalizeArgs(rawSegments[i]!, segMp4, {
-        width: config.resolution.width,
-        height: config.resolution.height,
-        fps: config.fps,
-        // Soft transition: every segment after the first opens with a brief
-        // fade-in. Purely visual; duration and segment count are unchanged.
-        ...(i > 0 && config.theme.fadeInMs > 0 ? { fadeInSec: config.theme.fadeInMs / 1000 } : {}),
-      }),
-    );
+    // Soft transition: every segment after the first opens with a brief
+    // fade-in. Purely visual; duration and segment count are unchanged.
+    // Cards bake their own fades in cardArgs, so they are excluded here —
+    // stacking the transition fade would double-fade the end card's open.
+    const isCard = inputs.segmentKinds?.[i] === "card";
+    const fadeInSec = i > 0 && !isCard && config.theme.fadeInMs > 0 ? config.theme.fadeInMs / 1000 : undefined;
+    if (frame.enabled && maskPng && !isCard) {
+      const rawSec = await probeDurationSec(rawSegments[i]!);
+      await ffmpeg(
+        frameArgs(rawSegments[i]!, maskPng, shadowPng, segMp4, {
+          ...frameOpts,
+          fps: config.fps,
+          durationSec: rawSec,
+          ...(fadeInSec ? { fadeInSec } : {}),
+        }),
+      );
+    } else {
+      await ffmpeg(
+        normalizeArgs(rawSegments[i]!, segMp4, {
+          width: config.resolution.width,
+          height: config.resolution.height,
+          fps: config.fps,
+          ...(fadeInSec ? { fadeInSec } : {}),
+        }),
+      );
+    }
     segMp4s.push(segMp4);
   }
 
@@ -104,10 +149,27 @@ export async function renderVideo(inputs: RenderInputs): Promise<RenderResult> {
   }
   const timeline = buildTimeline(tts.map((t, i) => ({ shotId: t.shotId, durationSec: durSecs[i]! })));
 
-  // 7. Build + write captions
-  const srt = toSrt(tts.map((t, i) => ({ alignment: t.alignment, startSec: timeline.entries[i]!.startSec })));
+  // 7. Build + write captions. The SRT artifact is always written (upload /
+  //    accessibility); wordpop additionally writes the ASS burn source.
+  const cues = tts.map((t, i) => ({ alignment: t.alignment, startSec: timeline.entries[i]!.startSec }));
   const srtPath = join(out, "captions.srt");
-  await writeFile(srtPath, srt, "utf8");
+  await writeFile(srtPath, toSrt(cues), "utf8");
+  let assPath: string | null = null;
+  if (config.theme.captions === "wordpop") {
+    assPath = join(out, "captions.ass");
+    await writeFile(
+      assPath,
+      toWordAss(cues, {
+        width: config.resolution.width,
+        height: config.resolution.height,
+        font: config.theme.captionFont,
+        fontSize: Math.round(config.resolution.height * 0.042),
+        accent: config.theme.captionAccent,
+        marginV: Math.round(config.resolution.height * 0.09),
+      }),
+      "utf8",
+    );
+  }
 
   // 8. Pad each audio track to exactly its video segment duration
   const paddedAudioPaths: string[] = [];
@@ -129,18 +191,67 @@ export async function renderVideo(inputs: RenderInputs): Promise<RenderResult> {
   const concatAudioPath = join(out, "audio.mp3");
   await ffmpeg(concatAudioArgs(audioListPath, concatAudioPath));
 
+  // 10.5 Sound design: ambient bed ducked under narration, ticks on recorded
+  //      clicks, sweeps at segment boundaries. Missing events files (e.g. a
+  //      remote render that didn't ship them, prebaked shots) mean no ticks
+  //      for that shot, never a failure.
+  let finalAudioPath = concatAudioPath;
+  let tickCount = 0;
+  if (config.audio.soundDesign) {
+    const bedPath = join(audioDir, "bed.wav");
+    const tickPath = join(audioDir, "tick.wav");
+    const sweepPath = join(audioDir, "sweep.wav");
+    await ffmpeg(ambientBedArgs(timeline.totalSec, bedPath));
+    await ffmpeg(tickWavArgs(tickPath));
+    await ffmpeg(sweepWavArgs(sweepPath));
+
+    const tickTimes: number[] = [];
+    if (inputs.clickOffsets) {
+      for (let i = 0; i < tts.length; i++) {
+        for (const off of inputs.clickOffsets[i] ?? []) {
+          tickTimes.push(timeline.entries[i]!.startSec + off);
+        }
+      }
+    } else {
+      // Fallback for callers without precomputed offsets: read the per-shot
+      // events artifacts (absent artifact = no ticks for that shot).
+      for (let i = 0; i < tts.length; i++) {
+        try {
+          const raw = await readFile(join(segDir, `events_${tts[i]!.shotId}.json`), "utf8");
+          const events = JSON.parse(raw) as { kind: string; tMs: number }[];
+          for (const e of events) {
+            if (e.kind === "click") tickTimes.push(timeline.entries[i]!.startSec + e.tMs / 1000);
+          }
+        } catch {
+          // No events artifact for this shot: no ticks.
+        }
+      }
+    }
+    const sweepTimes = timeline.entries.slice(1).map((en) => en.startSec);
+
+    tickCount = tickTimes.length;
+    const mixPath = join(audioDir, "mix.m4a");
+    await ffmpeg(
+      soundscapeArgs(concatAudioPath, bedPath, tickPath, sweepPath, tickTimes, sweepTimes, timeline.totalSec, config.audio, mixPath),
+    );
+    finalAudioPath = mixPath;
+  }
+
   // 11. Mux video + audio
   const muxedPath = join(out, "muxed.mp4");
-  await ffmpeg(muxArgs(concatVideoPath, concatAudioPath, muxedPath));
+  await ffmpeg(muxArgs(concatVideoPath, finalAudioPath, muxedPath));
 
-  // 12. Burn subtitles
-  const escapedSrt = subtitlesFilterPath(srtPath);
+  // 12. Burn subtitles (word-pop ASS when enabled, legacy styled SRT otherwise)
   const finalPath = join(out, "final.mp4");
-  await ffmpeg(burnSubsArgs(muxedPath, escapedSrt, finalPath, captionStyle(config.theme)));
+  if (assPath) {
+    await ffmpeg(burnSubsArgs(muxedPath, subtitlesFilterPath(assPath), finalPath));
+  } else {
+    await ffmpeg(burnSubsArgs(muxedPath, subtitlesFilterPath(srtPath), finalPath, captionStyle(config.theme)));
+  }
 
   // 13. Parity check
   const videoSec = await probeDurationSec(finalPath);
-  const audioSec = await probeDurationSec(concatAudioPath);
+  const audioSec = await probeDurationSec(finalAudioPath);
   const parity = verifyParity({
     shotCount: tts.length,
     videoSegments: segMp4s.length,
@@ -150,5 +261,5 @@ export async function renderVideo(inputs: RenderInputs): Promise<RenderResult> {
   });
   if (!parity.ok) throw new Error("parity failed: " + parity.problems.join("; "));
 
-  return { outPath: finalPath, report: { totalSec: timeline.totalSec, segments: segMp4s.length, parity } };
+  return { outPath: finalPath, report: { totalSec: timeline.totalSec, segments: segMp4s.length, ticks: tickCount, parity } };
 }

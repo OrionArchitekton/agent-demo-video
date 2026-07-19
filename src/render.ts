@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import type { DemoConfig, TtsResult } from "./types";
 import {
@@ -18,9 +18,10 @@ import { toSrt, toWordAss, captionStyle } from "./captions";
 import { buildTimeline, reconcileSegmentDuration } from "./timeline";
 import { verifyParity } from "./verify";
 import { maskGenArgs, shadowGenArgs, frameArgs } from "./framing";
+import { ambientBedArgs, tickWavArgs, sweepWavArgs, soundscapeArgs } from "./sound";
 
 /** The render-affecting subset of the demo config (no capture/tts/auth fields). */
-export type RenderConfig = Pick<DemoConfig, "resolution" | "fps" | "theme" | "out">;
+export type RenderConfig = Pick<DemoConfig, "resolution" | "fps" | "theme" | "out" | "audio">;
 
 /**
  * Everything the render stage consumes, independent of how it was produced.
@@ -183,9 +184,43 @@ export async function renderVideo(inputs: RenderInputs): Promise<RenderResult> {
   const concatAudioPath = join(out, "audio.mp3");
   await ffmpeg(concatAudioArgs(audioListPath, concatAudioPath));
 
+  // 10.5 Sound design: ambient bed ducked under narration, ticks on recorded
+  //      clicks, sweeps at segment boundaries. Missing events files (e.g. a
+  //      remote render that didn't ship them, prebaked shots) mean no ticks
+  //      for that shot, never a failure.
+  let finalAudioPath = concatAudioPath;
+  if (config.audio.soundDesign) {
+    const bedPath = join(audioDir, "bed.wav");
+    const tickPath = join(audioDir, "tick.wav");
+    const sweepPath = join(audioDir, "sweep.wav");
+    await ffmpeg(ambientBedArgs(timeline.totalSec, bedPath));
+    await ffmpeg(tickWavArgs(tickPath));
+    await ffmpeg(sweepWavArgs(sweepPath));
+
+    const tickTimes: number[] = [];
+    for (let i = 0; i < tts.length; i++) {
+      try {
+        const raw = await readFile(join(segDir, `events_${tts[i]!.shotId}.json`), "utf8");
+        const events = JSON.parse(raw) as { kind: string; tMs: number }[];
+        for (const e of events) {
+          if (e.kind === "click") tickTimes.push(timeline.entries[i]!.startSec + e.tMs / 1000);
+        }
+      } catch {
+        // No events artifact for this shot: no ticks.
+      }
+    }
+    const sweepTimes = timeline.entries.slice(1).map((en) => en.startSec);
+
+    const mixPath = join(audioDir, "mix.m4a");
+    await ffmpeg(
+      soundscapeArgs(concatAudioPath, bedPath, tickPath, sweepPath, tickTimes, sweepTimes, timeline.totalSec, config.audio, mixPath),
+    );
+    finalAudioPath = mixPath;
+  }
+
   // 11. Mux video + audio
   const muxedPath = join(out, "muxed.mp4");
-  await ffmpeg(muxArgs(concatVideoPath, concatAudioPath, muxedPath));
+  await ffmpeg(muxArgs(concatVideoPath, finalAudioPath, muxedPath));
 
   // 12. Burn subtitles (word-pop ASS when enabled, legacy styled SRT otherwise)
   const finalPath = join(out, "final.mp4");
@@ -197,7 +232,7 @@ export async function renderVideo(inputs: RenderInputs): Promise<RenderResult> {
 
   // 13. Parity check
   const videoSec = await probeDurationSec(finalPath);
-  const audioSec = await probeDurationSec(concatAudioPath);
+  const audioSec = await probeDurationSec(finalAudioPath);
   const parity = verifyParity({
     shotCount: tts.length,
     videoSegments: segMp4s.length,

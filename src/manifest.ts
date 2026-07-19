@@ -30,6 +30,7 @@ export function buildManifest(inputs: RenderInputs): RenderManifest {
       resolution: inputs.config.resolution,
       fps: inputs.config.fps,
       theme: inputs.config.theme,
+      audio: inputs.config.audio,
     },
   };
 }
@@ -47,6 +48,7 @@ export function loadManifest(manifest: RenderManifest, baseDir: string): RenderI
       resolution: manifest.config.resolution,
       fps: manifest.config.fps,
       theme: manifest.config.theme,
+      audio: manifest.config.audio,
       out: join(baseDir, "out"),
     },
   };

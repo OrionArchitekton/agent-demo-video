@@ -84,6 +84,16 @@ export const DemoConfigSchema = z.object({
     }).default({}),
   }).default({}),
   clipsDir: z.string().default("clips/prebaked"),
+  // Sound design (production-polish S2): synthesized ambient bed auto-ducked
+  // under narration, soft ticks on recorded clicks, quiet sweeps at segment
+  // boundaries. musicPath swaps the synthesized bed for an operator file.
+  audio: z.object({
+    soundDesign: z.boolean().default(true),
+    bedDb: z.number().max(0).default(-28),
+    ticks: z.boolean().default(true),
+    sweeps: z.boolean().default(true),
+    musicPath: z.string().optional(),
+  }).default({}),
   // Camera motion. Zoom-on-action eases the frame toward each interacted
   // element and back (screencast engine only); never changes segment duration.
   motion: z.object({

@@ -42,6 +42,7 @@ async function makeInputs(dir: string): Promise<RenderInputs> {
     rawSegments,
     tts,
     config: {
+      audio: { soundDesign: false, bedDb: -28, ticks: true, sweeps: true },
       resolution: { width: 320, height: 240 },
       fps: 15,
       theme: {

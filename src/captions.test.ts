@@ -96,3 +96,16 @@ describe("line rollover (review fix)", () => {
     expect(end3 <= start4).toBe(true);
   });
 });
+
+describe("shot-boundary caption tail (adversarial finding)", () => {
+  it("clamps a final line's linger tail at the next shot's start", async () => {
+    const { toWordAss } = await import("./captions");
+    const style = { width: 1920, height: 1080, font: "Arial", fontSize: 45, accent: "#3fb950", marginV: 97 };
+    const a1 = { chars: ["h", "i"], startSec: [0, 0.1], endSec: [0.1, 0.2] };
+    const a2 = { chars: ["y", "o"], startSec: [0, 0.1], endSec: [0.1, 0.2] };
+    const ass = toWordAss([{ alignment: a1, startSec: 0 }, { alignment: a2, startSec: 0.3 }], style);
+    const hiLine = ass.split("\n").find((l) => l.includes("}hi{"));
+    // Unclamped the tail would run to 0.35, past the 0.30 shot boundary.
+    expect(hiLine).toContain(",0:00:00.30,");
+  });
+});

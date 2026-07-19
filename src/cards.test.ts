@@ -52,3 +52,10 @@ describe("drawtext literal expansion (pipeline finding)", () => {
     }
   });
 });
+
+describe("textfile graph-separator safety (pipeline finding)", () => {
+  it("escapes comma, semicolon, and brackets in textfile paths", () => {
+    const j = titleCardArgs(O, "/t/title.mp4", { titleFile: "/a,b;c[d]/c_t.txt" }).join(" ");
+    expect(j).toContain("textfile=/a\\,b\\;c\\[d\\]/c_t.txt");
+  });
+});

@@ -6,6 +6,8 @@
  * ffmpeg argument builders only.
  */
 
+import { filterPathEscape } from "./ffmpeg.js";
+
 const BASE = ["-y", "-hide_banner", "-loglevel", "error"];
 
 export interface CardOpts {
@@ -32,12 +34,11 @@ export interface CardOpts {
 export interface CardTextFiles { titleFile: string; subtitleFile?: string; urlFile?: string }
 
 /**
- * The textfile PATH itself lives inside the filtergraph string, so filter
- * metacharacters in it (colon, quote, backslash) must be escaped the same way
- * subtitle paths are (see ffmpeg.ts subtitlesFilterPath).
+ * The textfile PATH itself lives inside the filtergraph string, so it uses
+ * the same shared escaping as subtitle paths (option-level specials plus the
+ * graph-level separators; see ffmpeg.ts filterPathEscape).
  */
-const tf = (p: string): string =>
-  p.replace(/\\/g, "/").replace(/:/g, "\\:").replace(/'/g, "\\\\\\'");
+const tf = filterPathEscape;
 
 const hex = (c: string): string => "0x" + c.replace(/^#/, "");
 

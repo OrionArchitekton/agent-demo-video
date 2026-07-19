@@ -27,14 +27,27 @@ export function concatListContent(filePaths: string[]): string {
   return filePaths.map(concatListEntry).join("\n");
 }
 
-export function subtitlesFilterPath(filePath: string): string {
+/**
+ * Escape a path for use inside a filtergraph option value: the option-level
+ * specials (colon, quote, backslash) plus the graph-level separators (comma,
+ * semicolon, link-label brackets) that would otherwise split the chain.
+ */
+export function filterPathEscape(filePath: string): string {
   if (/[\r\n]/.test(filePath)) {
-    throw new Error("ffmpeg subtitles filter paths cannot contain newlines");
+    throw new Error("ffmpeg filter paths cannot contain newlines");
   }
   return filePath
     .replace(/\\/g, "/")
     .replace(/:/g, "\\:")
-    .replace(/'/g, "\\\\\\'");
+    .replace(/'/g, "\\\\\\'")
+    .replace(/,/g, "\\,")
+    .replace(/;/g, "\\;")
+    .replace(/\[/g, "\\[")
+    .replace(/\]/g, "\\]");
+}
+
+export function subtitlesFilterPath(filePath: string): string {
+  return filterPathEscape(filePath);
 }
 
 export function concatAudioArgs(listFile: string, output: string): string[] {

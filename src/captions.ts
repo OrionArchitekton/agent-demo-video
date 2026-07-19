@@ -100,14 +100,18 @@ export function toWordAss(shots: { alignment: Alignment; startSec: number }[], s
   const accent = assColor(style.accent);
   const events: string[] = [];
 
-  for (const shot of shots) {
+  for (let si = 0; si < shots.length; si++) {
+    const shot = shots[si]!;
+    // The shot's caption window closes where the next shot begins: a final
+    // line's linger tail must never leak onto the next shot's first frames.
+    const shotEnd = shots[si + 1]?.startSec;
     const words = alignmentWords(shot.alignment, shot.startSec);
     for (let lineStart = 0; lineStart < words.length; lineStart += maxWords) {
       const line = words.slice(lineStart, lineStart + maxWords);
       // A line's final event may linger briefly, but never past the next
       // line's first word: overlapping Dialogue events stack via libass
       // collision handling and visibly jump the lower-third.
-      const nextLineStart = words[lineStart + maxWords]?.start;
+      const nextLineStart = words[lineStart + maxWords]?.start ?? shotEnd;
       const lineTail = nextLineStart !== undefined
         ? Math.min(line[line.length - 1]!.end + 0.15, nextLineStart)
         : line[line.length - 1]!.end + 0.15;

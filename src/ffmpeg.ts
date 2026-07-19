@@ -45,8 +45,10 @@ export function muxArgs(video: string, audio: string, output: string): string[] 
   return [...BASE, "-i", video, "-i", audio, "-c:v", "copy", "-c:a", "aac", "-shortest", output];
 }
 
-export function burnSubsArgs(video: string, srt: string, output: string, style = "FontName=Arial,FontSize=24"): string[] {
-  return [...BASE, "-i", video, "-vf", `subtitles=${srt}:force_style='${style}'`, "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-c:a", "aac", output];
+export function burnSubsArgs(video: string, subPath: string, output: string, style?: string): string[] {
+  // ASS files carry embedded styles; force_style is only for bare SRT.
+  const vf = style ? `subtitles=${subPath}:force_style='${style}'` : `subtitles=${subPath}`;
+  return [...BASE, "-i", video, "-vf", vf, "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-c:a", "aac", output];
 }
 
 /**

@@ -14,7 +14,7 @@ import {
   extendVideoArgs,
   probeDurationSec,
 } from "./ffmpeg";
-import { toSrt, captionStyle } from "./captions";
+import { toSrt, toWordAss, captionStyle } from "./captions";
 import { buildTimeline, reconcileSegmentDuration } from "./timeline";
 import { verifyParity } from "./verify";
 import { maskGenArgs, shadowGenArgs, frameArgs } from "./framing";
@@ -141,10 +141,27 @@ export async function renderVideo(inputs: RenderInputs): Promise<RenderResult> {
   }
   const timeline = buildTimeline(tts.map((t, i) => ({ shotId: t.shotId, durationSec: durSecs[i]! })));
 
-  // 7. Build + write captions
-  const srt = toSrt(tts.map((t, i) => ({ alignment: t.alignment, startSec: timeline.entries[i]!.startSec })));
+  // 7. Build + write captions. The SRT artifact is always written (upload /
+  //    accessibility); wordpop additionally writes the ASS burn source.
+  const cues = tts.map((t, i) => ({ alignment: t.alignment, startSec: timeline.entries[i]!.startSec }));
   const srtPath = join(out, "captions.srt");
-  await writeFile(srtPath, srt, "utf8");
+  await writeFile(srtPath, toSrt(cues), "utf8");
+  let assPath: string | null = null;
+  if (config.theme.captions === "wordpop") {
+    assPath = join(out, "captions.ass");
+    await writeFile(
+      assPath,
+      toWordAss(cues, {
+        width: config.resolution.width,
+        height: config.resolution.height,
+        font: config.theme.captionFont,
+        fontSize: Math.round(config.resolution.height * 0.042),
+        accent: config.theme.captionAccent,
+        marginV: Math.round(config.resolution.height * 0.09),
+      }),
+      "utf8",
+    );
+  }
 
   // 8. Pad each audio track to exactly its video segment duration
   const paddedAudioPaths: string[] = [];
@@ -170,10 +187,13 @@ export async function renderVideo(inputs: RenderInputs): Promise<RenderResult> {
   const muxedPath = join(out, "muxed.mp4");
   await ffmpeg(muxArgs(concatVideoPath, concatAudioPath, muxedPath));
 
-  // 12. Burn subtitles
-  const escapedSrt = subtitlesFilterPath(srtPath);
+  // 12. Burn subtitles (word-pop ASS when enabled, legacy styled SRT otherwise)
   const finalPath = join(out, "final.mp4");
-  await ffmpeg(burnSubsArgs(muxedPath, escapedSrt, finalPath, captionStyle(config.theme)));
+  if (assPath) {
+    await ffmpeg(burnSubsArgs(muxedPath, subtitlesFilterPath(assPath), finalPath));
+  } else {
+    await ffmpeg(burnSubsArgs(muxedPath, subtitlesFilterPath(srtPath), finalPath, captionStyle(config.theme)));
+  }
 
   // 13. Parity check
   const videoSec = await probeDurationSec(finalPath);

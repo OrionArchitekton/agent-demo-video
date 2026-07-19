@@ -58,6 +58,11 @@ export const DemoConfigSchema = z.object({
     // Fade-in at the start of every segment after the first (soft transition
     // instead of a hard cut). 0 disables. Never alters segment durations.
     fadeInMs: z.number().default(250),
+    // Caption mode (production-polish S3): "wordpop" renders word-by-word ASS
+    // captions synced to TTS alignment; "block" is the legacy SRT burn.
+    captions: z.enum(["wordpop", "block"]).default("wordpop"),
+    // Accent color for the actively-spoken word in wordpop mode.
+    captionAccent: z.string().default("#3fb950"),
     // Scene framing (production-polish S1): the capture floats as a rounded,
     // shadowed window on a gradient backdrop. Disable to restore full-bleed.
     frame: z.object({

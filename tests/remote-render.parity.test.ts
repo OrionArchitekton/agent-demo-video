@@ -50,6 +50,8 @@ async function makeInputs(dir: string): Promise<RenderInputs> {
         cursor: true,
         captionBox: true,
         captionMarginV: 20,
+        captions: "block" as const,
+        captionAccent: "#3fb950",
         fadeInMs: 250,
         frame: { enabled: false, scale: 0.86, radius: 24, backdropTop: "#101418", backdropBottom: "#1d2733", shadow: true },
         annotations: { enabled: true, durationMs: 500, fontSize: 24, position: "top-right" as const },

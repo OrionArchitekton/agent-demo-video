@@ -37,3 +37,48 @@ describe("captionStyle", () => {
     expect(s).not.toContain("BorderStyle=3");
   });
 });
+
+describe("word-pop captions (S3)", () => {
+  const align = (text: string, startSec = 0, perChar = 0.1) => {
+    const chars = text.split("");
+    return {
+      chars,
+      startSec: chars.map((_, i) => startSec + i * perChar),
+      endSec: chars.map((_, i) => startSec + (i + 1) * perChar),
+    };
+  };
+
+  it("emits one accumulating Dialogue event per word with the active word accented", async () => {
+    const { toWordAss } = await import("./captions");
+    const ass = toWordAss([{ alignment: align("hello brave world"), startSec: 0 }], {
+      width: 1920, height: 1080, font: "Arial", fontSize: 46, accent: "#3fb950", marginV: 96,
+    });
+    expect(ass).toContain("PlayResX: 1920");
+    expect(ass).toContain("PlayResY: 1080");
+    const events = ass.split("\n").filter((l) => l.startsWith("Dialogue:"));
+    expect(events).toHaveLength(3);
+    expect(events[1]).toContain("hello");
+    expect(events[1]).toMatch(/\\c&H[0-9A-F]+&.*brave/i);
+  });
+
+  it("offsets event times by the shot's startSec and escapes ASS braces", async () => {
+    const { toWordAss } = await import("./captions");
+    const ass = toWordAss([{ alignment: align("a{b}"), startSec: 60 }], {
+      width: 1280, height: 720, font: "Arial", fontSize: 40, accent: "#ff0000", marginV: 80,
+    });
+    const ev = ass.split("\n").filter((l) => l.startsWith("Dialogue:"));
+    expect(ev[0]).toContain("0:01:00.00");
+    expect(ass).not.toMatch(/[^\\]\{b/);
+  });
+
+  it("starts a fresh caption line when a line would exceed the word budget", async () => {
+    const { toWordAss } = await import("./captions");
+    const text = "one two three four five six seven eight nine ten";
+    const ass = toWordAss([{ alignment: align(text), startSec: 0 }], {
+      width: 1920, height: 1080, font: "Arial", fontSize: 46, accent: "#3fb950", marginV: 96, maxWordsPerLine: 4,
+    });
+    const events = ass.split("\n").filter((l) => l.startsWith("Dialogue:"));
+    expect(events).toHaveLength(10);
+    expect(events[4]).not.toContain("one");
+  });
+});

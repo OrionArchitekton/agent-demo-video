@@ -141,25 +141,35 @@ export function cameraKeyframes(events: InteractionEvent[], o: CameraOpts): CamK
     kf.push({ t, ...s });
   };
 
+  // The camera must be back at base by the end of the shot (spec S4): events
+  // whose full ease cycle cannot fit are clamped so the ease-back always runs.
+  const lastEaseStart = o.durationSec - o.outSec;
+  let prevInEnd = -Infinity;
+
   for (let i = 0; i < sorted.length; i++) {
     const e = sorted[i]!;
     const evT = e.tMs / 1000;
+    // An event arriving while the camera is still easing toward the previous
+    // target would force a near-instant re-pan; the camera stays on the first
+    // target instead (merge, matching the legacy zoom-window semantics).
+    if (evT < prevInEnd) continue;
     const focus = {
       z: o.zoom,
       fx: Math.min(1, Math.max(0, (e.box.x + e.box.width / 2) / o.width)),
       fy: Math.min(1, Math.max(0, (e.box.y + e.box.height / 2) / o.height)),
     };
     if (evT > cursor) push(evT, last);
-    const inEnd = Math.min(evT + o.inSec, o.durationSec);
+    const inEnd = Math.min(evT + o.inSec, Math.max(evT, lastEaseStart));
+    prevInEnd = inEnd;
     push(inEnd, focus);
     last = focus;
-    const holdEnd = Math.min(inEnd + o.holdSec, o.durationSec);
+    const holdEnd = Math.min(inEnd + o.holdSec, Math.max(inEnd, lastEaseStart));
     const next = sorted[i + 1];
-    if (next && next.tMs / 1000 <= holdEnd + o.outSec) {
+    if (next && next.tMs / 1000 <= holdEnd + o.outSec && next.tMs / 1000 >= inEnd) {
       // Travel directly to the next target: hold here until its ease begins.
       cursor = Math.max(inEnd, Math.min(next.tMs / 1000, holdEnd));
       push(cursor, last);
-    } else {
+    } else if (!(next && next.tMs / 1000 < inEnd)) {
       push(holdEnd, last);
       const outEnd = Math.min(holdEnd + o.outSec, o.durationSec);
       push(outEnd, base);
@@ -168,6 +178,14 @@ export function cameraKeyframes(events: InteractionEvent[], o: CameraOpts): CamK
     }
   }
   push(o.durationSec, last);
+  // Guarantee the final state is base even when a late event's ease-back was
+  // squeezed: replace a non-base terminal keyframe with an explicit ramp.
+  const terminal = kf[kf.length - 1]!;
+  if (terminal.z !== o.baseZoom || terminal.fx !== 0.5 || terminal.fy !== 0.5) {
+    terminal.z = o.baseZoom;
+    terminal.fx = 0.5;
+    terminal.fy = 0.5;
+  }
   return kf;
 }
 

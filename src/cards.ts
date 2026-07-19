@@ -23,14 +23,13 @@ export interface CardOpts {
   fadeSec?: number;
 }
 
-/** Escape drawtext-significant characters (backslash, quote, colon, percent). */
-export function drawtextEscape(t: string): string {
-  return t
-    .replace(/\\/g, "\\\\")
-    .replace(/'/g, "\\\\\\'")
-    .replace(/:/g, "\\:")
-    .replace(/%/g, "\\%");
-}
+/**
+ * Operator text is NEVER inlined into the filtergraph: drawtext quoting rules
+ * make in-band escaping fragile (a quote cannot be backslash-escaped inside a
+ * quoted value), so all text is referenced via textfile= paths the pipeline
+ * writes. This also closes the text-injection class outright.
+ */
+export interface CardTextFiles { titleFile: string; subtitleFile?: string; urlFile?: string }
 
 const hex = (c: string): string => "0x" + c.replace(/^#/, "");
 
@@ -59,17 +58,17 @@ function cardArgs(o: CardOpts, lines: string[], out: string): string[] {
 }
 
 /** Cold-open title card: product name, optional subtitle, accent underline. */
-export function titleCardArgs(o: CardOpts, out: string): string[] {
+export function titleCardArgs(o: CardOpts, out: string, files: CardTextFiles): string[] {
   const titleSize = Math.round(o.height * 0.085);
   const subSize = Math.round(o.height * 0.034);
   const barW = Math.round(o.width * 0.09);
   const barH = Math.max(4, Math.round(o.height * 0.007));
   const lines = [
-    `drawtext=font=${o.font}:text='${drawtextEscape(o.title)}':fontsize=${titleSize}:fontcolor=white:x=(w-text_w)/2:y=(h-text_h)/2-${Math.round(o.height * 0.05)}`,
+    `drawtext=font=${o.font}:textfile=${files.titleFile}:fontsize=${titleSize}:fontcolor=white:x=(w-text_w)/2:y=(h-text_h)/2-${Math.round(o.height * 0.05)}`,
     `drawbox=x=(iw-${barW})/2:y=(ih)/2+${Math.round(o.height * 0.045)}:w=${barW}:h=${barH}:color=${hex(o.accent)}@1:t=fill`,
-    ...(o.subtitle
+    ...(o.subtitle && files.subtitleFile
       ? [
-          `drawtext=font=${o.font}:text='${drawtextEscape(o.subtitle)}':fontsize=${subSize}:fontcolor=0xB6C2CC:x=(w-text_w)/2:y=(h)/2+${Math.round(o.height * 0.075)}`,
+          `drawtext=font=${o.font}:textfile=${files.subtitleFile}:fontsize=${subSize}:fontcolor=0xB6C2CC:x=(w-text_w)/2:y=(h)/2+${Math.round(o.height * 0.075)}`,
         ]
       : []),
   ];
@@ -77,14 +76,14 @@ export function titleCardArgs(o: CardOpts, out: string): string[] {
 }
 
 /** End card: title small, URL prominent in the accent color. */
-export function endCardArgs(o: CardOpts, out: string): string[] {
+export function endCardArgs(o: CardOpts, out: string, files: CardTextFiles): string[] {
   const titleSize = Math.round(o.height * 0.05);
   const urlSize = Math.round(o.height * 0.042);
   const lines = [
-    `drawtext=font=${o.font}:text='${drawtextEscape(o.title)}':fontsize=${titleSize}:fontcolor=white:x=(w-text_w)/2:y=(h-text_h)/2-${Math.round(o.height * 0.04)}`,
-    ...(o.url
+    `drawtext=font=${o.font}:textfile=${files.titleFile}:fontsize=${titleSize}:fontcolor=white:x=(w-text_w)/2:y=(h-text_h)/2-${Math.round(o.height * 0.04)}`,
+    ...(o.url && files.urlFile
       ? [
-          `drawtext=font=${o.font}:text='${drawtextEscape(o.url)}':fontsize=${urlSize}:fontcolor=${hex(o.accent)}:x=(w-text_w)/2:y=(h)/2+${Math.round(o.height * 0.03)}`,
+          `drawtext=font=${o.font}:textfile=${files.urlFile}:fontsize=${urlSize}:fontcolor=${hex(o.accent)}:x=(w-text_w)/2:y=(h)/2+${Math.round(o.height * 0.03)}`,
         ]
       : []),
   ];

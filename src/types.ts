@@ -1,5 +1,10 @@
 import { z } from "zod";
 
+// Values spliced into ffmpeg filtergraphs are validated at the boundary: hex
+// colors and font names may not carry filtergraph metacharacters.
+const hexColor = () => z.string().regex(/^#[0-9a-fA-F]{6}$/, "expected #rrggbb");
+const fontName = () => z.string().regex(/^[A-Za-z0-9 ._-]+$/, "font name may contain letters, digits, spaces, . _ -");
+
 export const ActionSchema = z.object({
   kind: z.enum(["goto", "click", "type", "wait", "hover", "highlight", "chapter", "scroll"]),
   selector: z.string().optional(),
@@ -16,7 +21,10 @@ export const ShotSchema = z.object({
   // The id is embedded in on-disk artifact names (shot_<id>.mp4, frames_<id>/,
   // events_<id>.json): restrict to filename-safe characters so it can never
   // traverse out of the output directory.
-  id: z.string().regex(/^[A-Za-z0-9._-]+$/, "shot id must be filename-safe (letters, digits, . _ -)"),
+  id: z
+    .string()
+    .regex(/^[A-Za-z0-9._-]+$/, "shot id must be filename-safe (letters, digits, . _ -)")
+    .refine((id) => !id.startsWith("__"), 'shot ids starting with "__" are reserved for pipeline segments (brand cards)'),
   // "live" drives an authenticated SaaS app via a saved Playwright persistent-context
   // profile (see capture.auth). Manifest syntax is identical to "dashboard".
   target: z.enum(["dashboard", "uipath", "terminal", "prebaked", "live"]),
@@ -50,7 +58,7 @@ export const DemoConfigSchema = z.object({
     similarity: z.number().default(0.75),
   }).default({}),
   theme: z.object({
-    captionFont: z.string().default("Arial"),
+    captionFont: fontName().default("Arial"),
     captionSize: z.number().default(24),
     cursor: z.boolean().default(true),
     captionBox: z.boolean().default(true),
@@ -62,15 +70,15 @@ export const DemoConfigSchema = z.object({
     // captions synced to TTS alignment; "block" is the legacy SRT burn.
     captions: z.enum(["wordpop", "block"]).default("wordpop"),
     // Accent color for the actively-spoken word in wordpop mode.
-    captionAccent: z.string().default("#3fb950"),
+    captionAccent: hexColor().default("#3fb950"),
     // Scene framing (production-polish S1): the capture floats as a rounded,
     // shadowed window on a gradient backdrop. Disable to restore full-bleed.
     frame: z.object({
       enabled: z.boolean().default(true),
       scale: z.number().min(0.5).max(1).default(0.86),
       radius: z.number().min(0).default(24),
-      backdropTop: z.string().default("#101418"),
-      backdropBottom: z.string().default("#1d2733"),
+      backdropTop: hexColor().default("#101418"),
+      backdropBottom: hexColor().default("#1d2733"),
       shadow: z.boolean().default(true),
     }).default({}),
     // Native screencast action annotations (animated cursor between actions,
@@ -109,7 +117,8 @@ export const DemoConfigSchema = z.object({
     baseZoom: z.number().min(1).max(1.5).default(1.08),
     driftAmp: z.number().min(0).max(0.05).default(0.012),
     driftPeriodSec: z.number().min(2).default(11),
-  }).default({}),
+  }).default({})
+    .refine((m) => m.baseZoom - m.driftAmp >= 1, { message: "baseZoom - driftAmp must stay >= 1 (drift may never zoom out past full frame)" }),
   // Auth-walled SaaS live capture (target: "live"). The whole section is optional so
   // existing dashboard/prebaked configs validate unchanged. `auth` is only required
   // when a manifest contains a "live" shot. The profile holds session cookies/tokens
@@ -148,7 +157,7 @@ export const DemoConfigSchema = z.object({
     title: z.string(),
     subtitle: z.string().optional(),
     url: z.string().optional(),
-    accent: z.string().default("#3fb950"),
+    accent: hexColor().default("#3fb950"),
     cards: z.boolean().default(true),
     titleSec: z.number().min(0.5).default(2.2),
     endSec: z.number().min(0.5).default(3.0),

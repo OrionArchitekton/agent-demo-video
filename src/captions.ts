@@ -104,10 +104,17 @@ export function toWordAss(shots: { alignment: Alignment; startSec: number }[], s
     const words = alignmentWords(shot.alignment, shot.startSec);
     for (let lineStart = 0; lineStart < words.length; lineStart += maxWords) {
       const line = words.slice(lineStart, lineStart + maxWords);
+      // A line's final event may linger briefly, but never past the next
+      // line's first word: overlapping Dialogue events stack via libass
+      // collision handling and visibly jump the lower-third.
+      const nextLineStart = words[lineStart + maxWords]?.start;
+      const lineTail = nextLineStart !== undefined
+        ? Math.min(line[line.length - 1]!.end + 0.15, nextLineStart)
+        : line[line.length - 1]!.end + 0.15;
       for (let i = 0; i < line.length; i++) {
         const shown = line.slice(0, i + 1);
         const evStart = line[i]!.start;
-        const evEnd = i + 1 < line.length ? line[i + 1]!.start : line[line.length - 1]!.end + 0.15;
+        const evEnd = i + 1 < line.length ? line[i + 1]!.start : lineTail;
         const text = shown
           .map((w, j) => (j === i ? `{\\c${accent}}${assEscape(w.text)}{\\c&HFFFFFF&}` : assEscape(w.text)))
           .join(" ");

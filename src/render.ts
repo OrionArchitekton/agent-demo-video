@@ -34,11 +34,13 @@ export interface RenderInputs {
   config: RenderConfig;
   /** Per-segment kind; "card" segments are already final compositions and skip framing. Absent = all "shot". */
   segmentKinds?: ("shot" | "card")[];
+  /** Per-segment click offsets (seconds, capture-relative) for sound-design ticks; preferred over reading events files so remote renders match local ones. */
+  clickOffsets?: number[][];
 }
 
 export interface RenderResult {
   outPath: string;
-  report: { totalSec: number; segments: number; parity: { ok: boolean; problems: string[] } };
+  report: { totalSec: number; segments: number; ticks: number; parity: { ok: boolean; problems: string[] } };
 }
 
 // Float/probe equality floor (seconds) — NOT a truncation budget. Any clip measurably
@@ -192,6 +194,7 @@ export async function renderVideo(inputs: RenderInputs): Promise<RenderResult> {
   //      remote render that didn't ship them, prebaked shots) mean no ticks
   //      for that shot, never a failure.
   let finalAudioPath = concatAudioPath;
+  let tickCount = 0;
   if (config.audio.soundDesign) {
     const bedPath = join(audioDir, "bed.wav");
     const tickPath = join(audioDir, "tick.wav");
@@ -201,19 +204,30 @@ export async function renderVideo(inputs: RenderInputs): Promise<RenderResult> {
     await ffmpeg(sweepWavArgs(sweepPath));
 
     const tickTimes: number[] = [];
-    for (let i = 0; i < tts.length; i++) {
-      try {
-        const raw = await readFile(join(segDir, `events_${tts[i]!.shotId}.json`), "utf8");
-        const events = JSON.parse(raw) as { kind: string; tMs: number }[];
-        for (const e of events) {
-          if (e.kind === "click") tickTimes.push(timeline.entries[i]!.startSec + e.tMs / 1000);
+    if (inputs.clickOffsets) {
+      for (let i = 0; i < tts.length; i++) {
+        for (const off of inputs.clickOffsets[i] ?? []) {
+          tickTimes.push(timeline.entries[i]!.startSec + off);
         }
-      } catch {
-        // No events artifact for this shot: no ticks.
+      }
+    } else {
+      // Fallback for callers without precomputed offsets: read the per-shot
+      // events artifacts (absent artifact = no ticks for that shot).
+      for (let i = 0; i < tts.length; i++) {
+        try {
+          const raw = await readFile(join(segDir, `events_${tts[i]!.shotId}.json`), "utf8");
+          const events = JSON.parse(raw) as { kind: string; tMs: number }[];
+          for (const e of events) {
+            if (e.kind === "click") tickTimes.push(timeline.entries[i]!.startSec + e.tMs / 1000);
+          }
+        } catch {
+          // No events artifact for this shot: no ticks.
+        }
       }
     }
     const sweepTimes = timeline.entries.slice(1).map((en) => en.startSec);
 
+    tickCount = tickTimes.length;
     const mixPath = join(audioDir, "mix.m4a");
     await ffmpeg(
       soundscapeArgs(concatAudioPath, bedPath, tickPath, sweepPath, tickTimes, sweepTimes, timeline.totalSec, config.audio, mixPath),
@@ -245,5 +259,5 @@ export async function renderVideo(inputs: RenderInputs): Promise<RenderResult> {
   });
   if (!parity.ok) throw new Error("parity failed: " + parity.problems.join("; "));
 
-  return { outPath: finalPath, report: { totalSec: timeline.totalSec, segments: segMp4s.length, parity } };
+  return { outPath: finalPath, report: { totalSec: timeline.totalSec, segments: segMp4s.length, ticks: tickCount, parity } };
 }

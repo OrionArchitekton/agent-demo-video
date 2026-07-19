@@ -111,3 +111,21 @@ describe("living camera (S4)", () => {
     expect(atSecond.fx).toBeCloseTo((1400 + 100) / 1920, 2);
   });
 });
+
+describe("living camera review fixes", () => {
+  const CAM2 = { width: 1920, height: 1080, fps: 30, durationSec: 10, baseZoom: 1.08, zoom: 1.32, inSec: 0.6, holdSec: 0.9, outSec: 0.6, driftAmp: 0.012, driftPeriodSec: 11 };
+  it("always eases back to base by the end of the shot, even for a late event", async () => {
+    const { cameraKeyframes, cameraStateAt } = await import("./motion");
+    const kf = cameraKeyframes([ev(9500)], CAM2);
+    const end = cameraStateAt(10, kf);
+    expect(end.z).toBeCloseTo(1.08, 3);
+    expect(end.fx).toBeCloseTo(0.5, 3);
+  });
+  it("merges events closer than the ease-in window instead of snapping between targets", async () => {
+    const { cameraKeyframes } = await import("./motion");
+    const kf = cameraKeyframes([ev(3000, 400, 300), ev(3200, 1400, 700)], CAM2);
+    const focused = kf.filter((k) => Math.abs(k.z - 1.32) < 1e-6);
+    const fxs = new Set(focused.map((k) => k.fx.toFixed(3)));
+    expect(fxs.size).toBe(1);
+  });
+});

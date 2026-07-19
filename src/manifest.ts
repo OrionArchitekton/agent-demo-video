@@ -14,6 +14,7 @@ import type { RenderInputs, RenderConfig } from "./render";
 export interface RenderManifest {
   segments: string[];
   segmentKinds?: ("shot" | "card")[];
+  clickOffsets?: number[][];
   audio: { file: string; durationSec: number; alignment: Alignment; shotId: string }[];
   config: Omit<RenderConfig, "out">;
 }
@@ -22,6 +23,7 @@ export function buildManifest(inputs: RenderInputs): RenderManifest {
   return {
     segments: inputs.rawSegments.map((p, i) => `seg_${i}${extname(p)}`),
     ...(inputs.segmentKinds ? { segmentKinds: inputs.segmentKinds } : {}),
+    ...(inputs.clickOffsets ? { clickOffsets: inputs.clickOffsets } : {}),
     audio: inputs.tts.map((t, i) => ({
       file: `aud_${i}${extname(t.audioPath)}`,
       durationSec: t.durationSec,
@@ -41,6 +43,7 @@ export function loadManifest(manifest: RenderManifest, baseDir: string): RenderI
   return {
     rawSegments: manifest.segments.map((f) => join(baseDir, "seg", f)),
     ...(manifest.segmentKinds ? { segmentKinds: manifest.segmentKinds } : {}),
+    ...(manifest.clickOffsets ? { clickOffsets: manifest.clickOffsets } : {}),
     tts: manifest.audio.map((a) => ({
       shotId: a.shotId,
       audioPath: join(baseDir, "audio", a.file),
@@ -50,8 +53,17 @@ export function loadManifest(manifest: RenderManifest, baseDir: string): RenderI
     config: {
       resolution: manifest.config.resolution,
       fps: manifest.config.fps,
-      theme: manifest.config.theme,
-      audio: manifest.config.audio,
+      // Pre-polish manifests carry no audio block and a theme without the
+      // frame/captions knobs: default them to legacy-equivalent behavior.
+      theme: {
+        ...manifest.config.theme,
+        captions: manifest.config.theme.captions ?? ("block" as const),
+        captionAccent: manifest.config.theme.captionAccent ?? "#3fb950",
+        fadeInMs: manifest.config.theme.fadeInMs ?? 0,
+        frame: manifest.config.theme.frame ?? { enabled: false, scale: 0.86, radius: 24, backdropTop: "#101418", backdropBottom: "#1d2733", shadow: true },
+        annotations: manifest.config.theme.annotations ?? { enabled: true, durationMs: 500, fontSize: 24, position: "top-right" as const },
+      },
+      audio: manifest.config.audio ?? { soundDesign: false, bedDb: -28, ticks: true, sweeps: true },
       out: join(baseDir, "out"),
     },
   };

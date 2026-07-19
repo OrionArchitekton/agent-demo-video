@@ -62,3 +62,14 @@ describe("narration quality tier (S6)", () => {
     expect(c.voice.modelId).toBe("eleven_flash_v2_5");
   });
 });
+
+describe("filtergraph boundary validation (review fix)", () => {
+  it("rejects malformed colors and filtergraph metacharacters in fonts", () => {
+    expect(() => DemoConfigSchema.parse({ script: "x", dashboardBaseUrl: "http://x", theme: { captionAccent: "red" } })).toThrow();
+    expect(() => DemoConfigSchema.parse({ script: "x", dashboardBaseUrl: "http://x", theme: { captionFont: "Arial:evil='p" } })).toThrow();
+  });
+  it("rejects reserved __ shot ids and sub-1 effective zoom", () => {
+    expect(() => ManifestSchema.parse({ shots: [{ id: "__card-title", target: "dashboard", narration: "x", actions: [] }] })).toThrow(/reserved/);
+    expect(() => DemoConfigSchema.parse({ script: "x", dashboardBaseUrl: "http://x", motion: { baseZoom: 1.0, driftAmp: 0.05 } })).toThrow();
+  });
+});

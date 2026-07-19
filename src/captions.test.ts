@@ -82,3 +82,17 @@ describe("word-pop captions (S3)", () => {
     expect(events[4]).not.toContain("one");
   });
 });
+
+describe("line rollover (review fix)", () => {
+  it("caps a line's final event at the next line's first word start (no stacked captions)", async () => {
+    const { toWordAss } = await import("./captions");
+    const text = "one two three four five six";
+    const chars = text.split("");
+    const alignment = { chars, startSec: chars.map((_, i) => i * 0.05), endSec: chars.map((_, i) => (i + 1) * 0.05) };
+    const ass = toWordAss([{ alignment, startSec: 0 }], { width: 1920, height: 1080, font: "A", fontSize: 40, accent: "#3fb950", marginV: 90, maxWordsPerLine: 3 });
+    const events = ass.split("\n").filter((l) => l.startsWith("Dialogue:"));
+    const end3 = events[2]!.split(",")[2]!;
+    const start4 = events[3]!.split(",")[1]!;
+    expect(end3 <= start4).toBe(true);
+  });
+});

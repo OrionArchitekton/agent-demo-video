@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { drawtextEscape, titleCardArgs, endCardArgs } from "./cards";
+import { titleCardArgs, endCardArgs } from "./cards";
 
 const O = {
   width: 1920, height: 1080, fps: 30, durationSec: 2.2, font: "Arial",
@@ -7,29 +7,28 @@ const O = {
   title: "Standing Questions", subtitle: "Ask once. It keeps watching.", url: "standing-questions.vercel.app",
 };
 
-describe("drawtextEscape", () => {
-  it("escapes drawtext-significant characters", () => {
-    const e = drawtextEscape("It's 100%: cool");
-    expect(e.replace(/\\+'/g, "")).not.toContain("'");
-    expect(e).toContain("\\%");
-    expect(e).toContain("\\:");
+describe("text safety", () => {
+  it("references text via textfile= and never inlines operator text into the filtergraph", () => {
+    const j = titleCardArgs({ ...O, title: "Dan's 100%: Demo" }, "/t/title.mp4", { titleFile: "/t/c_t.txt", subtitleFile: "/t/c_s.txt" }).join(" ");
+    expect(j).toContain("textfile=/t/c_t.txt");
+    expect(j).not.toContain("Dan's");
   });
-});
+})
 
 describe("cards", () => {
   it("title card renders gradient + title + subtitle with fades at the requested duration", () => {
-    const j = titleCardArgs(O, "/t/title.mp4").join(" ");
+    const j = titleCardArgs(O, "/t/title.mp4", { titleFile: "/t/c_t.txt", subtitleFile: "/t/c_s.txt" }).join(" ");
     expect(j).toContain("gradients=");
     expect(j).toContain("drawtext");
-    expect(j).toContain("Standing Questions");
+    expect(j).toContain("textfile=");
     expect(j).toContain("fade=t=in");
     expect(j).toContain("fade=t=out");
     expect(j).toContain("2.2");
     expect(j).toContain("-an");
   });
   it("end card carries the url in the accent color", () => {
-    const j = endCardArgs(O, "/t/end.mp4").join(" ");
-    expect(j).toContain("standing-questions.vercel.app");
+    const j = endCardArgs(O, "/t/end.mp4", { titleFile: "/t/c_t.txt", urlFile: "/t/c_u.txt" }).join(" ");
+    expect(j).toContain("textfile=/t/c_u.txt");
     expect(j.toLowerCase()).toContain("3fb950");
   });
 });

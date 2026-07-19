@@ -43,6 +43,20 @@ DEMO_SCRIPT.md
 10. parity verify    — shotCount / videoSegments / audioSec / videoSec / maxSec
 ```
 
+### Production polish
+
+Renders are produced pieces by default: the capture floats as a rounded,
+shadowed window on a gradient backdrop (`theme.frame`), a synthesized ambient
+bed ducks under the narration with soft click ticks and boundary sweeps
+(`audio.*`; `audio.musicPath` swaps in your own track, local renders only),
+captions pop word-by-word in sync with speech (`theme.captions: "wordpop"`,
+accent via `theme.captionAccent`), a living camera keeps a gentle base zoom and
+travels between action targets (`motion.livingCamera`), and optional brand
+cards open and close the video (`brand: { title, subtitle, url, accent }`).
+Narration defaults to ElevenLabs' quality tier (`eleven_multilingual_v2`).
+Every knob has a legacy off-switch. Requires ffmpeg >= 5.1 (amix normalize,
+gradients, zoompan input-time are all in use).
+
 ### Capture engines
 
 The default engine is **screencast**: CDP JPEG frames are captured with their

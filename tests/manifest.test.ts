@@ -30,7 +30,7 @@ function sampleInputs(): RenderInputs {
     config: {
       resolution: { width: 1280, height: 720 },
       fps: 30,
-      theme: { captionFont: "Liberation Sans", captionSize: 24, cursor: true, captionBox: true, captionMarginV: 20, fadeInMs: 250, annotations: { enabled: true, durationMs: 500, fontSize: 24, position: "top-right" as const } },
+      theme: { captionFont: "Liberation Sans", captionSize: 24, cursor: true, captionBox: true, captionMarginV: 20, fadeInMs: 250, frame: { enabled: false, scale: 0.86, radius: 24, backdropTop: "#101418", backdropBottom: "#1d2733", shadow: true }, annotations: { enabled: true, durationMs: 500, fontSize: 24, position: "top-right" as const } },
       out: "/local/work/out",
     },
   };
@@ -78,7 +78,7 @@ describe("render manifest", () => {
       config: {
         resolution: { width: 320, height: 240 },
         fps: 15,
-        theme: { captionFont: "Liberation Sans", captionSize: 24, cursor: true, captionBox: true, captionMarginV: 20, fadeInMs: 250, annotations: { enabled: true, durationMs: 500, fontSize: 24, position: "top-right" as const } },
+        theme: { captionFont: "Liberation Sans", captionSize: 24, cursor: true, captionBox: true, captionMarginV: 20, fadeInMs: 250, frame: { enabled: false, scale: 0.86, radius: 24, backdropTop: "#101418", backdropBottom: "#1d2733", shadow: true }, annotations: { enabled: true, durationMs: 500, fontSize: 24, position: "top-right" as const } },
         out: "/o",
       },
     };

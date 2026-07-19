@@ -17,6 +17,7 @@ import {
 import { toSrt, captionStyle } from "./captions";
 import { buildTimeline, reconcileSegmentDuration } from "./timeline";
 import { verifyParity } from "./verify";
+import { maskGenArgs, shadowGenArgs, frameArgs } from "./framing";
 
 /** The render-affecting subset of the demo config (no capture/tts/auth fields). */
 export type RenderConfig = Pick<DemoConfig, "resolution" | "fps" | "theme" | "out">;
@@ -60,20 +61,56 @@ export async function renderVideo(inputs: RenderInputs): Promise<RenderResult> {
   await mkdir(segDir, { recursive: true });
   await mkdir(audioDir, { recursive: true });
 
-  // 5. Normalize each raw segment to a uniformly-encoded mp4
+  // 5. Normalize each raw segment to a uniformly-encoded mp4. With framing
+  //    enabled the segment is composited into the framed scene instead; the
+  //    rounded mask and shadow plate are generated once and reused.
+  const frame = config.theme.frame;
+  const frameOpts = {
+    width: config.resolution.width,
+    height: config.resolution.height,
+    scale: frame.scale,
+    radius: frame.radius,
+    backdropTop: frame.backdropTop,
+    backdropBottom: frame.backdropBottom,
+    shadow: frame.shadow,
+  };
+  let maskPng: string | null = null;
+  let shadowPng: string | null = null;
+  if (frame.enabled) {
+    maskPng = join(segDir, "frame_mask.png");
+    await ffmpeg(maskGenArgs(frameOpts, maskPng));
+    if (frame.shadow) {
+      shadowPng = join(segDir, "frame_shadow.png");
+      await ffmpeg(shadowGenArgs(frameOpts, shadowPng));
+    }
+  }
+
   const segMp4s: string[] = [];
   for (let i = 0; i < rawSegments.length; i++) {
     const segMp4 = join(segDir, `seg_${i}.mp4`);
-    await ffmpeg(
-      normalizeArgs(rawSegments[i]!, segMp4, {
-        width: config.resolution.width,
-        height: config.resolution.height,
-        fps: config.fps,
-        // Soft transition: every segment after the first opens with a brief
-        // fade-in. Purely visual; duration and segment count are unchanged.
-        ...(i > 0 && config.theme.fadeInMs > 0 ? { fadeInSec: config.theme.fadeInMs / 1000 } : {}),
-      }),
-    );
+    // Soft transition: every segment after the first opens with a brief
+    // fade-in. Purely visual; duration and segment count are unchanged.
+    const fadeInSec = i > 0 && config.theme.fadeInMs > 0 ? config.theme.fadeInMs / 1000 : undefined;
+    if (frame.enabled && maskPng) {
+      const rawSec = await probeDurationSec(rawSegments[i]!);
+      await ffmpeg(
+        frameArgs(rawSegments[i]!, maskPng, shadowPng, segMp4, {
+          ...frameOpts,
+          fps: config.fps,
+          durationSec: rawSec,
+          ...(fadeInSec ? { fadeInSec } : {}),
+        }),
+      );
+    } else {
+      await ffmpeg(
+        normalizeArgs(rawSegments[i]!, segMp4, {
+          width: config.resolution.width,
+          height: config.resolution.height,
+          fps: config.fps,
+          ...(fadeInSec ? { fadeInSec } : {}),
+        }),
+      );
+    }
     segMp4s.push(segMp4);
   }
 

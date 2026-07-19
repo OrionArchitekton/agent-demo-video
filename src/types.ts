@@ -42,7 +42,9 @@ export const DemoConfigSchema = z.object({
   fps: z.number().default(30),
   voice: z.object({
     voiceId: z.string().default("21m00Tcm4TlvDq8ikWAM"),
-    modelId: z.string().default("eleven_flash_v2_5"),
+    // Quality tier by default (production-polish S6): flash is the latency
+    // tier and audibly flatter for narration. Explicit config still wins.
+    modelId: z.string().default("eleven_multilingual_v2"),
     seed: z.number().default(42),
     stability: z.number().default(0.5),
     similarity: z.number().default(0.75),
@@ -56,6 +58,16 @@ export const DemoConfigSchema = z.object({
     // Fade-in at the start of every segment after the first (soft transition
     // instead of a hard cut). 0 disables. Never alters segment durations.
     fadeInMs: z.number().default(250),
+    // Scene framing (production-polish S1): the capture floats as a rounded,
+    // shadowed window on a gradient backdrop. Disable to restore full-bleed.
+    frame: z.object({
+      enabled: z.boolean().default(true),
+      scale: z.number().min(0.5).max(1).default(0.86),
+      radius: z.number().min(0).default(24),
+      backdropTop: z.string().default("#101418"),
+      backdropBottom: z.string().default("#1d2733"),
+      shadow: z.boolean().default(true),
+    }).default({}),
     // Native screencast action annotations (animated cursor between actions,
     // interacted-element highlight, action title). Active only under the
     // screencast engine; suppresses the legacy overlay cursor (see cursorMode).

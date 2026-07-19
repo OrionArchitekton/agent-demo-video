@@ -121,6 +121,16 @@ describe("living camera review fixes", () => {
     expect(end.z).toBeCloseTo(1.08, 3);
     expect(end.fx).toBeCloseTo(0.5, 3);
   });
+  it("drops an event inside the final ease-back window: no focus keyframe and no whole-shot creep", async () => {
+    const { cameraKeyframes, cameraStateAt } = await import("./motion");
+    // 9.5s is past lastEaseStart (9.4): no cycle fits. The camera must stay
+    // at base throughout — not creep toward the focus across the whole shot.
+    const kf = cameraKeyframes([ev(9500, 400, 300)], CAM2);
+    expect(kf.some((k) => k.z === CAM2.zoom)).toBe(false);
+    const mid = cameraStateAt(5, kf);
+    expect(mid.z).toBeCloseTo(CAM2.baseZoom, 3);
+    expect(mid.fx).toBeCloseTo(0.5, 3);
+  });
   it("merges events closer than the ease-in window instead of snapping between targets", async () => {
     const { cameraKeyframes } = await import("./motion");
     const kf = cameraKeyframes([ev(3000, 400, 300), ev(3200, 1400, 700)], CAM2);
@@ -137,6 +147,9 @@ describe("cameraKeyframes merged-event cycle (pipeline finding)", () => {
     // 3.2s arrives while the camera is still easing toward 3.0s: it merges, and
     // the surviving 3.0s event must still ease back by 3.0+in+hold+out = 5.1s.
     const kf = cameraKeyframes([ev(3000, 400, 300), ev(3200, 1400, 700)], CAM3);
+    // The survivor's peak IS reached and held (3.6 to 4.5) before easing back.
+    const held = cameraStateAt(4.0, kf);
+    expect(held.z).toBeCloseTo(CAM3.zoom, 3);
     const after = cameraStateAt(5.2, kf);
     expect(after.z).toBeCloseTo(CAM3.baseZoom, 3);
     expect(after.fx).toBeCloseTo(0.5, 3);

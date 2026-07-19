@@ -154,6 +154,12 @@ export function cameraKeyframes(events: InteractionEvent[], o: CameraOpts): CamK
   for (const e of sorted) {
     const evT = e.tMs / 1000;
     if (evT < prevInEnd) continue;
+    // An event inside the final ease-back window has no room for ANY cycle
+    // (ease-in would collide with the mandatory return to base). Dropping it
+    // here is deliberate: the alternative — retargeting the collided keyframe —
+    // would re-slope the entire preceding span into a shot-long creep toward
+    // the focus, which is far worse than skipping one last-instant zoom.
+    if (evT >= lastEaseStart) continue;
     kept.push(e);
     prevInEnd = Math.min(evT + o.inSec, Math.max(evT, lastEaseStart));
   }

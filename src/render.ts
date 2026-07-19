@@ -95,8 +95,10 @@ export async function renderVideo(inputs: RenderInputs): Promise<RenderResult> {
     const segMp4 = join(segDir, `seg_${i}.mp4`);
     // Soft transition: every segment after the first opens with a brief
     // fade-in. Purely visual; duration and segment count are unchanged.
-    const fadeInSec = i > 0 && config.theme.fadeInMs > 0 ? config.theme.fadeInMs / 1000 : undefined;
+    // Cards bake their own fades in cardArgs, so they are excluded here —
+    // stacking the transition fade would double-fade the end card's open.
     const isCard = inputs.segmentKinds?.[i] === "card";
+    const fadeInSec = i > 0 && !isCard && config.theme.fadeInMs > 0 ? config.theme.fadeInMs / 1000 : undefined;
     if (frame.enabled && maskPng && !isCard) {
       const rawSec = await probeDurationSec(rawSegments[i]!);
       await ffmpeg(

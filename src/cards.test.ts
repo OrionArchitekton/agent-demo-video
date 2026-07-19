@@ -32,3 +32,10 @@ describe("cards", () => {
     expect(j.toLowerCase()).toContain("3fb950");
   });
 });
+
+describe("textfile path safety (pipeline finding)", () => {
+  it("escapes filtergraph metacharacters in textfile paths", () => {
+    const j = titleCardArgs(O, "/t/title.mp4", { titleFile: "/we:ird/pa'th/c_t.txt" }).join(" ");
+    expect(j).toContain("textfile=/we\\:ird/pa\\\\\\'th/c_t.txt");
+  });
+});

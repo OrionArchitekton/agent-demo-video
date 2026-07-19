@@ -142,6 +142,17 @@ export const DemoConfigSchema = z.object({
       allowUnguardedLiveCapture: z.boolean().default(false),
     }).optional(),
   }).default({}),
+  // Brand cards (production-polish S5): cold-open title card + closing URL
+  // card, rendered on the backdrop gradient as ordinary silent segments.
+  brand: z.object({
+    title: z.string(),
+    subtitle: z.string().optional(),
+    url: z.string().optional(),
+    accent: z.string().default("#3fb950"),
+    cards: z.boolean().default(true),
+    titleSec: z.number().min(0.5).default(2.2),
+    endSec: z.number().min(0.5).default(3.0),
+  }).optional(),
   // Optional CSS injected into every captured page before interaction. Use to
   // stabilise capture of dashboards taller than the output frame — e.g. bound a
   // growing list's height so the document never overflows the viewport (which

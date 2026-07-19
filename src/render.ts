@@ -32,6 +32,8 @@ export interface RenderInputs {
   rawSegments: string[];
   tts: TtsResult[];
   config: RenderConfig;
+  /** Per-segment kind; "card" segments are already final compositions and skip framing. Absent = all "shot". */
+  segmentKinds?: ("shot" | "card")[];
 }
 
 export interface RenderResult {
@@ -92,7 +94,8 @@ export async function renderVideo(inputs: RenderInputs): Promise<RenderResult> {
     // Soft transition: every segment after the first opens with a brief
     // fade-in. Purely visual; duration and segment count are unchanged.
     const fadeInSec = i > 0 && config.theme.fadeInMs > 0 ? config.theme.fadeInMs / 1000 : undefined;
-    if (frame.enabled && maskPng) {
+    const isCard = inputs.segmentKinds?.[i] === "card";
+    if (frame.enabled && maskPng && !isCard) {
       const rawSec = await probeDurationSec(rawSegments[i]!);
       await ffmpeg(
         frameArgs(rawSegments[i]!, maskPng, shadowPng, segMp4, {

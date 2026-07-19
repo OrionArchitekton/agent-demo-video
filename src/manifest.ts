@@ -13,6 +13,7 @@ import type { RenderInputs, RenderConfig } from "./render";
  */
 export interface RenderManifest {
   segments: string[];
+  segmentKinds?: ("shot" | "card")[];
   audio: { file: string; durationSec: number; alignment: Alignment; shotId: string }[];
   config: Omit<RenderConfig, "out">;
 }
@@ -20,6 +21,7 @@ export interface RenderManifest {
 export function buildManifest(inputs: RenderInputs): RenderManifest {
   return {
     segments: inputs.rawSegments.map((p, i) => `seg_${i}${extname(p)}`),
+    ...(inputs.segmentKinds ? { segmentKinds: inputs.segmentKinds } : {}),
     audio: inputs.tts.map((t, i) => ({
       file: `aud_${i}${extname(t.audioPath)}`,
       durationSec: t.durationSec,
@@ -38,6 +40,7 @@ export function buildManifest(inputs: RenderInputs): RenderManifest {
 export function loadManifest(manifest: RenderManifest, baseDir: string): RenderInputs {
   return {
     rawSegments: manifest.segments.map((f) => join(baseDir, "seg", f)),
+    ...(manifest.segmentKinds ? { segmentKinds: manifest.segmentKinds } : {}),
     tts: manifest.audio.map((a) => ({
       shotId: a.shotId,
       audioPath: join(baseDir, "audio", a.file),

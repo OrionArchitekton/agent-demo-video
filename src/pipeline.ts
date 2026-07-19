@@ -6,6 +6,8 @@ import type { DemoConfig, TtsResult } from "./types";
 import { parseScript } from "./parse-script";
 import { synthShot } from "./tts";
 import { captureShot } from "./capture";
+import { titleCardArgs, endCardArgs } from "./cards";
+import { ffmpeg, silentMp3Args } from "./ffmpeg";
 import { renderVideo, type RenderResult } from "./render";
 import { renderRemote } from "./remote-render";
 import type { Transport } from "./transport";
@@ -48,9 +50,44 @@ export async function runPipeline(config: DemoConfig, opts: RunPipelineOpts = {}
     rawSegments.push(raw);
   }
 
+  // 4.5 Brand cards: cold-open title + closing URL card as ordinary silent
+  //     segments around the shot list (skip framing via segmentKinds).
+  let segmentKinds: ("shot" | "card")[] = shots.map(() => "shot" as const);
+  if (config.brand?.cards) {
+    const b = config.brand;
+    const cardBase = {
+      width: config.resolution.width,
+      height: config.resolution.height,
+      fps: config.fps,
+      font: config.theme.captionFont,
+      backdropTop: config.theme.frame.backdropTop,
+      backdropBottom: config.theme.frame.backdropBottom,
+      accent: b.accent,
+      title: b.title,
+      ...(b.subtitle ? { subtitle: b.subtitle } : {}),
+      ...(b.url ? { url: b.url } : {}),
+    };
+    const silentCard = async (id: string, durationSec: number, videoPath: string): Promise<TtsResult> => {
+      const audioPath = join(audioDir, `${id}.mp3`);
+      await ffmpeg(silentMp3Args(durationSec, audioPath));
+      return { shotId: id, audioPath, durationSec, alignment: { chars: [], startSec: [], endSec: [] } };
+    };
+    const titlePath = join(segDir, "card_title.mp4");
+    await ffmpeg(titleCardArgs({ ...cardBase, durationSec: b.titleSec }, titlePath));
+    const endPath = join(segDir, "card_end.mp4");
+    await ffmpeg(endCardArgs({ ...cardBase, durationSec: b.endSec }, endPath));
+
+    rawSegments.unshift(titlePath);
+    ttsResults.unshift(await silentCard("card-title", b.titleSec, titlePath));
+    segmentKinds.unshift("card");
+    rawSegments.push(endPath);
+    ttsResults.push(await silentCard("card-end", b.endSec, endPath));
+    segmentKinds.push("card");
+  }
+
   // 5-13. Render — locally by default, or offloaded to a render host (same renderVideo
   //       code path runs there). A remote failure rejects loudly (no silent local fallback).
-  const inputs = { rawSegments, tts: ttsResults, config };
+  const inputs = { rawSegments, tts: ttsResults, config, segmentKinds };
   if (opts.render) {
     const bundlePath = opts.render.bundlePath ?? defaultBundlePath();
     if (!existsSync(bundlePath)) {

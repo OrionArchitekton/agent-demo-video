@@ -2,6 +2,14 @@
   "script": "demos/smoke/DEMO_SCRIPT.md",
   "dashboardBaseUrl": "./",
   "out": "demos/smoke/out",
-  "resolution": { "width": 1280, "height": 720 },
-  "fps": 30
+  "resolution": {
+    "width": 1280,
+    "height": 720
+  },
+  "fps": 30,
+  "brand": {
+    "title": "Smoke Fixture",
+    "subtitle": "The hermetic end-to-end check.",
+    "url": "github.com/OrionArchitekton/agent-demo-video"
+  }
 }

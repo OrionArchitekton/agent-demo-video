@@ -92,6 +92,13 @@ export const DemoConfigSchema = z.object({
     zoomInMs: z.number().min(0).default(600),
     zoomHoldMs: z.number().min(0).default(900),
     zoomOutMs: z.number().min(0).default(600),
+    // Living camera (production-polish S4): continuous camera at a gentle
+    // base zoom with slow drift, traveling between action targets instead of
+    // resetting to wide. false restores the per-event zoom windows.
+    livingCamera: z.boolean().default(true),
+    baseZoom: z.number().min(1).max(1.5).default(1.08),
+    driftAmp: z.number().min(0).max(0.05).default(0.012),
+    driftPeriodSec: z.number().min(2).default(11),
   }).default({}),
   // Auth-walled SaaS live capture (target: "live"). The whole section is optional so
   // existing dashboard/prebaked configs validate unchanged. `auth` is only required

@@ -78,3 +78,36 @@ describe("pipeline findings", () => {
     expect(w[0]!.endSec).toBeCloseTo(1.2 + 2.1, 6);
   });
 });
+
+describe("living camera (S4)", () => {
+  const CAM = { width: 1920, height: 1080, fps: 30, durationSec: 12, baseZoom: 1.08, zoom: 1.32, inSec: 0.6, holdSec: 0.9, outSec: 0.6, driftAmp: 0.012, driftPeriodSec: 11 };
+
+  it("with no events still returns a base-state camera (never a static wide)", async () => {
+    const { cameraKeyframes, cameraFilterExpr } = await import("./motion");
+    const kf = cameraKeyframes([], CAM);
+    expect(kf[0]).toMatchObject({ t: 0, z: 1.08, fx: 0.5, fy: 0.5 });
+    expect(kf[kf.length - 1]!.t).toBeCloseTo(12, 6);
+    const expr = cameraFilterExpr([], CAM)!;
+    expect(expr).toMatch(/^zoompan=/);
+    expect(expr).toContain("sin(");
+  });
+
+  it("holds base until an event, eases to the target, and returns to base after", async () => {
+    const { cameraKeyframes, cameraStateAt } = await import("./motion");
+    const kf = cameraKeyframes([ev(3000)], CAM);
+    expect(cameraStateAt(1.5, kf).z).toBeCloseTo(1.08, 3);
+    const atPeak = cameraStateAt(3.6, kf);
+    expect(atPeak.z).toBeCloseTo(1.32, 3);
+    expect(atPeak.fx).toBeCloseTo(800 / 1920 + 100 / 1920, 2);
+    expect(cameraStateAt(6.0, kf).z).toBeCloseTo(1.08, 3);
+  });
+
+  it("travels directly between two nearby events without returning to base", async () => {
+    const { cameraKeyframes, cameraStateAt } = await import("./motion");
+    const kf = cameraKeyframes([ev(3000, 400, 300), ev(4200, 1400, 700)], CAM);
+    const between = cameraStateAt(4.2, kf);
+    expect(between.z).toBeGreaterThan(1.2);
+    const atSecond = cameraStateAt(4.8, kf);
+    expect(atSecond.fx).toBeCloseTo((1400 + 100) / 1920, 2);
+  });
+});

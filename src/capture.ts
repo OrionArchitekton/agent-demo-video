@@ -17,7 +17,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { frameDurations, framesConcatContent, frameTimestampsToSec, cursorMode } from "./screencast.js";
 import { ffmpeg, framesEncodeArgs } from "./ffmpeg.js";
-import { zoomFilterExpr, type InteractionEvent } from "./motion.js";
+import { zoomFilterExpr, cameraFilterExpr, type InteractionEvent } from "./motion.js";
 
 /** Collects capture-relative interaction events during a screencast recording. */
 interface EventRecorder {
@@ -278,18 +278,26 @@ async function recordWithScreencast(
 
     const durationSec = Math.max(MIN_SEGMENT_SEC, capturedDurationSec);
     const m = config.motion;
-    const motionVf = m.zoomOnAction
-      ? zoomFilterExpr(recorder.events, {
-          width: config.resolution.width,
-          height: config.resolution.height,
-          fps: config.fps,
-          durationSec,
-          zoom: m.zoomLevel,
-          inSec: m.zoomInMs / 1000,
-          holdSec: m.zoomHoldMs / 1000,
-          outSec: m.zoomOutMs / 1000,
+    const zoomShape = {
+      width: config.resolution.width,
+      height: config.resolution.height,
+      fps: config.fps,
+      durationSec,
+      zoom: m.zoomLevel,
+      inSec: m.zoomInMs / 1000,
+      holdSec: m.zoomHoldMs / 1000,
+      outSec: m.zoomOutMs / 1000,
+    };
+    const motionVf = m.livingCamera
+      ? cameraFilterExpr(recorder.events, {
+          ...zoomShape,
+          baseZoom: m.baseZoom,
+          driftAmp: m.driftAmp,
+          driftPeriodSec: m.driftPeriodSec,
         })
-      : undefined;
+      : m.zoomOnAction
+        ? zoomFilterExpr(recorder.events, zoomShape)
+        : undefined;
 
     await ffmpeg(
       framesEncodeArgs(join(framesDir, "frames.txt"), segPath, {

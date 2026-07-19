@@ -129,3 +129,26 @@ describe("living camera review fixes", () => {
     expect(fxs.size).toBe(1);
   });
 });
+
+describe("cameraKeyframes merged-event cycle (pipeline finding)", () => {
+  const CAM3 = { width: 1920, height: 1080, fps: 30, durationSec: 10, baseZoom: 1.08, zoom: 1.32, inSec: 0.6, holdSec: 0.9, outSec: 0.6, driftAmp: 0.012, driftPeriodSec: 11 };
+  it("a merged trailing event does not suppress the survivor's hold/ease-back", async () => {
+    const { cameraKeyframes, cameraStateAt } = await import("./motion");
+    // 3.2s arrives while the camera is still easing toward 3.0s: it merges, and
+    // the surviving 3.0s event must still ease back by 3.0+in+hold+out = 5.1s.
+    const kf = cameraKeyframes([ev(3000, 400, 300), ev(3200, 1400, 700)], CAM3);
+    const after = cameraStateAt(5.2, kf);
+    expect(after.z).toBeCloseTo(CAM3.baseZoom, 3);
+    expect(after.fx).toBeCloseTo(0.5, 3);
+  });
+});
+
+describe("cameraMode (adversarial finding: zoomOnAction is the master motion switch)", () => {
+  it("zoomOnAction=false disables ALL camera motion, including the living camera", async () => {
+    const { cameraMode } = await import("./motion");
+    expect(cameraMode(false, true)).toBe("none");
+    expect(cameraMode(false, false)).toBe("none");
+    expect(cameraMode(true, true)).toBe("living");
+    expect(cameraMode(true, false)).toBe("legacy");
+  });
+});

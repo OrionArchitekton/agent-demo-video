@@ -25,7 +25,8 @@ function defaultBundlePath(): string {
 export async function runPipeline(config: DemoConfig, opts: RunPipelineOpts = {}): Promise<RenderResult> {
   // musicPath is an operator-LOCAL file; the remote render never stages it.
   // Fail fast, before any capture or TTS spend, rather than at the last stage.
-  if (opts.render && config.audio.musicPath) {
+  // Only when sound design is on: with it off the render never reads the file.
+  if (opts.render && config.audio.soundDesign && config.audio.musicPath) {
     throw new Error(
       "[agent-demo-video] audio.musicPath is not supported with --render-host (the file is not staged to the remote); render locally or drop musicPath.",
     );

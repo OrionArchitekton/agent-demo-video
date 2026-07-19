@@ -39,3 +39,16 @@ describe("textfile path safety (pipeline finding)", () => {
     expect(j).toContain("textfile=/we\\:ird/pa\\\\\\'th/c_t.txt");
   });
 });
+
+describe("drawtext literal expansion (pipeline finding)", () => {
+  it("every drawtext disables expansion so % in operator text stays literal", () => {
+    const t = titleCardArgs(O, "/t/title.mp4", { titleFile: "/t/c_t.txt", subtitleFile: "/t/c_s.txt" });
+    const e = endCardArgs(O, "/t/end.mp4", { titleFile: "/t/c_t.txt", urlFile: "/t/c_u.txt" });
+    for (const args of [t, e]) {
+      const vf = args[args.indexOf("-vf") + 1]!;
+      const drawtexts = vf.split(",").filter((f) => f.startsWith("drawtext"));
+      expect(drawtexts.length).toBeGreaterThan(0);
+      for (const d of drawtexts) expect(d).toContain("expansion=none");
+    }
+  });
+});

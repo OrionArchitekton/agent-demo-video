@@ -213,13 +213,18 @@ Key fields in `demo.config.json` (full schema in `src/types.ts`):
 | `resolution` | `1920×1080` | Capture resolution |
 | `fps` | `30` | Frame rate |
 | `voice.voiceId` | Rachel (ElevenLabs) | ElevenLabs voice ID |
-| `voice.modelId` | `eleven_flash_v2_5` | ElevenLabs model |
+| `voice.modelId` | `eleven_multilingual_v2` | ElevenLabs model (`eleven_flash_v2_5` stays selectable for cheap drafts) |
 | `voice.seed` | `42` | Seed for reproducible synthesis |
 | `voice.stability` | `0.5` | Voice stability |
 | `voice.similarity` | `0.75` | Voice similarity boost |
 | `theme.captionFont` | `"Arial"` | ffmpeg subtitle font |
 | `theme.captionSize` | `24` | Subtitle font size (pt) |
 | `theme.cursor` | `true` | Show fake cursor overlay |
+| `theme.captions` | `"wordpop"` | Word-pop ASS captions synced to TTS alignment; `"block"` restores the legacy SRT burn |
+| `theme.frame.enabled` | `true` | Scene framing: the capture floats as a rounded, shadowed window on a gradient backdrop |
+| `audio.soundDesign` | `true` | Synthesized ambient bed ducked under narration, click ticks, segment sweeps |
+| `motion.livingCamera` | `true` | Continuous camera path with drift; `motion.zoomOnAction: false` disables all camera motion |
+| `brand` | (off) | `{ title, subtitle, url, accent, cards }` adds branded title and end cards |
 | `clipsDir` | `"clips/prebaked"` | Directory scanned for prebaked clips |
 
 Sample: `demo.config.sample.json`.

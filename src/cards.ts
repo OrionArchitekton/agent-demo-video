@@ -72,11 +72,11 @@ export function titleCardArgs(o: CardOpts, out: string, files: CardTextFiles): s
   const barW = Math.round(o.width * 0.09);
   const barH = Math.max(4, Math.round(o.height * 0.007));
   const lines = [
-    `drawtext=font=${o.font}:textfile=${tf(files.titleFile)}:fontsize=${titleSize}:fontcolor=white:x=(w-text_w)/2:y=(h-text_h)/2-${Math.round(o.height * 0.05)}`,
+    `drawtext=expansion=none:font=${o.font}:textfile=${tf(files.titleFile)}:fontsize=${titleSize}:fontcolor=white:x=(w-text_w)/2:y=(h-text_h)/2-${Math.round(o.height * 0.05)}`,
     `drawbox=x=(iw-${barW})/2:y=(ih)/2+${Math.round(o.height * 0.045)}:w=${barW}:h=${barH}:color=${hex(o.accent)}@1:t=fill`,
     ...(o.subtitle && files.subtitleFile
       ? [
-          `drawtext=font=${o.font}:textfile=${tf(files.subtitleFile)}:fontsize=${subSize}:fontcolor=0xB6C2CC:x=(w-text_w)/2:y=(h)/2+${Math.round(o.height * 0.075)}`,
+          `drawtext=expansion=none:font=${o.font}:textfile=${tf(files.subtitleFile)}:fontsize=${subSize}:fontcolor=0xB6C2CC:x=(w-text_w)/2:y=(h)/2+${Math.round(o.height * 0.075)}`,
         ]
       : []),
   ];
@@ -88,10 +88,10 @@ export function endCardArgs(o: CardOpts, out: string, files: CardTextFiles): str
   const titleSize = Math.round(o.height * 0.05);
   const urlSize = Math.round(o.height * 0.042);
   const lines = [
-    `drawtext=font=${o.font}:textfile=${tf(files.titleFile)}:fontsize=${titleSize}:fontcolor=white:x=(w-text_w)/2:y=(h-text_h)/2-${Math.round(o.height * 0.04)}`,
+    `drawtext=expansion=none:font=${o.font}:textfile=${tf(files.titleFile)}:fontsize=${titleSize}:fontcolor=white:x=(w-text_w)/2:y=(h-text_h)/2-${Math.round(o.height * 0.04)}`,
     ...(o.url && files.urlFile
       ? [
-          `drawtext=font=${o.font}:textfile=${tf(files.urlFile)}:fontsize=${urlSize}:fontcolor=${hex(o.accent)}:x=(w-text_w)/2:y=(h)/2+${Math.round(o.height * 0.03)}`,
+          `drawtext=expansion=none:font=${o.font}:textfile=${tf(files.urlFile)}:fontsize=${urlSize}:fontcolor=${hex(o.accent)}:x=(w-text_w)/2:y=(h)/2+${Math.round(o.height * 0.03)}`,
         ]
       : []),
   ];

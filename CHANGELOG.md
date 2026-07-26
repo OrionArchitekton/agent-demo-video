@@ -1,5 +1,61 @@
 # Changelog
 
+## Unreleased
+
+### Breaking
+
+- A prebaked `clip:` that does not exist at its resolved path now fails immediately,
+  naming the path that was tried. Previously the declared path was returned verbatim and
+  the run failed later, inside ffmpeg, against a path nobody had resolved. (#14)
+- `clip:` paths no longer resolve against the process working directory. A bare filename
+  resolves inside `clipsDir`; a path carrying its own directory resolves against the
+  config file's directory; an absolute path is used as given. Configs that referenced
+  clips relative to their config file, or by bare filename as the README described, keep
+  working. A config that relied on being invoked from a particular directory does not.
+
+### Added
+
+- Pre-flight selector gate. Every selector a script declares is resolved against the page
+  its own shot opens at that point, before any narration is synthesized, and the run
+  refuses to start when a selector provably will not do what the script says. It also
+  reports a shot that references a selector but never navigates (capture builds a fresh
+  context per shot, so that shot runs against `about:blank`), a `prebaked` shot declaring
+  selector actions capture never runs, a selector-requiring action declared without a
+  selector, and a prebaked clip missing at its resolved path. Fail-closed; `preflight:
+  false` or `--no-preflight` declines it, and a declined run says so. (#13)
+
+  The gate blocks only on claims it can actually make. It resolves with the same selector
+  engine capture uses (so Playwright syntax such as `>> nth=` and shadow-DOM piercing
+  behave identically), against a page carrying the same injected overlay, and waits for an
+  element that hydrates in after load. Where its evidence is genuinely weaker than the
+  render's it reports at `INFO` instead: a selector behind an earlier `click`/`type` in the
+  same shot, an ambiguous `hover` (which capture resolves non-strictly), an auth-walled
+  `live` shot, and a page that did not settle before counting.
+- `out/render-report.json` records whether the gate ran, whether it was declined, and which
+  shots it could not adjudicate, so a finished video states how it was checked.
+- `preflightWaitMs` (default 3000) budgets how long the gate waits for a selector absent at
+  first count, keeping it no stricter than the render's auto-waiting locator.
+- `clipsDir` is now read. It was declared in the schema, defaulted, and documented in two
+  places while no code path consulted it. (#14)
+
+### Fixed
+
+- `window.__demoHighlight` no longer fails open. A selector matching nothing hid the
+  highlight box and returned, so the shot rendered, the run exited 0, and the highlight
+  never happened. An ambiguous selector is a failure too, because `document.querySelector`
+  silently takes the first match, which is how a bare `p` or `code` selector looks correct
+  while pointing at the wrong element. (#13)
+- A failing `highlight` action now names the shot, the selector, and the real match count.
+  It previously surfaced as a raw Playwright strict-mode violation, or as a bare
+  `Timeout 30000ms exceeded` on a zero match, identifying neither the shot nor the action.
+  The locator still does the waiting, so an element that appears after load still works,
+  and a failure that is NOT a count problem (a hidden but unique element, a closed page)
+  now rethrows the original error rather than being mislabelled as one.
+- The highlight overlay is driven by a rectangle capture already resolved with Playwright,
+  instead of re-resolving the selector in the page with `document.querySelectorAll`. The
+  two engines disagree on shadow DOM and on Playwright-only selector syntax, so an element
+  inside an open shadow root previously drew no highlight at all.
+
 ## 0.3.0
 
 ### Breaking

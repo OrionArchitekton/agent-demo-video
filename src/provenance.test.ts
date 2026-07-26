@@ -18,6 +18,7 @@ describe("buildRenderReport", () => {
     render: { totalSec: 3, segments: 1, ticks: 0, parity: { ok: true, problems: [] } },
     maxDurationSec: 300,
     renderedOn: "local" as const,
+    preflight: { ran: true, declined: false, findings: 0, unverifiedShotIds: [] as string[] },
   };
 
   it("records the resolved voice, so two renders can be compared to explain a runtime change", () => {

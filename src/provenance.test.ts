@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildRenderReport, digest } from "./provenance";
+import { buildRenderReport, digest, stableConfigJson } from "./provenance";
 
 /**
  * A judged 2:57 cut re-rendered to 3:25 from the SAME script. It was recorded as
@@ -37,5 +37,28 @@ describe("buildRenderReport", () => {
   it("digests content stably and distinguishes different content", () => {
     expect(digest("a")).toBe(digest("a"));
     expect(digest("a")).not.toBe(digest("b"));
+  });
+});
+
+describe("stableConfigJson", () => {
+  const base = { script: "DEMO.md", out: "out" } as never;
+  const mk = (o: Record<string, unknown>) => ({ ...(base as object), ...o }) as never;
+
+  it("gives the same digest for a local fixture base across two checkouts", () => {
+    const a = mk({ dashboardBaseUrl: "file:///home/alice/wt-1/demos/smoke" });
+    const b = mk({ dashboardBaseUrl: "file:///home/bob/some/other/path/demos/smoke" });
+    expect(digest(stableConfigJson(a))).toBe(digest(stableConfigJson(b)));
+  });
+
+  it("still distinguishes two genuinely different remote bases", () => {
+    const a = mk({ dashboardBaseUrl: "http://localhost:3000" });
+    const b = mk({ dashboardBaseUrl: "http://localhost:4000" });
+    expect(digest(stableConfigJson(a))).not.toBe(digest(stableConfigJson(b)));
+  });
+
+  it("ignores the machine-local auth profile directory", () => {
+    const a = mk({ dashboardBaseUrl: "http://x", capture: { auth: { loginUrl: "https://app/login", profileDir: "/home/alice/.cache/agent-demo-video" } } });
+    const b = mk({ dashboardBaseUrl: "http://x", capture: { auth: { loginUrl: "https://app/login", profileDir: "/home/bob/.cache/agent-demo-video" } } });
+    expect(digest(stableConfigJson(a))).toBe(digest(stableConfigJson(b)));
   });
 });

@@ -93,6 +93,13 @@ export function stableConfigJson(config: DemoConfig): string {
   const auth = rest.capture?.auth;
   return JSON.stringify({
     ...rest,
+    // A relative base ("./") is resolved to a file:// URL of THIS checkout, so
+    // hashing it verbatim re-introduces the machine dependence this function
+    // exists to remove. A local fixture base is not part of a config's identity;
+    // an http(s) base is, and is machine-independent, so it is kept verbatim.
+    dashboardBaseUrl: rest.dashboardBaseUrl.startsWith("file://")
+      ? "file://<local>"
+      : rest.dashboardBaseUrl,
     capture: auth ? { ...rest.capture, auth: { ...auth, profileDir: undefined } } : rest.capture,
   });
 }

@@ -258,6 +258,10 @@ designed for.
 - narration: A safe harness is defined by what it refuses.
 ```
 
+`fullBleed` accepts `true`/`false`, `yes`/`no`, or `1`/`0`, case-insensitively. An
+unrecognised value is an ERROR, not a silently ignored line: a dropped flag would mean you believe
+you opted out of framing while the pipeline frames anyway.
+
 Author the clip to the length of its narration. Segment duration is `max(clipSec, narrationSec)`, so
 a clip shorter than its narration is padded by freezing the last frame, never trimmed.
 

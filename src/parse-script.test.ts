@@ -74,3 +74,22 @@ describe("fullBleed shots", () => {
     expect(deriveSegmentKinds(m.shots)).toEqual(["card", "shot"]);
   });
 });
+
+describe("fullBleed parsing is fail-closed", () => {
+  const shot = (line: string) => `### SHOT s\n- target: prebaked\n- clip: c.mp4\n${line}\n- narration: n.`;
+
+  it("accepts the spellings an author actually types", () => {
+    for (const l of ["- fullBleed: true", "- fullBleed:true", "- fullbleed: TRUE", "- fullBleed: yes", "- fullBleed: true   "]) {
+      expect(parseScript(shot(l)).shots[0]?.fullBleed, l).toBe(true);
+    }
+    for (const l of ["- fullBleed: false", "- fullBleed: no"]) {
+      expect(parseScript(shot(l)).shots[0]?.fullBleed, l).toBeFalsy();
+    }
+  });
+
+  it("REFUSES an unrecognised value instead of silently ignoring the line", () => {
+    // Silently dropping this is the exact defect the flag exists to prevent:
+    // the author believes they opted out of framing and the pipeline frames anyway.
+    expect(() => parseScript(shot("- fullBleed: maybe"))).toThrowError(/fullBleed/i);
+  });
+});

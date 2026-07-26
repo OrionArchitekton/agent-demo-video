@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect, afterAll, beforeAll } from "vitest";
 import { existsSync } from "node:fs";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -174,6 +174,30 @@ describe("resolveSelectorFindings (smoke)", () => {
 
   // Ambiguity is decidable instantly, so this asserts the blocking grade without
   // sitting through the full absence budget the previous test already covers.
+  // Playwright reads `timeout: 0` as WAIT FOREVER, not "do not wait". Passing the
+  // budget through unguarded meant an operator setting 0 to disable waiting
+  // hung the gate indefinitely, before any TTS, with no output. The repo's own
+  // `capture.settleMs: 0` idiom means "disabled", so 0 must mean that here too.
+  it("treats a zero wait budget as no wait, not as wait forever", async () => {
+    const cfg = DemoConfigSchema.parse({
+      script: "x", dashboardBaseUrl: "http://localhost:3000", preflightWaitMs: 0,
+    });
+    const manifest = ManifestSchema.parse({
+      shots: [{
+        id: "nowait", target: "dashboard", narration: "n",
+        actions: [
+          { kind: "goto", url: fixture() },
+          { kind: "highlight", selector: "#never-arrives" },
+        ],
+      }],
+    });
+
+    const f = (await resolveSelectorFindings(manifest, cfg)).filter((x) => x.selector);
+
+    expect(f).toHaveLength(1);
+    expect(f[0]!.severity).toBe("info");
+  }, 20_000);
+
   it("grades a resolvable selector defect as blocking", async () => {
     const cfg = DemoConfigSchema.parse({ script: "x", dashboardBaseUrl: "http://localhost:3000" });
     const manifest = ManifestSchema.parse({ shots: [shot("many", "button")] });
@@ -185,7 +209,14 @@ describe("resolveSelectorFindings (smoke)", () => {
 });
 
 describe("preflight gate in runPipeline (smoke)", () => {
+  // Vitest reuses a worker across files, so an unrestored env var leaks into
+  // whatever runs next in the same worker.
+  const prevFakeTts = process.env.FAKE_TTS;
   beforeAll(() => { process.env.FAKE_TTS = "1"; });
+  afterAll(() => {
+    if (prevFakeTts === undefined) delete process.env.FAKE_TTS;
+    else process.env.FAKE_TTS = prevFakeTts;
+  });
 
   /** A one-shot script whose highlight selector matches BOTH fixture buttons. */
   async function ambiguousScript(): Promise<{ dir: string; scriptPath: string }> {

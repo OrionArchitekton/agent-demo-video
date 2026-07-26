@@ -147,7 +147,7 @@ Before any narration is synthesized, the pipeline resolves every selector your s
 declares against the page that shot opens at that point, and refuses to start when one of
 them provably will not do what the script says.
 
-```
+```text
 $ demo-video demo.config.json
   BLOCKING  shot "12-execution-boundary": selector "p" is ambiguous, 43 matches on http://localhost:3000/guide (the strict locator needs exactly one)
   BLOCKING  shot "05-plate": selector "[data-line='82']" matches nothing on http://localhost:3000/guide

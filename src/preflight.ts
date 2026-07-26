@@ -284,7 +284,10 @@ export async function resolveSelectorFindings(
           // The render's locator AUTO-WAITS; counting once, instantly, is
           // stricter than the render and would false-block an element that
           // hydrates in after load.
-          if (matches === 0 && !probe.afterInteraction && !pageSettledByExhaustedWait) {
+          // `> 0` is load-bearing: Playwright reads `timeout: 0` as WAIT FOREVER,
+          // so passing a zero budget through would hang the gate indefinitely.
+          // Matching `capture.settleMs`, 0 here means the wait is disabled.
+          if (matches === 0 && !probe.afterInteraction && !pageSettledByExhaustedWait && config.preflightWaitMs > 0) {
             await page
               .locator(probe.selector)
               .first()

@@ -97,13 +97,20 @@ before the gate existed.
 
 ### S4 - The highlight overlay fails closed on its own terms
 
-Given the injected overlay API, when a highlight is requested for a selector that
-matches zero elements or more than one, then the overlay raises rather than hiding
-its box and returning. Given the highlight action in a capture, when its selector
-does not resolve to exactly one element, then the run fails with a message naming
-the shot, the selector, and the observed count, and pointing at the pre-flight gate.
-A selector that resolves to exactly one element after an initial delay still
-succeeds: the action retains the auto-waiting behaviour it has today.
+Given the highlight action in a capture, when its selector does not resolve to
+exactly one element, then the run fails with a message naming the shot, the
+selector, and the observed count, and pointing at the pre-flight gate. A selector
+that resolves to exactly one element after an initial delay still succeeds: the
+action retains the auto-waiting behaviour it has today, and a failure that is not
+a cardinality problem surfaces its original error rather than being relabelled.
+
+Capture resolves the element itself and hands the overlay the resulting
+rectangle, so the page never resolves the selector a second time. That is what
+makes the cardinality rule single-valued: a second in-page resolution used a
+different engine and could disagree with the first, silently drawing nothing for
+an element inside an open shadow root. The selector-taking overlay entry point
+remains, and fails closed on a non-unique match, for any caller that has no
+resolved rectangle to pass.
 
 ### S5 - Prebaked clips resolve deterministically
 
@@ -137,7 +144,8 @@ silent fallback to a different path.
   it could not adjudicate.
 - The same script with those three corrected renders to completion.
 - Declining the gate restores the pre-gate behaviour and says so in the output.
-- The overlay init script raises on a non-unique selector.
+- The overlay draws from a capture-resolved rectangle, and its selector-taking
+  entry point still raises on a non-unique match.
 - A prebaked config renders identically from two different working directories.
 
 ## Test seams

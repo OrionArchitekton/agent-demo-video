@@ -100,7 +100,32 @@ export const DemoConfigSchema = z.object({
   // real narration. Real ElevenLabs output has run 19-30% longer. Budget to
   // roughly 75% of the cap; the check still fires post-render either way.
   maxDurationSec: z.number().positive().default(300),
+  // Pre-flight selector gate (specs/preflight-selector-gate-spec.md). Resolves
+  // every declared selector against the page its own shot opens BEFORE any
+  // narration is synthesized, and fails the run unless each matches exactly one
+  // element. Fail-closed by default: a selector mistake otherwise surfaces
+  // mid-render, after TTS has already been paid for, as a raw Playwright
+  // locator error that names neither the shot nor the selector. Set false (or
+  // pass --no-preflight) to decline; declining is reported, never silent.
+  preflight: z.boolean().default(true),
+  // How long the gate waits for a selector that is absent at first count before
+  // concluding anything. Defaults to the render's OWN selector budget
+  // (SELECTOR_TIMEOUT_MS), because a gate that waits less has strictly weaker
+  // evidence than the render: an element arriving at 5s would be blocked here
+  // and rendered fine there. Lower it to make the gate faster and it stops
+  // BLOCKING on absence, reporting it at INFO instead.
+  preflightWaitMs: z.number().min(0).default(30_000),
+  // Directory scanned for prebaked clips. A BARE clip filename resolves inside
+  // it; a clip path that carries its own directory resolves against the config
+  // file's directory. Relative clipsDir resolves against the config dir too.
   clipsDir: z.string().default("clips/prebaked"),
+  // Absolute directory of the config file. SET BY loadConfig, not authored by
+  // hand — it is what makes prebaked clip resolution independent of the process
+  // CWD. Machine-local, so it is excluded from the provenance config hash the
+  // same way capture.auth.profileDir is. Absent when a DemoConfig is built
+  // programmatically rather than loaded from disk; resolution then falls back
+  // to the CWD, which is the pre-existing behaviour.
+  configDir: z.string().optional(),
   // Sound design (production-polish S2): synthesized ambient bed auto-ducked
   // under narration, soft ticks on recorded clicks, quiet sweeps at segment
   // boundaries. musicPath swaps the synthesized bed for an operator file.
@@ -183,6 +208,43 @@ export const DemoConfigSchema = z.object({
   captureCss: z.string().optional(),
 }).strict();
 export type DemoConfig = z.infer<typeof DemoConfigSchema>;
+
+/**
+ * A pre-flight finding: one reason a script would not do what it says.
+ *
+ * "structural" kinds are decidable from the manifest alone (no browser);
+ * "resolution" kinds require loading the page the shot actually opens.
+ */
+export type PreflightFindingKind =
+  /** Browser-driven shot references a selector but declares no goto: runs on about:blank. */
+  | "no-navigation"
+  /** An action that cannot run without a selector declares none. */
+  | "missing-selector"
+  /** A prebaked shot's clip is absent at its resolved path. */
+  | "missing-clip"
+  /** The page a shot opens could not be loaded, or returned a non-OK status. */
+  | "unreachable"
+  /** Prebaked shot declares selector actions, which capture short-circuits and never runs. */
+  | "prebaked-actions"
+  /** Selector resolved to zero elements. */
+  | "no-match"
+  /** Selector resolved to more than one element; querySelector would take the first. */
+  | "ambiguous"
+  /** Selector threw in page context (not a valid CSS selector). */
+  | "invalid-selector"
+  /** Shot could not be resolved by the gate (e.g. auth-walled live target). Reported, never silent. */
+  | "unverified";
+
+export interface PreflightFinding {
+  shotId: string;
+  kind: PreflightFindingKind;
+  /** "blocking" fails the run; "info" is reported and does not gate. */
+  severity: "blocking" | "info";
+  selector?: string;
+  /** Observed match count, when the gate got far enough to count. */
+  matches?: number;
+  message: string;
+}
 
 export interface Alignment { chars: string[]; startSec: number[]; endSec: number[]; }
 export interface TtsResult { shotId: string; audioPath: string; durationSec: number; alignment: Alignment; }

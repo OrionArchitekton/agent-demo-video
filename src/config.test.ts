@@ -5,6 +5,28 @@ import { isAbsolute, join } from "node:path";
 import { loadConfig } from "./config";
 
 describe("loadConfig", () => {
+  // Prebaked clip paths used to resolve against the PROCESS CWD, so the same
+  // config found different files depending on where the pipeline was invoked
+  // from. Pinning the config file's own directory is what removes that.
+  it("records the config file's directory, independent of the process CWD", () => {
+    const dir = mkdtempSync(join(tmpdir(), "cfg-dir-"));
+    const path = join(dir, "demo.config.json");
+    writeFileSync(path, JSON.stringify({ script: "DEMO.md", dashboardBaseUrl: "http://localhost:3000" }));
+
+    const fromHere = loadConfig(path);
+    const cwd = process.cwd();
+    let fromElsewhere;
+    try {
+      process.chdir(tmpdir());
+      fromElsewhere = loadConfig(path);
+    } finally {
+      process.chdir(cwd);
+    }
+
+    expect(isAbsolute(fromHere.configDir!)).toBe(true);
+    expect(fromElsewhere.configDir).toBe(fromHere.configDir);
+  });
+
   it("applies defaults (fps=30, resolution.width=1920) from minimal config", () => {
     const dir = mkdtempSync(join(tmpdir(), "cfg-"));
     const path = join(dir, "demo.config.json");

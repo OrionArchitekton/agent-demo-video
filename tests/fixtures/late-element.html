@@ -1,0 +1,16 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Late Element Fixture</title>
+<style>body{font-family:sans-serif;padding:40px;background:#0e1230;color:#fff}</style></head>
+<body><h1>Late Element Fixture</h1>
+<div id="host">waiting</div>
+<script>
+// Appears well after `load` fires. Stands in for a hydrating SPA / XHR-driven
+// dashboard: the element a shot highlights is genuinely not in the DOM yet when
+// navigation completes, so the highlight action MUST wait for it.
+setTimeout(function () {
+  var d = document.createElement('div');
+  d.id = 'late';
+  d.textContent = 'arrived';
+  document.getElementById('host').appendChild(d);
+}, 900);
+</script>
+</body></html>

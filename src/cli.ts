@@ -11,12 +11,26 @@ import { SshTransport } from "./transport";
  * - `login <cfg>`               → interactive auth-profile capture for live SaaS shots.
  * - `<cfg> [--render-host H]`   → run the pipeline; --render-host offloads the render
  *                                 stage to host H over ssh (local render stays default).
+ * - `--no-preflight`            → decline the fail-closed selector gate for this run
+ *                                 (the config key `preflight` is the durable declaration).
  */
-export function parseCommand(argv: string[]): { cmd: "login" | "run"; cfgPath: string; renderHost?: string } {
+export function parseCommand(argv: string[]): {
+  cmd: "login" | "run";
+  cfgPath: string;
+  renderHost?: string;
+  preflight?: boolean;
+} {
   let renderHost: string | undefined;
+  let preflight: boolean | undefined;
   const positional: string[] = [];
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
+    // Consumed as a flag, never pushed to positional: otherwise a leading
+    // --no-preflight would be read as the config path.
+    if (a === "--no-preflight") {
+      preflight = false;
+      continue;
+    }
     if (a === "--render-host") {
       const next = argv[i + 1];
       if (next === undefined || next.startsWith("-")) throw new Error("--render-host requires a host argument");
@@ -31,13 +45,17 @@ export function parseCommand(argv: string[]): { cmd: "login" | "run"; cfgPath: s
     }
     positional.push(a);
   }
-  if (positional[0] === "login") return { cmd: "login", cfgPath: positional[1] ?? "demo.config.json", renderHost };
-  return { cmd: "run", cfgPath: positional[0] ?? "demo.config.json", renderHost };
+  if (positional[0] === "login")
+    return { cmd: "login", cfgPath: positional[1] ?? "demo.config.json", renderHost, ...(preflight === false ? { preflight } : {}) };
+  return { cmd: "run", cfgPath: positional[0] ?? "demo.config.json", renderHost, ...(preflight === false ? { preflight } : {}) };
 }
 
 export async function main(argv: string[]): Promise<void> {
-  const { cmd, cfgPath, renderHost } = parseCommand(argv);
+  const { cmd, cfgPath, renderHost, preflight } = parseCommand(argv);
   const config = loadConfig(cfgPath);
+  // A per-run decline lands ON the config, so the render receipt's config hash
+  // records that this artifact shipped without the gate.
+  if (preflight === false) config.preflight = false;
   if (cmd === "login") {
     const dir = await captureLogin(config);
     console.log("✓ auth profile ready at", dir);

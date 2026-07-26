@@ -13,7 +13,7 @@
 
 import { chromium, type Page } from "playwright";
 import { mkdir, rm, writeFile } from "node:fs/promises";
-import { existsSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { frameDurations, framesConcatContent, frameTimestampsToSec, cursorMode } from "./screencast.js";
 import { ffmpeg, framesEncodeArgs } from "./ffmpeg.js";
@@ -44,21 +44,18 @@ import {
   clickExpr,
   chapterExpr,
   highlightExpr,
+  highlightBoxExpr,
   cssInjectScript,
 } from "./overlay.js";
 import { resolveProfileDir } from "./profile.js";
 import type { Shot, DemoConfig, TimelineEntry } from "./types.js";
 import { waitForReady } from "./ready";
-
-/**
- * Resolves a URL relative to the dashboardBaseUrl.
- * Absolute URLs (http/https/file:) are returned as-is.
- */
-function resolveUrl(u: string, baseUrl: string): string {
-  if (u.startsWith("http") || u.startsWith("file:")) return u;
-  const base = baseUrl.replace(/\/$/, "");
-  return base + (u.startsWith("/") ? u : "/" + u);
-}
+// Resolves a shot's declared url against dashboardBaseUrl. Lives in its own
+// pure module so the pre-flight gate resolves a shot to exactly the page the
+// render will open — two definitions could silently disagree.
+import { resolveUrl } from "./urls.js";
+import { resolveClipPath } from "./clips.js";
+import { SELECTOR_TIMEOUT_MS } from "./timeouts.js";
 
 /**
  * Perform a shot's OPENING navigation and wait for the page to settle, BEFORE
@@ -188,9 +185,37 @@ async function runActions(
       case "highlight": {
         if (!a.selector) throw new Error(`shot ${shot.id}: highlight action missing selector`);
         const loc = page.locator(a.selector);
-        await loc.scrollIntoViewIfNeeded();
-        recordEvent(recorder, "highlight", await loc.boundingBox());
-        await page.evaluate(highlightExpr(a.selector));
+        // The locator still does the WAITING — an element that appears late must
+        // keep working. Only the diagnosis changes: Playwright reports a
+        // non-unique selector as a raw strict-mode violation and a missing one
+        // as a bare timeout, naming neither the shot nor the action. Re-read the
+        // real count and say what actually went wrong.
+        try {
+          // Explicit, and shared with the pre-flight gate: the gate must know how
+          // long the render is willing to wait, or it will block what we'd render.
+          await loc.scrollIntoViewIfNeeded({ timeout: SELECTOR_TIMEOUT_MS });
+        } catch (e) {
+          // Only re-describe the failure when the COUNT actually explains it.
+          // scrollIntoViewIfNeeded also times out on an actionability problem
+          // (a display:none element is exactly one match), and rewriting that
+          // as "resolved to 1 elements, need exactly 1" is self-contradictory
+          // and points at a gate that would have passed the selector.
+          const n = await loc.count().catch(() => -1);
+          if (n === 1) throw e;
+          throw new Error(
+            `shot ${shot.id}: highlight selector ${JSON.stringify(a.selector)} resolved to ` +
+              `${n < 0 ? "an unusable selector" : `${n} elements`}, need exactly 1. ` +
+              "Run with the preflight gate enabled to catch this before any narration is synthesized.",
+            { cause: e },
+          );
+        }
+        // Resolve the rectangle HERE, with Playwright, and hand the page those
+        // coordinates. Passing the selector instead would make the page resolve
+        // it a second time with a different engine (see overlay.ts).
+        const box = await loc.boundingBox();
+        recordEvent(recorder, "highlight", box);
+        if (!box) throw new Error(`shot ${shot.id}: highlight selector ${JSON.stringify(a.selector)} matched an element with no bounding box (is it hidden?)`);
+        await page.evaluate(highlightBoxExpr(box));
         break;
       }
       case "scroll":
@@ -393,7 +418,19 @@ export async function captureShot(
   // Short-circuit for prebaked clips — caller uses the existing file.
   if (shot.target === "prebaked") {
     if (!shot.clip) throw new Error(`prebaked shot ${shot.id} has no clip path`);
-    return shot.clip;
+    // configDir is absent only when a DemoConfig is built programmatically
+    // rather than loaded from disk. The CWD fallback keeps that case anchored
+    // somewhere predictable; it is NOT the old behaviour, which returned the
+    // declared path verbatim, so a bare filename now resolves through clipsDir.
+    const clipPath = resolveClipPath(shot.clip, config.clipsDir, config.configDir ?? process.cwd());
+    if (!existsSync(clipPath) || !statSync(clipPath).isFile()) {
+      throw new Error(
+        `shot ${shot.id}: prebaked clip not found at ${clipPath} ` +
+          `(clip: ${JSON.stringify(shot.clip)}, clipsDir: ${JSON.stringify(config.clipsDir)}). ` +
+          "A bare filename resolves inside clipsDir; a path with a directory resolves against the config file's directory.",
+      );
+    }
+    return clipPath;
   }
 
   await mkdir(outDir, { recursive: true });

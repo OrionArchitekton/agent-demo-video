@@ -4,6 +4,7 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { DemoConfig, TtsResult } from "./types";
 import { parseScript } from "./parse-script";
+import { formatPreflightReport, runPreflight } from "./preflight";
 import { synthShot } from "./tts";
 import { captureShot } from "./capture";
 import { titleCardArgs, endCardArgs } from "./cards";
@@ -11,7 +12,7 @@ import { ffmpeg, silentMp3Args } from "./ffmpeg";
 import { renderVideo, type RenderResult } from "./render";
 import { renderRemote } from "./remote-render";
 import type { Transport } from "./transport";
-import { buildRenderReport, digest, stableConfigJson, toolVersions } from "./provenance";
+import { buildRenderReport, digest, stableConfigJson, toolVersions, type PreflightRecord } from "./provenance";
 import { resolveTtsMode } from "./tts";
 
 export interface RunPipelineOpts {
@@ -66,6 +67,42 @@ export async function runPipeline(config: DemoConfig, opts: RunPipelineOpts = {}
   const md = readFileSync(config.script, "utf8");
   const manifest = parseScript(md);
   const shots = manifest.shots;
+
+  // 1.5 Pre-flight selector gate — BEFORE any spend.
+  //
+  // Ordering is the whole point. TTS is the first thing this pipeline pays for,
+  // so a selector that resolves to zero or to many must be caught above it: the
+  // capture path would otherwise stall a full locator timeout mid-render and
+  // then report a raw Playwright error naming neither the shot nor the
+  // selector, with every narration already synthesized.
+  let preflightRecord: PreflightRecord = { ran: false, declined: true, findings: 0, unverifiedShotIds: [] };
+  if (config.preflight) {
+    const findings = await runPreflight(manifest, config);
+    if (findings.length > 0) console.warn(formatPreflightReport(findings));
+    const blocking = findings.filter((f) => f.severity === "blocking");
+    preflightRecord = {
+      ran: true,
+      declined: false,
+      findings: findings.length,
+      // Which shots shipped with something the gate could NOT adjudicate:
+      // auth-walled live shots, selectors behind an earlier interaction, a page
+      // that never settled. Keyed on severity, not on one finding kind, so the
+      // receipt distinguishes "gated and clean" from "gated, but not where it
+      // counted" for every reason the gate has to abstain.
+      unverifiedShotIds: [...new Set(findings.filter((f) => f.severity === "info").map((f) => f.shotId))],
+    };
+    if (blocking.length > 0) {
+      throw new Error(
+        `[agent-demo-video] preflight gate failed: ${blocking.length} finding(s); no narration was synthesized. ` +
+          "Fix the script, or set preflight:false / pass --no-preflight to render anyway.",
+      );
+    }
+  } else {
+    // A declined gate must be loud. Silence here would read identically to a
+    // gate that ran and found nothing, which is the ambiguity the gate exists
+    // to remove.
+    console.warn("[agent-demo-video] preflight gate DECLINED: selectors were NOT verified before this render.");
+  }
 
   // 2. Make dirs
   const out = resolve(config.out);
@@ -195,6 +232,7 @@ export async function runPipeline(config: DemoConfig, opts: RunPipelineOpts = {}
       render: result.report,
       maxDurationSec: config.maxDurationSec,
       renderedOn: opts.render ? "remote" : "local",
+      preflight: preflightRecord,
     });
     await writeFile(join(out, "render-report.json"), JSON.stringify(report, null, 2));
   } catch (e) {

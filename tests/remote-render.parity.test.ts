@@ -58,6 +58,7 @@ async function makeInputs(dir: string): Promise<RenderInputs> {
         annotations: { enabled: true, durationMs: 500, fontSize: 24, position: "top-right" as const },
       },
       out: dir,
+      maxDurationSec: 300,
     },
   };
 }

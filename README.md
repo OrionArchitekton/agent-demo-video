@@ -1,6 +1,6 @@
 # agent-demo-video
 
-Turn a `DEMO_SCRIPT.md` and a running web app into a finished, narrated, captioned MP4 (≤5 min) — fully automated and headless.
+Turn a `DEMO_SCRIPT.md` and a running web app into a finished, narrated, captioned MP4 — fully automated and headless. Length is capped by `maxDurationSec` (default 300).
 
 ## Install
 
@@ -12,7 +12,7 @@ npx playwright install chromium      # one-time: capture browser
 
 Then `demo-video <config.json>` to render, or `demo-video login <config.json>` to log in
 for an auth-walled `target: live` demo (see [Authenticated SaaS capture](#authenticated-saas-capture-target-live)).
-An ElevenLabs API key enables real narration; `FAKE_TTS=1` runs keyless.
+An ElevenLabs API key is REQUIRED for narration: without one the run stops rather than producing a silent video. Set `FAKE_TTS=1` to deliberately render silent placeholder narration (full pipeline otherwise identical).
 
 ## What it does
 
@@ -226,6 +226,8 @@ Key fields in `demo.config.json` (full schema in `src/types.ts`):
 | `motion.livingCamera` | `true` | Continuous camera path with drift; `motion.zoomOnAction: false` disables all camera motion |
 | `brand` | (off) | `{ title, subtitle, url, accent, cards }` adds branded title and end cards |
 | `clipsDir` | `"clips/prebaked"` | Directory scanned for prebaked clips |
+| `maxDurationSec` | `300` | Hard ceiling for the finished video. The render fails if the result exceeds it. Set it to the length limit you are shipping against. |
+| `capture.settleMs` | `500` | Budget for the post-navigation readiness wait (fonts ready, visible images decoded). `0` disables the probe. Exceeding the budget warns and records anyway. Under the default `screencast` engine the wait happens BEFORE recording starts, so unsettled frames are excluded; the legacy `recordvideo` engine binds capture at context creation, so there the wait shifts those frames later rather than excluding them. |
 
 Sample: `demo.config.sample.json`.
 

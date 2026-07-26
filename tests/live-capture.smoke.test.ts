@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll } from "vitest";
-import { mkdtemp, stat, writeFile } from "node:fs/promises";
+import { mkdtemp, readdir, stat, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -64,6 +64,25 @@ describe("auth-walled SaaS live capture (smoke)", () => {
     await expect(
       captureShot(shot, { shotId: "L2", startSec: 0, durationSec: 1 }, liveCfg(profileDir), dir),
     ).rejects.toThrow(/expired|log ?in/i);
+  }, 60_000);
+
+  it("captureShot target:live leaves NO recording behind when the session is expired (recordvideo engine)", async () => {
+    // recordVideo binds at context creation, so by the time the auth guard trips
+    // the WebM already exists and context.close() finalises it. "Fails closed"
+    // has to mean no artifact, not merely no return value: a recording of a
+    // logged-out page must never survive on disk.
+    const profileDir = await mkdtemp(join(tmpdir(), "advprof-"));
+    await captureLogin(liveCfg(profileDir));
+    const dir = await mkdtemp(join(tmpdir(), "advcap-"));
+    const cfg = { ...liveCfg(profileDir), capture: { ...liveCfg(profileDir).capture, engine: "recordvideo" as const } };
+    const shot = { id: "L2b", target: "live" as const, narration: "demo", actions: [
+      { kind: "goto" as const, url: loggedOutUrl },
+    ] };
+    await expect(
+      captureShot(shot, { shotId: "L2b", startSec: 0, durationSec: 1 }, cfg, dir),
+    ).rejects.toThrow(/expired|log ?in/i);
+    const left = (await readdir(dir)).filter((f) => f.endsWith(".webm"));
+    expect(left).toEqual([]);
   }, 60_000);
 
   it("captureShot target:live without a saved profile errors with a clear message", async () => {

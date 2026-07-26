@@ -1,5 +1,5 @@
-import { existsSync, readFileSync } from "node:fs";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { DemoConfig, TtsResult } from "./types";
@@ -11,6 +11,8 @@ import { ffmpeg, silentMp3Args } from "./ffmpeg";
 import { renderVideo, type RenderResult } from "./render";
 import { renderRemote } from "./remote-render";
 import type { Transport } from "./transport";
+import { buildRenderReport, digest, stableConfigJson, toolVersions } from "./provenance";
+import { resolveTtsMode } from "./tts";
 
 export interface RunPipelineOpts {
   /** Offload the render stage to a remote host over the given transport. Absent = local render (default). */
@@ -20,6 +22,35 @@ export interface RunPipelineOpts {
 /** Path to the built remote-render bundle, resolved relative to this module. */
 function defaultBundlePath(): string {
   return fileURLToPath(new URL("../dist-remote/remote-entry.js", import.meta.url));
+}
+
+/**
+ * Refuse to offload to a bundle older than the sources it was built from.
+ *
+ * `existsSync` alone is not a guard: `pnpm demo` runs tsx against source and
+ * never rebuilds dist-remote, so a stale bundle silently runs an OLD renderer
+ * on the host. That was observed enforcing the previous hardcoded 300s ceiling
+ * while the operator had declared a shorter cap, and the render report then
+ * recorded the declared cap beside a parity pass that never checked it. A
+ * receipt certifying an unenforced limit is worse than no receipt.
+ */
+function assertBundleFresh(bundlePath: string): void {
+  const srcDir = fileURLToPath(new URL("../src", import.meta.url));
+  if (!existsSync(srcDir)) return; // installed package: built at prepack, nothing to compare
+  const bundleMs = statSync(bundlePath).mtimeMs;
+  const stale = readdirSync(srcDir)
+    .filter((f) => f.endsWith(".ts") && !f.endsWith(".test.ts"))
+    .map((f) => ({ f, ms: statSync(join(srcDir, f)).mtimeMs }))
+    .filter((s) => s.ms > bundleMs)
+    .map((s) => s.f);
+  if (stale.length > 0) {
+    throw new Error(
+      `[agent-demo-video] the remote render bundle at ${bundlePath} is older than ${stale.length} source file(s) ` +
+        `(${stale.slice(0, 3).join(", ")}${stale.length > 3 ? ", ..." : ""}). ` +
+        "A stale bundle runs an OLD renderer on the host and can silently ignore settings this run declares. " +
+        "Run `pnpm build:remote-entry` and retry.",
+    );
+  }
 }
 
 export async function runPipeline(config: DemoConfig, opts: RunPipelineOpts = {}): Promise<RenderResult> {
@@ -42,6 +73,17 @@ export async function runPipeline(config: DemoConfig, opts: RunPipelineOpts = {}
   const segDir = join(out, "seg");
   await mkdir(audioDir, { recursive: true });
   await mkdir(segDir, { recursive: true });
+
+  // Resolve the narration mode ONCE, before any spend, and record THAT value.
+  // Re-deriving it after the render would report what the environment says now
+  // rather than what produced the artifact, and could throw on a card-only run
+  // that legitimately never needed a key.
+  const ttsMode = resolveTtsMode();
+
+  // A receipt must never outlive the render it describes: final.mp4 is written
+  // before the parity check throws, so a failed run could otherwise leave the
+  // new video beside the PREVIOUS run's passing report.
+  await rm(join(out, "render-report.json"), { force: true });
 
   // 3. TTS — sequential to respect ElevenLabs concurrency limits
   const ttsResults: TtsResult[] = [];
@@ -126,13 +168,38 @@ export async function runPipeline(config: DemoConfig, opts: RunPipelineOpts = {}
   // 5-13. Render — locally by default, or offloaded to a render host (same renderVideo
   //       code path runs there). A remote failure rejects loudly (no silent local fallback).
   const inputs = { rawSegments, tts: ttsResults, config, segmentKinds, clickOffsets };
+  let result: RenderResult;
   if (opts.render) {
     const bundlePath = opts.render.bundlePath ?? defaultBundlePath();
     if (!existsSync(bundlePath)) {
       throw new Error(`[agent-demo-video] remote render bundle not found at ${bundlePath}; run \`pnpm build:remote-entry\` first.`);
     }
+    assertBundleFresh(bundlePath);
     const workDir = opts.render.workDir ?? `/tmp/agent-demo-video-render-${Date.now()}-${process.pid}`;
-    return renderRemote(inputs, { transport: opts.render.transport, bundlePath, workDir, outPath: join(out, "final.mp4") });
+    result = await renderRemote(inputs, { transport: opts.render.transport, bundlePath, workDir, outPath: join(out, "final.mp4") });
+  } else {
+    result = await renderVideo(inputs);
   }
-  return renderVideo(inputs);
+
+  // 14. Provenance. Written AFTER a successful render so the file's existence
+  //     means "this artifact shipped under these inputs". Never gates: a
+  //     provenance failure must not discard a completed render.
+  try {
+    const report = buildRenderReport({
+      voice: config.voice,
+      ttsMode,
+      configHash: digest(stableConfigJson(config)),
+      scriptHash: digest(md),
+      tools: await toolVersions(),
+      timeline: result.report.timeline,
+      render: result.report,
+      maxDurationSec: config.maxDurationSec,
+      renderedOn: opts.render ? "remote" : "local",
+    });
+    await writeFile(join(out, "render-report.json"), JSON.stringify(report, null, 2));
+  } catch (e) {
+    console.warn(`[agent-demo-video] could not write render-report.json: ${(e as Error).message}`);
+  }
+
+  return result;
 }

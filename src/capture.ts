@@ -48,6 +48,7 @@ import {
 } from "./overlay.js";
 import { resolveProfileDir } from "./profile.js";
 import type { Shot, DemoConfig, TimelineEntry } from "./types.js";
+import { waitForReady } from "./ready";
 
 /**
  * Resolves a URL relative to the dashboardBaseUrl.
@@ -57,6 +58,41 @@ function resolveUrl(u: string, baseUrl: string): string {
   if (u.startsWith("http") || u.startsWith("file:")) return u;
   const base = baseUrl.replace(/\/$/, "");
   return base + (u.startsWith("/") ? u : "/" + u);
+}
+
+/**
+ * Perform a shot's OPENING navigation and wait for the page to settle, BEFORE
+ * any recording starts.
+ *
+ * This ordering is the whole point. Recording begins the moment
+ * `page.screencast.start()` (or the recordVideo context) is live, so settling
+ * inside the action loop would capture the unsettled page and merely shift the
+ * blank frames later in a fixed-length segment. Navigating and settling first
+ * means the recorder's first frame is of a painted page.
+ *
+ * Returns how many leading actions were consumed, so the in-recording action
+ * loop can skip them.
+ */
+async function openShotPage(
+  page: Page,
+  shot: Shot,
+  config: DemoConfig,
+  onGoto?: () => Promise<void>,
+): Promise<number> {
+  // The first goto ANYWHERE in the sequence, not just at index 0: a legal cold
+  // open is `chapter` then `goto`, and that shot needs settling just as much.
+  const idx = shot.actions.findIndex((a) => a.kind === "goto");
+  const first = idx === -1 ? undefined : shot.actions[idx];
+  if (!first) return -1;
+  await page.goto(resolveUrl(first.url ?? "/", config.dashboardBaseUrl), { waitUntil: "load" });
+  const settle = await waitForReady(page, config.capture.settleMs);
+  if (settle.warning) {
+    console.warn(`[agent-demo-video] shot "${shot.id}": ${settle.warning}; recording anyway`);
+  }
+  // The live-capture auth guard must still fire after this navigation, exactly
+  // as it does for every in-recording goto. Fails closed before any recording.
+  if (onGoto) await onGoto();
+  return idx;
 }
 
 /**
@@ -72,14 +108,27 @@ async function runActions(
   config: DemoConfig,
   onGoto?: () => Promise<void>,
   recorder?: EventRecorder,
+  /** Index of the action already performed by openShotPage (-1 = none). Replaying
+   *  that navigation here would re-blank the page on camera. */
+  skipIndex = -1,
 ): Promise<void> {
   const mode = cursorMode(config.capture.engine, config.theme.annotations.enabled, config.theme.cursor);
-  for (const a of shot.actions) {
+  for (const [i, a] of shot.actions.entries()) {
+    if (i === skipIndex) continue;
     switch (a.kind) {
-      case "goto":
+      case "goto": {
         await page.goto(resolveUrl(a.url ?? "/", config.dashboardBaseUrl), { waitUntil: "load" });
+        // `load` can fire on a page that is still visually blank (font swap,
+        // lazy images, hydration). Settle before anything is recorded, so a
+        // blank opening frame is prevented structurally rather than by the
+        // author remembering to hand-author `wait ms=`. Fails open.
+        const settle = await waitForReady(page, config.capture.settleMs);
+        if (settle.warning) {
+          console.warn(`[agent-demo-video] shot "${shot.id}": ${settle.warning}; recording anyway`);
+        }
         if (onGoto) await onGoto();
         break;
+      }
       case "chapter":
         if (mode === "native") {
           await page.screencast.showChapter(a.label ?? a.text ?? "");
@@ -372,13 +421,20 @@ export async function captureShot(
   try {
     if (useScreencast) {
       const recorder: EventRecorder = { t0: 0, fallbackT0: 0, events: [] };
+      // Navigate + settle BEFORE the recorder starts, so frame one is painted.
+      const opened = await openShotPage(page, shot, config);
       return await recordWithScreencast(page, shot.id, config, outDir, recorder, async () => {
         const startMs = Date.now();
-        await runActions(page, shot, config, undefined, recorder);
+        await runActions(page, shot, config, undefined, recorder, opened);
         await dwell(page, timelineEntry.durationSec, startMs);
       });
     }
 
+    // Legacy recordVideo engine: capture is bound at context creation, so an
+    // opening frame cannot be excluded without rebuilding the context per shot.
+    // The settle still runs inside runActions; on this path it shifts rather
+    // than removes the unsettled frames. The screencast engine is the default
+    // and does not have this limitation.
     const startMs = Date.now();
     await runActions(page, shot, config);
     await dwell(page, timelineEntry.durationSec, startMs);
@@ -443,45 +499,59 @@ async function captureLiveShot(
     ...(useScreencast ? {} : { recordVideo: { dir: outDir, size: config.resolution } }),
     headless: true,
   });
+  let page: Page | undefined;
   try {
     await context.addInitScript(overlayInitScript());
     if (config.captureCss) await context.addInitScript(cssInjectScript(config.captureCss));
-    const page = context.pages()[0] ?? (await context.newPage());
+    page = context.pages()[0] ?? (await context.newPage());
+    const pg = page; // narrowed alias; `page` stays hoisted for the catch handler
 
     // The first action is guaranteed to be a `goto` (validated above) and the guard runs
     // after EVERY navigation — so the expiry check fires before any click/type and a shot
     // that navigates more than once is re-checked on each goto. Never records or
     // side-effects against a logged-out page. Fails closed.
     const recorder: EventRecorder = { t0: 0, fallbackT0: 0, events: [] };
+    const guard = async () => {
+      await assertAuthed(pg, shot, auth.loggedInSelector);
+    };
+    // Opening navigation, settle, and the FIRST auth check all happen before the
+    // SCREENCAST recorder starts, so an expired session leaves nothing recorded
+    // there. The legacy recordvideo engine binds capture at context creation, so
+    // its WebM already exists by now; the catch below deletes it rather than
+    // leaving a recording of a logged-out page on disk.
+    const opened = await openShotPage(pg, shot, config, guard);
     const runShot = async () => {
       const startMs = Date.now();
-      await runActions(
-        page,
-        shot,
-        config,
-        async () => {
-          await assertAuthed(page, shot, auth.loggedInSelector);
-        },
-        recorder,
-      );
-      await dwell(page, timelineEntry.durationSec, startMs);
+      await runActions(pg, shot, config, guard, recorder, opened);
+      await dwell(pg, timelineEntry.durationSec, startMs);
     };
 
     if (useScreencast) {
-      const seg = await recordWithScreencast(page, shot.id, config, outDir, recorder, runShot);
+      const seg = await recordWithScreencast(pg, shot.id, config, outDir, recorder, runShot);
       await context.close();
       return seg;
     }
 
     await runShot();
-    const video = page.video();
+    const video = pg.video();
     // Read the video path BEFORE close (close flushes/finalises the WebM).
     await context.close();
     if (!video) throw new Error(`no video recorded for shot ${shot.id}`);
     return await video.path();
   } catch (err) {
+    // recordVideo binds at context creation, so a guard failure during the opening
+    // navigation still has a WebM on disk, and context.close() FINALISES it. Read
+    // its path before closing, then delete it: an expired-session recording must
+    // never survive, and "fails closed" has to mean no artifact, not just no return.
+    let strayVideo: string | undefined;
+    if (!useScreencast && page) {
+      try { strayVideo = await page.video()?.path(); } catch { /* no video bound */ }
+    }
     // Ensure the persistent context is released on any failure (incl. the guard).
     try { await context.close(); } catch { /* already closing */ }
+    if (strayVideo) {
+      try { await rm(strayVideo, { force: true }); } catch { /* best effort */ }
+    }
     throw err;
   }
 }

@@ -272,17 +272,26 @@ export async function resolveSelectorFindings(
           });
         }
 
+        // Once ONE selector on this page has waited out the full budget, the page
+        // is demonstrably done arriving, so later absences need no further wait.
+        // Without this, K typo'd selectors cost K * preflightWaitMs serially
+        // (10 typos at the default budget is five minutes before the run is
+        // refused), which punishes exactly the badly-broken script this gate is
+        // meant to reject cheaply.
+        let pageSettledByExhaustedWait = false;
         for (const probe of probes) {
           let matches = await countMatches(page, probe.selector);
           // The render's locator AUTO-WAITS; counting once, instantly, is
           // stricter than the render and would false-block an element that
           // hydrates in after load.
-          if (matches === 0 && !probe.afterInteraction) {
+          if (matches === 0 && !probe.afterInteraction && !pageSettledByExhaustedWait) {
             await page
               .locator(probe.selector)
               .first()
               .waitFor({ state: "attached", timeout: config.preflightWaitMs })
-              .catch(() => {});
+              .catch(() => {
+                pageSettledByExhaustedWait = true;
+              });
             matches = await countMatches(page, probe.selector);
           }
           if (matches === 1) continue;

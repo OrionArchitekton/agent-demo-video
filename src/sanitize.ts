@@ -41,3 +41,15 @@ export function redactUrl(u: string): string {
     return (u ?? "").split(/[?#]/)[0] ?? "";
   }
 }
+
+/**
+ * Redact every URL that appears INSIDE free text.
+ *
+ * Redacting the URL we print is not enough on its own: a library's error text
+ * quotes the target back at us in full. Playwright's navigation failures read
+ * `page.goto: net::ERR_CONNECTION_REFUSED at https://host/app?token=SECRET`,
+ * so interpolating that message re-leaks exactly what redactUrl removed.
+ */
+export function redactUrlsInText(text: string): string {
+  return String(text ?? "").replace(/\b[a-z][a-z0-9+.-]*:\/\/[^\s)]+/gi, (m) => redactUrl(m));
+}

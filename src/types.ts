@@ -109,11 +109,12 @@ export const DemoConfigSchema = z.object({
   // pass --no-preflight) to decline; declining is reported, never silent.
   preflight: z.boolean().default(true),
   // How long the gate waits for a selector that is absent at first count before
-  // calling it missing. The render's locator auto-waits (30s default), so a gate
-  // that counted once instantly would be STRICTER than the render and would
-  // false-block an element that hydrates in after load. Kept well under the
-  // render's timeout so a genuinely absent selector still fails fast.
-  preflightWaitMs: z.number().min(0).default(3000),
+  // concluding anything. Defaults to the render's OWN selector budget
+  // (SELECTOR_TIMEOUT_MS), because a gate that waits less has strictly weaker
+  // evidence than the render: an element arriving at 5s would be blocked here
+  // and rendered fine there. Lower it to make the gate faster and it stops
+  // BLOCKING on absence, reporting it at INFO instead.
+  preflightWaitMs: z.number().min(0).default(30_000),
   // Directory scanned for prebaked clips. A BARE clip filename resolves inside
   // it; a clip path that carries its own directory resolves against the config
   // file's directory. Relative clipsDir resolves against the config dir too.

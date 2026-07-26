@@ -33,8 +33,11 @@
   `live` shot, and a page that did not settle before counting.
 - `out/render-report.json` records whether the gate ran, whether it was declined, and which
   shots it could not adjudicate, so a finished video states how it was checked.
-- `preflightWaitMs` (default 3000) budgets how long the gate waits for a selector absent at
-  first count, keeping it no stricter than the render's auto-waiting locator.
+- `preflightWaitMs` (default 30000) budgets how long the gate waits for a selector absent at
+  first count. It defaults to the render's own selector budget, which capture now passes
+  explicitly from a shared constant so the two cannot drift. Lowering it makes the gate
+  faster and stops it BLOCKING on absence: with a shorter budget its evidence is weaker
+  than the render's, so absence is reported at `INFO` instead.
 - `clipsDir` is now read. It was declared in the schema, defaulted, and documented in two
   places while no code path consulted it. (#14)
 

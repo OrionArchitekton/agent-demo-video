@@ -4,7 +4,8 @@ import { cssInjectScript, overlayInitScript } from "./overlay.js";
 import { waitForReady } from "./ready.js";
 import { resolveUrl } from "./urls.js";
 import { resolveClipPath } from "./clips.js";
-import { redactUrl, scrubControlChars } from "./sanitize.js";
+import { redactUrl, redactUrlsInText, scrubControlChars } from "./sanitize.js";
+import { SELECTOR_TIMEOUT_MS } from "./timeouts.js";
 import type { Action, DemoConfig, Manifest, PreflightFinding, Shot } from "./types";
 
 /** Action kinds that cannot run at all without a selector. */
@@ -43,7 +44,12 @@ interface SelectorProbe {
  */
 function selectorProbes(shot: Shot, config: DemoConfig): SelectorProbe[] {
   const probes: SelectorProbe[] = [];
-  let url: string | undefined;
+  // openShotPage hoists the FIRST goto and performs it before the action loop,
+  // so a selector action declared ahead of that goto still runs against its
+  // page. Skipping those would leave them silently unprobed.
+  const firstGoto = shot.actions.find((a) => a.kind === "goto");
+  const firstUrl = firstGoto ? resolveUrl(firstGoto.url ?? "/", config.dashboardBaseUrl) : undefined;
+  let url: string | undefined = firstUrl;
   let interacted = false;
   for (const a of shot.actions) {
     if (a.kind === "goto") {
@@ -54,7 +60,8 @@ function selectorProbes(shot: Shot, config: DemoConfig): SelectorProbe[] {
     if (a.selector && url) {
       probes.push({ shot, kind: a.kind, selector: a.selector, url, afterInteraction: interacted });
     }
-    if (a.kind === "click" || a.kind === "type") interacted = true;
+    // hover opens submenus and tooltips, so it reveals DOM exactly as a click does.
+    if (a.kind === "click" || a.kind === "type" || a.kind === "hover") interacted = true;
   }
   return probes;
 }
@@ -85,7 +92,16 @@ export function structuralFindings(manifest: Manifest, config: DemoConfig): Pref
     if (shot.target === "prebaked") {
       // Decidable here, so it costs nothing. A one-character typo in `clip:`
       // otherwise synthesizes every narration first and fails at capture.
-      if (shot.clip) {
+      if (!shot.clip) {
+        // Just as decidable as a declared-but-absent clip, and capture throws on
+        // it either way; it previously slipped through this guard entirely.
+        findings.push({
+          shotId: shot.id,
+          kind: "missing-clip",
+          severity: "blocking",
+          message: `shot "${shot.id}" is prebaked but declares no clip; capture has nothing to splice in`,
+        });
+      } else {
         const clipPath = resolveClipPath(shot.clip, config.clipsDir, config.configDir ?? process.cwd());
         if (!existsSync(clipPath) || !statSync(clipPath).isFile()) {
           findings.push({
@@ -226,7 +242,7 @@ export async function resolveSelectorFindings(
             kind: "unreachable",
             severity: "blocking",
             message:
-              `could not open ${safe} (${scrubControlChars((e as Error).message, 160)}); ` +
+              `could not open ${safe} (${redactUrlsInText(scrubControlChars((e as Error).message, 160))}); ` +
               `${probes.length} selector(s) could not be checked`,
           });
           continue;
@@ -252,7 +268,7 @@ export async function resolveSelectorFindings(
             shotId: probes[0]!.shot.id,
             kind: "unverified",
             severity: "info",
-            message: `${safe} did not settle before selectors were counted (${scrubControlChars(settle.warning, 160)}); counts below may not reflect the rendered DOM`,
+            message: `${safe} did not settle before selectors were counted (${redactUrlsInText(scrubControlChars(settle.warning, 160))}); counts below may not reflect the rendered DOM`,
           });
         }
 
@@ -285,9 +301,16 @@ export async function resolveSelectorFindings(
           // Two reasons the gate must not block on a real difference it cannot
           // adjudicate: it ran no actions, and hover is non-strict at render.
           const unverifiable = probe.afterInteraction;
-          const fatal = unverifiable ? false : matches === 0 ? true : ambiguityIsFatal(probe.kind);
+          // Absence only counts against the script when the gate waited at least
+          // as long as the render will. A shortened budget means the element may
+          // simply not have arrived yet, which is our limitation, not a defect.
+          const waitedAsLongAsRender = config.preflightWaitMs >= SELECTOR_TIMEOUT_MS;
+          const impatient = matches === 0 && !waitedAsLongAsRender;
+          const fatal = unverifiable || impatient ? false : matches === 0 ? true : ambiguityIsFatal(probe.kind);
           const because = unverifiable
             ? " (an earlier click or type in this shot can change the DOM, and the gate runs no actions, so this could not be verified)"
+            : impatient
+              ? ` (the gate's ${config.preflightWaitMs}ms wait budget is shorter than the render's ${SELECTOR_TIMEOUT_MS}ms, so this is reported rather than blocking)`
             : probe.kind === "hover" && matches > 1
               ? " (hover resolves non-strictly at render, so this is reported rather than blocking)"
               : "";

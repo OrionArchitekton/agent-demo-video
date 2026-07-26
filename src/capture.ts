@@ -55,6 +55,7 @@ import { waitForReady } from "./ready";
 // render will open — two definitions could silently disagree.
 import { resolveUrl } from "./urls.js";
 import { resolveClipPath } from "./clips.js";
+import { SELECTOR_TIMEOUT_MS } from "./timeouts.js";
 
 /**
  * Perform a shot's OPENING navigation and wait for the page to settle, BEFORE
@@ -190,7 +191,9 @@ async function runActions(
         // as a bare timeout, naming neither the shot nor the action. Re-read the
         // real count and say what actually went wrong.
         try {
-          await loc.scrollIntoViewIfNeeded();
+          // Explicit, and shared with the pre-flight gate: the gate must know how
+          // long the render is willing to wait, or it will block what we'd render.
+          await loc.scrollIntoViewIfNeeded({ timeout: SELECTOR_TIMEOUT_MS });
         } catch (e) {
           // Only re-describe the failure when the COUNT actually explains it.
           // scrollIntoViewIfNeeded also times out on an actionability problem

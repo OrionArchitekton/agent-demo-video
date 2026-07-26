@@ -49,4 +49,18 @@ describe("structuralFindings", () => {
     // actions are dead AND the clip is missing. Assert the one under test.
     expect(f.map((x) => x.kind).sort()).toEqual(["missing-clip", "prebaked-actions"]);
   });
+
+  // A prebaked shot with NO clip declared at all is just as decidable here as a
+  // clip that is declared but absent, and capture throws on it either way. It
+  // previously slipped through the `if (shot.clip)` guard, so every narration
+  // was synthesized before the run died.
+  it("flags a prebaked shot that declares no clip at all", () => {
+    const f = structuralFindings(
+      manifest([{ id: "no-clip", target: "prebaked", narration: "n", actions: [] }]),
+      cfg(),
+    );
+    expect(f).toHaveLength(1);
+    expect(f[0]!.kind).toBe("missing-clip");
+    expect(f[0]!.severity).toBe("blocking");
+  });
 });

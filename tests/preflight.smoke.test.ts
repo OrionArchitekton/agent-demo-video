@@ -32,7 +32,9 @@ describe("resolveSelectorFindings (smoke)", () => {
       shots: [shot("unique", "#bootstrap"), shot("zero", "#definitely-not-here"), shot("many", "button")],
     });
 
-    const f = await resolveSelectorFindings(manifest, cfg);
+    // Filter to selector findings: a page-level note (e.g. a slow settle under
+    // load) is legitimate but load-dependent, and must not make this brittle.
+    const f = (await resolveSelectorFindings(manifest, cfg)).filter((x) => x.selector);
 
     expect(f.map((x) => [x.shotId, x.kind])).toEqual([
       ["zero", "no-match"],
@@ -142,9 +144,39 @@ describe("resolveSelectorFindings (smoke)", () => {
     expect(await resolveSelectorFindings(manifest, cfg)).toEqual([]);
   }, 60_000);
 
+  // The render's locator waits Playwright's full default (capture never
+  // overrides it). A gate given a SHORTER budget has strictly weaker evidence
+  // than the render, so an element that simply had not arrived yet must be
+  // reported, never blocked: otherwise a slow SPA is refused a render that
+  // would have succeeded.
+  it("reports rather than blocks when its wait budget is shorter than the render's", async () => {
+    const cfg = DemoConfigSchema.parse({
+      script: "x", dashboardBaseUrl: "http://localhost:3000", preflightWaitMs: 100,
+    });
+    const manifest = ManifestSchema.parse({
+      shots: [{
+        id: "slow", target: "dashboard", narration: "n",
+        actions: [
+          { kind: "goto", url: fixture() },
+          { kind: "highlight", selector: "#never-arrives" },
+        ],
+      }],
+    });
+
+    // A selector that never arrives, rather than one racing the fixture's own
+    // 900ms timer: under load the element had already landed before the count.
+    const f = (await resolveSelectorFindings(manifest, cfg)).filter((x) => x.selector);
+
+    expect(f).toHaveLength(1);
+    expect(f[0]!.severity).toBe("info");
+    expect(f[0]!.message).toMatch(/budget/i);
+  }, 60_000);
+
+  // Ambiguity is decidable instantly, so this asserts the blocking grade without
+  // sitting through the full absence budget the previous test already covers.
   it("grades a resolvable selector defect as blocking", async () => {
     const cfg = DemoConfigSchema.parse({ script: "x", dashboardBaseUrl: "http://localhost:3000" });
-    const manifest = ManifestSchema.parse({ shots: [shot("zero", "#definitely-not-here")] });
+    const manifest = ManifestSchema.parse({ shots: [shot("many", "button")] });
 
     const f = await resolveSelectorFindings(manifest, cfg);
 

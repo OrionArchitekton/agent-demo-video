@@ -194,6 +194,7 @@ export async function runPipeline(config: DemoConfig, opts: RunPipelineOpts = {}
       timeline: result.report.timeline,
       render: result.report,
       maxDurationSec: config.maxDurationSec,
+      renderedOn: opts.render ? "remote" : "local",
     });
     await writeFile(join(out, "render-report.json"), JSON.stringify(report, null, 2));
   } catch (e) {

@@ -12,6 +12,11 @@ export type RenderReport = {
   voice: DemoConfig["voice"];
   ttsMode: TtsMode;
   inputs: { configHash: string; scriptHash: string };
+  /** Where the ffmpeg work actually happened. `tools` below is probed LOCALLY, so
+   *  on "remote" it describes the machine that captured and synthesised, NOT the
+   *  one that rendered. Recorded explicitly so a reader is never misled into
+   *  attributing a runtime change to a toolchain that did not produce it. */
+  renderedOn: "local" | "remote";
   tools: ToolVersions;
   timeline: { entries: TimelineEntry[]; totalSec: number };
   render: { totalSec: number; segments: number; ticks: number; parity: { ok: boolean; problems: string[] } };
@@ -39,11 +44,13 @@ export function buildRenderReport(o: {
   timeline: { entries: TimelineEntry[]; totalSec: number };
   render: { totalSec: number; segments: number; ticks: number; parity: { ok: boolean; problems: string[] } };
   maxDurationSec: number;
+  renderedOn: "local" | "remote";
 }): RenderReport {
   return {
     voice: o.voice,
     ttsMode: o.ttsMode,
     inputs: { configHash: o.configHash, scriptHash: o.scriptHash },
+    renderedOn: o.renderedOn,
     tools: o.tools,
     timeline: o.timeline,
     render: o.render,

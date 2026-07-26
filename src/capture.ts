@@ -499,10 +499,12 @@ async function captureLiveShot(
     ...(useScreencast ? {} : { recordVideo: { dir: outDir, size: config.resolution } }),
     headless: true,
   });
+  let page: Page | undefined;
   try {
     await context.addInitScript(overlayInitScript());
     if (config.captureCss) await context.addInitScript(cssInjectScript(config.captureCss));
-    const page = context.pages()[0] ?? (await context.newPage());
+    page = context.pages()[0] ?? (await context.newPage());
+    const pg = page; // narrowed alias; `page` stays hoisted for the catch handler
 
     // The first action is guaranteed to be a `goto` (validated above) and the guard runs
     // after EVERY navigation — so the expiry check fires before any click/type and a shot
@@ -510,32 +512,46 @@ async function captureLiveShot(
     // side-effects against a logged-out page. Fails closed.
     const recorder: EventRecorder = { t0: 0, fallbackT0: 0, events: [] };
     const guard = async () => {
-      await assertAuthed(page, shot, auth.loggedInSelector);
+      await assertAuthed(pg, shot, auth.loggedInSelector);
     };
-    // Opening navigation, settle, and the FIRST auth check all happen before
-    // recording starts: an expired session fails closed with nothing recorded.
-    const opened = await openShotPage(page, shot, config, guard);
+    // Opening navigation, settle, and the FIRST auth check all happen before the
+    // SCREENCAST recorder starts, so an expired session leaves nothing recorded
+    // there. The legacy recordvideo engine binds capture at context creation, so
+    // its WebM already exists by now; the catch below deletes it rather than
+    // leaving a recording of a logged-out page on disk.
+    const opened = await openShotPage(pg, shot, config, guard);
     const runShot = async () => {
       const startMs = Date.now();
-      await runActions(page, shot, config, guard, recorder, opened);
-      await dwell(page, timelineEntry.durationSec, startMs);
+      await runActions(pg, shot, config, guard, recorder, opened);
+      await dwell(pg, timelineEntry.durationSec, startMs);
     };
 
     if (useScreencast) {
-      const seg = await recordWithScreencast(page, shot.id, config, outDir, recorder, runShot);
+      const seg = await recordWithScreencast(pg, shot.id, config, outDir, recorder, runShot);
       await context.close();
       return seg;
     }
 
     await runShot();
-    const video = page.video();
+    const video = pg.video();
     // Read the video path BEFORE close (close flushes/finalises the WebM).
     await context.close();
     if (!video) throw new Error(`no video recorded for shot ${shot.id}`);
     return await video.path();
   } catch (err) {
+    // recordVideo binds at context creation, so a guard failure during the opening
+    // navigation still has a WebM on disk, and context.close() FINALISES it. Read
+    // its path before closing, then delete it: an expired-session recording must
+    // never survive, and "fails closed" has to mean no artifact, not just no return.
+    let strayVideo: string | undefined;
+    if (!useScreencast && page) {
+      try { strayVideo = await page.video()?.path(); } catch { /* no video bound */ }
+    }
     // Ensure the persistent context is released on any failure (incl. the guard).
     try { await context.close(); } catch { /* already closing */ }
+    if (strayVideo) {
+      try { await rm(strayVideo, { force: true }); } catch { /* best effort */ }
+    }
     throw err;
   }
 }

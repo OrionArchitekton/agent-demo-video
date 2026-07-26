@@ -17,6 +17,7 @@ describe("buildRenderReport", () => {
     timeline: { entries: [{ shotId: "s1", startSec: 0, durationSec: 3 }], totalSec: 3 },
     render: { totalSec: 3, segments: 1, ticks: 0, parity: { ok: true, problems: [] } },
     maxDurationSec: 300,
+    renderedOn: "local" as const,
   };
 
   it("records the resolved voice, so two renders can be compared to explain a runtime change", () => {
@@ -32,6 +33,11 @@ describe("buildRenderReport", () => {
     expect(r.inputs.scriptHash).toBe("scr");
     expect(r.timeline.entries[0]?.shotId).toBe("s1");
     expect(r.timeline.totalSec).toBe(3);
+  });
+
+  it("names the host that rendered, so local tool versions are not misread as the renderer's", () => {
+    expect(buildRenderReport(base).renderedOn).toBe("local");
+    expect(buildRenderReport({ ...base, renderedOn: "remote" as const }).renderedOn).toBe("remote");
   });
 
   it("digests content stably and distinguishes different content", () => {

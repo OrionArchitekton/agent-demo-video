@@ -16,8 +16,11 @@
   It replaces a hardcoded constant and is carried across the render manifest, so
   a remote render enforces the same limit as a local one.
 - `capture.settleMs` (default 500) budgets a readiness wait after the opening
-  navigation and before recording starts: web fonts ready and visible images
-  decoded. Fails open, warning and recording anyway. `0` disables it silently.
+  navigation: web fonts ready and visible images decoded. Fails open, warning and
+  recording anyway. `0` disables it silently. Under the default `screencast`
+  engine the wait completes before recording starts, so unsettled frames are
+  excluded. The legacy `recordvideo` engine binds capture at context creation, so
+  there the wait shifts those frames later instead of excluding them.
 - `<out>/render-report.json` records what produced a render: resolved voice and
   model, toolchain versions, config and script digests, the measured per-shot
   timeline, and the parity result.

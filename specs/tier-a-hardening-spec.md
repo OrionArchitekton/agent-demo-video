@@ -63,7 +63,7 @@ the capture driver would have changed a signature used at three call sites for n
 visibility, since the warning names the shot either way. Revisit if the report ever becomes the
 primary operator surface.
 
-### S3 - The length limit is declarable and checked before spending
+### S3 - The length limit is declarable and enforced
 
 Given an event with a length limit shorter than the default,
 when the operator declares that limit in the configuration,
@@ -71,10 +71,12 @@ then the limit is enforced by the same check that enforces the default.
 
 Given a rehearsal run in silent mode,
 when the assembled runtime exceeds the declared limit,
-then the run fails and names the overage, before any narration has been purchased.
+then the run fails and names the overage, having purchased no narration at all.
 
-**Acceptance:** the limit is a configurable property of a demo rather than a fixed constant, and a
-keyless rehearsal surfaces an overage before narration is purchased.
+**Acceptance:** the limit is a configurable property of a demo rather than a fixed constant, and it
+is enforced by the same check whatever its value. Enforcement is POST-RENDER: a real run synthesises
+all narration before the render stage, so an over-cap real run has already spent. The no-spend path
+is the keyless rehearsal, which reaches the same check having bought nothing.
 
 *Correction, recorded during review:* the rehearsal is an ESTIMATE, not a guarantee. Keyless
 narration length is a flat words-per-minute estimate and capture dwells to that estimate, so the
@@ -85,11 +87,22 @@ Budget to roughly 75% of the cap. The check is authoritative only post-render.
 
 Given a completed render,
 when it finishes,
-then it writes a report naming the resolved narration voice and model, the versions of the
-tools that rendered it, digests of the configuration and script, and the per-shot timeline.
+then it writes, on a best-effort basis, a report naming the resolved narration voice and model, the
+local toolchain versions, which host performed the render, digests of the configuration and script,
+and the measured per-shot timeline.
 
 **Acceptance:** "is this video reproducible from the current script?" is answerable from the
 render's own output. A changed default that alters runtime is visible by comparing two reports.
+
+*Best-effort is deliberate:* a provenance failure warns and leaves the render standing rather than
+discarding an artifact that has already been paid for. The report is therefore evidence when
+present, never a guarantee of presence. A render that FAILS its parity check produces no report at
+all, because it throws before this step.
+
+*Known gap, recorded rather than implied away:* when the render is offloaded, ffmpeg runs on the
+remote host but the toolchain is probed locally. The report names the host that rendered so a reader
+can tell whether the recorded versions describe the renderer; probing the remote toolchain is a
+follow-up.
 
 ### S5 - An unrecognised configuration key is rejected
 

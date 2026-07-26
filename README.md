@@ -227,7 +227,7 @@ Key fields in `demo.config.json` (full schema in `src/types.ts`):
 | `brand` | (off) | `{ title, subtitle, url, accent, cards }` adds branded title and end cards |
 | `clipsDir` | `"clips/prebaked"` | Directory scanned for prebaked clips |
 | `maxDurationSec` | `300` | Hard ceiling for the finished video. The render fails if the result exceeds it. Set it to the length limit you are shipping against. |
-| `capture.settleMs` | `500` | Budget for the post-navigation readiness wait (fonts ready, visible images decoded) before recording starts. `0` disables the probe. Exceeding the budget warns and records anyway. |
+| `capture.settleMs` | `500` | Budget for the post-navigation readiness wait (fonts ready, visible images decoded). `0` disables the probe. Exceeding the budget warns and records anyway. Under the default `screencast` engine the wait happens BEFORE recording starts, so unsettled frames are excluded; the legacy `recordvideo` engine binds capture at context creation, so there the wait shifts those frames later rather than excluding them. |
 
 Sample: `demo.config.sample.json`.
 

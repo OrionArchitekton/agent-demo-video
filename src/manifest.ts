@@ -70,7 +70,12 @@ export function loadManifest(manifest: RenderManifest, baseDir: string): RenderI
       audio: manifest.config.audio ?? { soundDesign: false, bedDb: -28, ticks: true, sweeps: true },
       // Manifests written before the cap was declarable carry no value; 300 is
       // the constant they were rendered under, so this is legacy-equivalent.
-      maxDurationSec: manifest.config.maxDurationSec ?? 300,
+      // remote-entry JSON.parses this file with no schema, so a non-numeric
+      // value would make `videoSec > NaN` false and silently disable the cap.
+      maxDurationSec: (() => {
+        const m = manifest.config.maxDurationSec;
+        return typeof m === "number" && Number.isFinite(m) && m > 0 ? m : 300;
+      })(),
       out: join(baseDir, "out"),
     },
   };

@@ -34,3 +34,37 @@ describe("waitForReady", () => {
     expect(res.warning).toMatch(/execution context destroyed/);
   });
 });
+
+describe("waitForReady contract details", () => {
+  it("reports NOT ready when the page itself says it has not settled", async () => {
+    const page = { evaluate: async () => ({ fonts: false, images: 9, pending: 7 }) };
+    const res = await waitForReady(page as never, 500);
+    expect(res.ready).toBe(false);
+    expect(res.warning).toMatch(/had not settled/);
+  });
+
+  it("honours the declared budget rather than a fixed timeout", async () => {
+    const page = { evaluate: () => new Promise(() => {}) };
+    const t0 = Date.now();
+    await waitForReady(page as never, 300);
+    const elapsed = Date.now() - t0;
+    expect(elapsed).toBeGreaterThanOrEqual(280);
+    expect(elapsed).toBeLessThan(1200);
+  });
+
+  it("is SILENT when the operator deliberately disables the probe", async () => {
+    const res = await waitForReady({ evaluate: async () => ({}) } as never, 0);
+    expect(res.ready).toBe(false);
+    expect(res.warning).toBeUndefined();
+  });
+
+  it("strips control characters from page-controlled error text", async () => {
+    const forged = "\u001b[2K\rforged: everything is fine";
+    const page = { evaluate: async () => { throw new Error(forged); } };
+    const res = await waitForReady(page as never, 300);
+    expect(res.warning).toBeDefined();
+    expect(res.warning).not.toContain("\u001b");
+    expect(res.warning).not.toContain("\r");
+    expect(res.warning).toContain("forged: everything is fine");
+  });
+});

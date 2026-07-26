@@ -31,7 +31,9 @@ const PROBE = `(async () => {
  * slow page. The caller records the warning; it does not gate on it.
  */
 export async function waitForReady(page: Page, budgetMs: number): Promise<ReadyResult> {
-  if (budgetMs <= 0) return { ready: false, warning: "settle budget is zero; readiness not probed" };
+  // A deliberate opt-out must be SILENT. Warning on every goto would train
+  // operators to ignore the one channel this feature reports through.
+  if (budgetMs <= 0) return { ready: false };
 
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<ReadyResult>((resolve) => {
@@ -43,11 +45,21 @@ export async function waitForReady(page: Page, budgetMs: number): Promise<ReadyR
 
   try {
     return await Promise.race([
-      page.evaluate(PROBE).then(() => ({ ready: true }) as ReadyResult),
+      page.evaluate(PROBE).then((r) => {
+        const v = r as { fonts?: boolean; pending?: number } | undefined;
+        if (!v || v.fonts !== true || (v.pending ?? 0) > 0) {
+          return { ready: false, warning: "page reported it had not settled" } as ReadyResult;
+        }
+        return { ready: true } as ReadyResult;
+      }),
       timeout,
     ]);
   } catch (e) {
-    return { ready: false, warning: `readiness probe failed: ${(e as Error).message}` };
+    // The probe runs IN a page we may not own, so it controls this text.
+    // Strip control characters: an ANSI escape could forge a clean log line.
+    const raw = String((e as Error).message ?? "");
+    const safe = raw.replace(/[\u0000-\u001f\u007f-\u009f]/g, " ").slice(0, 200);
+    return { ready: false, warning: `readiness probe failed: ${safe}` };
   } finally {
     if (timer) clearTimeout(timer);
   }

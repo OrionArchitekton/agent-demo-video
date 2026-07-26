@@ -21,7 +21,7 @@ export function resolveTtsMode(
   if (!env.ELEVENLABS_API_KEY) {
     throw new Error(
       "ELEVENLABS_API_KEY is not set, so narration cannot be synthesised. " +
-        "Supply it (e.g. `doppler run -p claude-code-use -c prd -- pnpm demo <config>`), " +
+        "Supply it from your secret manager (e.g. `doppler run -- pnpm demo <config>`), " +
         "or set FAKE_TTS=1 to deliberately render silent placeholder narration.",
     );
   }

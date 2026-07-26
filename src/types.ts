@@ -93,9 +93,12 @@ export const DemoConfigSchema = z.object({
   }).strict().default({}),
   // Hard length ceiling for the finished video, in seconds. Declarable because
   // events ship against caps shorter than the default (2:00 and 3:00 are both
-  // common). Enforced by the same parity check that enforces the default, and
-  // reachable from a keyless FAKE_TTS rehearsal, which measures real capture
-  // wall-clock and so is a genuine pre-spend check of the cap.
+  // common). Enforced by the same parity check that enforces the default.
+  // A keyless FAKE_TTS rehearsal reaches this check, but it is an ESTIMATE, not
+  // a guarantee: fake narration length is words * 0.38 (~158 wpm) and capture
+  // dwells to that estimate, so the rehearsal measures the estimate rather than
+  // real narration. Real ElevenLabs output has run 19-30% longer. Budget to
+  // roughly 75% of the cap; the check still fires post-render either way.
   maxDurationSec: z.number().positive().default(300),
   clipsDir: z.string().default("clips/prebaked"),
   // Sound design (production-polish S2): synthesized ambient bed auto-ducked

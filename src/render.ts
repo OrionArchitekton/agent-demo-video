@@ -40,7 +40,16 @@ export interface RenderInputs {
 
 export interface RenderResult {
   outPath: string;
-  report: { totalSec: number; segments: number; ticks: number; parity: { ok: boolean; problems: string[] } };
+  report: {
+    totalSec: number;
+    segments: number;
+    ticks: number;
+    parity: { ok: boolean; problems: string[] };
+    /** MEASURED per-segment timeline (post-reconcile), i.e. what actually shipped.
+     *  Distinct from the narration timeline: comparing two renders needs the
+     *  durations the video really has, or "which shot grew?" is unanswerable. */
+    timeline: { entries: { shotId: string; startSec: number; durationSec: number }[]; totalSec: number };
+  };
 }
 
 // Float/probe equality floor (seconds) — NOT a truncation budget. Any clip measurably
@@ -257,9 +266,9 @@ export async function renderVideo(inputs: RenderInputs): Promise<RenderResult> {
     videoSegments: segMp4s.length,
     audioSec,
     videoSec,
-    maxSec: config.maxDurationSec,
+    maxSec: config.maxDurationSec ?? 300,
   });
   if (!parity.ok) throw new Error("parity failed: " + parity.problems.join("; "));
 
-  return { outPath: finalPath, report: { totalSec: timeline.totalSec, segments: segMp4s.length, ticks: tickCount, parity } };
+  return { outPath: finalPath, report: { totalSec: timeline.totalSec, segments: segMp4s.length, ticks: tickCount, parity, timeline } };
 }

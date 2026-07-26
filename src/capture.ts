@@ -61,6 +61,41 @@ function resolveUrl(u: string, baseUrl: string): string {
 }
 
 /**
+ * Perform a shot's OPENING navigation and wait for the page to settle, BEFORE
+ * any recording starts.
+ *
+ * This ordering is the whole point. Recording begins the moment
+ * `page.screencast.start()` (or the recordVideo context) is live, so settling
+ * inside the action loop would capture the unsettled page and merely shift the
+ * blank frames later in a fixed-length segment. Navigating and settling first
+ * means the recorder's first frame is of a painted page.
+ *
+ * Returns how many leading actions were consumed, so the in-recording action
+ * loop can skip them.
+ */
+async function openShotPage(
+  page: Page,
+  shot: Shot,
+  config: DemoConfig,
+  onGoto?: () => Promise<void>,
+): Promise<number> {
+  // The first goto ANYWHERE in the sequence, not just at index 0: a legal cold
+  // open is `chapter` then `goto`, and that shot needs settling just as much.
+  const idx = shot.actions.findIndex((a) => a.kind === "goto");
+  const first = idx === -1 ? undefined : shot.actions[idx];
+  if (!first) return -1;
+  await page.goto(resolveUrl(first.url ?? "/", config.dashboardBaseUrl), { waitUntil: "load" });
+  const settle = await waitForReady(page, config.capture.settleMs);
+  if (settle.warning) {
+    console.warn(`[agent-demo-video] shot "${shot.id}": ${settle.warning}; recording anyway`);
+  }
+  // The live-capture auth guard must still fire after this navigation, exactly
+  // as it does for every in-recording goto. Fails closed before any recording.
+  if (onGoto) await onGoto();
+  return idx;
+}
+
+/**
  * Run a shot's declared action sequence against an already-open page.
  * `onGoto` (if given) fires immediately after EACH navigation completes and BEFORE the
  * next action — the live path uses it to verify the session is authenticated after every
@@ -73,9 +108,13 @@ async function runActions(
   config: DemoConfig,
   onGoto?: () => Promise<void>,
   recorder?: EventRecorder,
+  /** Index of the action already performed by openShotPage (-1 = none). Replaying
+   *  that navigation here would re-blank the page on camera. */
+  skipIndex = -1,
 ): Promise<void> {
   const mode = cursorMode(config.capture.engine, config.theme.annotations.enabled, config.theme.cursor);
-  for (const a of shot.actions) {
+  for (const [i, a] of shot.actions.entries()) {
+    if (i === skipIndex) continue;
     switch (a.kind) {
       case "goto": {
         await page.goto(resolveUrl(a.url ?? "/", config.dashboardBaseUrl), { waitUntil: "load" });
@@ -382,13 +421,20 @@ export async function captureShot(
   try {
     if (useScreencast) {
       const recorder: EventRecorder = { t0: 0, fallbackT0: 0, events: [] };
+      // Navigate + settle BEFORE the recorder starts, so frame one is painted.
+      const opened = await openShotPage(page, shot, config);
       return await recordWithScreencast(page, shot.id, config, outDir, recorder, async () => {
         const startMs = Date.now();
-        await runActions(page, shot, config, undefined, recorder);
+        await runActions(page, shot, config, undefined, recorder, opened);
         await dwell(page, timelineEntry.durationSec, startMs);
       });
     }
 
+    // Legacy recordVideo engine: capture is bound at context creation, so an
+    // opening frame cannot be excluded without rebuilding the context per shot.
+    // The settle still runs inside runActions; on this path it shifts rather
+    // than removes the unsettled frames. The screencast engine is the default
+    // and does not have this limitation.
     const startMs = Date.now();
     await runActions(page, shot, config);
     await dwell(page, timelineEntry.durationSec, startMs);
@@ -463,17 +509,15 @@ async function captureLiveShot(
     // that navigates more than once is re-checked on each goto. Never records or
     // side-effects against a logged-out page. Fails closed.
     const recorder: EventRecorder = { t0: 0, fallbackT0: 0, events: [] };
+    const guard = async () => {
+      await assertAuthed(page, shot, auth.loggedInSelector);
+    };
+    // Opening navigation, settle, and the FIRST auth check all happen before
+    // recording starts: an expired session fails closed with nothing recorded.
+    const opened = await openShotPage(page, shot, config, guard);
     const runShot = async () => {
       const startMs = Date.now();
-      await runActions(
-        page,
-        shot,
-        config,
-        async () => {
-          await assertAuthed(page, shot, auth.loggedInSelector);
-        },
-        recorder,
-      );
+      await runActions(page, shot, config, guard, recorder, opened);
       await dwell(page, timelineEntry.durationSec, startMs);
     };
 

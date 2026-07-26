@@ -22,3 +22,17 @@ describe("synthShot (FAKE_TTS)", () => {
     expect((await stat(r.audioPath)).size).toBeGreaterThan(0);
   });
 });
+
+describe("resolveTtsMode precedence", () => {
+  it("selects fake only when explicitly requested, and that request wins over a present key", () => {
+    expect(resolveTtsMode({ FAKE_TTS: "1" })).toBe("fake");
+    expect(resolveTtsMode({ FAKE_TTS: "1", ELEVENLABS_API_KEY: "k" })).toBe("fake");
+  });
+  it("selects real when a key is present and fake was not requested", () => {
+    expect(resolveTtsMode({ ELEVENLABS_API_KEY: "k" })).toBe("real");
+  });
+  it("does not treat any other FAKE_TTS value as a request for silence", () => {
+    expect(() => resolveTtsMode({ FAKE_TTS: "true" })).toThrowError(/ELEVENLABS_API_KEY/);
+    expect(() => resolveTtsMode({ FAKE_TTS: "0" })).toThrowError(/ELEVENLABS_API_KEY/);
+  });
+});

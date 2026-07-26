@@ -51,6 +51,12 @@ then recording proceeds anyway and the run emits a warning naming the shot and t
 **Acceptance:** readiness is a property of the pipeline, not something each script author must
 remember to hand-author. A slow page degrades to a warning, never an aborted paid render.
 
+*Engine limitation, stated rather than hidden:* this holds for the default screencast engine, where
+the opening navigation and settle are hoisted ahead of the recorder starting. On the legacy
+`recordvideo` engine capture is bound at context creation, so the settle shifts the unsettled frames
+later within a fixed-length segment instead of excluding them. Closing that would mean rebuilding
+the context per shot; the legacy engine is an explicit escape hatch and was left as-is.
+
 *Divergence from the original draft, recorded per the same-PR spec rule:* the warning is emitted on
 the run's output stream rather than carried in the render report. Threading a warning channel out of
 the capture driver would have changed a signature used at three call sites for no gain in operator
@@ -68,7 +74,12 @@ when the assembled runtime exceeds the declared limit,
 then the run fails and names the overage, before any narration has been purchased.
 
 **Acceptance:** the limit is a configurable property of a demo rather than a fixed constant, and a
-keyless rehearsal is a genuine pre-spend check of it.
+keyless rehearsal surfaces an overage before narration is purchased.
+
+*Correction, recorded during review:* the rehearsal is an ESTIMATE, not a guarantee. Keyless
+narration length is a flat words-per-minute estimate and capture dwells to that estimate, so the
+rehearsal measures the estimate rather than real narration, and real output has run 19-30% longer.
+Budget to roughly 75% of the cap. The check is authoritative only post-render.
 
 ### S4 - A finished render records what produced it
 

@@ -77,3 +77,22 @@ export async function toolVersions(): Promise<ToolVersions> {
   }
   return { ffmpeg, ffprobe, playwright, node: process.version };
 }
+
+/**
+ * Serialise the config for digesting, excluding values loadConfig resolves to
+ * machine-local absolutes.
+ *
+ * `capture.auth.profileDir` becomes $XDG_CACHE_HOME/... and a "./" base becomes
+ * a file:// URL of the checkout path, so hashing the post-load object gives the
+ * SAME committed config different digests on two hosts. That would make a
+ * local-vs-remote comparison report a configuration change that never happened,
+ * which is the exact false attribution this report exists to end.
+ */
+export function stableConfigJson(config: DemoConfig): string {
+  const { out: _out, ...rest } = config;
+  const auth = rest.capture?.auth;
+  return JSON.stringify({
+    ...rest,
+    capture: auth ? { ...rest.capture, auth: { ...auth, profileDir: undefined } } : rest.capture,
+  });
+}

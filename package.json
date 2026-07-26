@@ -1,21 +1,44 @@
 {
   "name": "agent-demo-video",
-  "version": "0.2.0",
-  "description": "Generate narrated, captioned demo videos from a Markdown script and a running web app — Playwright capture + ElevenLabs TTS + ffmpeg. Supports auth-walled SaaS live capture.",
+  "version": "0.3.0",
+  "description": "Generate narrated, captioned demo videos from a Markdown script and a running web app \u2014 Playwright capture + ElevenLabs TTS + ffmpeg. Supports auth-walled SaaS live capture.",
   "type": "module",
-  "bin": { "demo-video": "dist/cli.js" },
-  "files": ["dist", "dist-remote", "README.md", "LICENSE"],
+  "bin": {
+    "demo-video": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "dist-remote",
+    "README.md",
+    "LICENSE"
+  ],
   "keywords": [
-    "demo-video", "screencast", "playwright", "ffmpeg", "narration",
-    "tts", "elevenlabs", "captions", "cli"
+    "demo-video",
+    "screencast",
+    "playwright",
+    "ffmpeg",
+    "narration",
+    "tts",
+    "elevenlabs",
+    "captions",
+    "cli"
   ],
   "license": "MIT",
   "author": "Dan Mercede",
-  "repository": { "type": "git", "url": "git+https://github.com/OrionArchitekton/agent-demo-video.git" },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/OrionArchitekton/agent-demo-video.git"
+  },
   "homepage": "https://github.com/OrionArchitekton/agent-demo-video#readme",
-  "bugs": { "url": "https://github.com/OrionArchitekton/agent-demo-video/issues" },
-  "publishConfig": { "access": "public" },
-  "engines": { "node": ">=18" },
+  "bugs": {
+    "url": "https://github.com/OrionArchitekton/agent-demo-video/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
@@ -24,7 +47,10 @@
     "prepack": "pnpm run build",
     "demo": "tsx src/cli.ts"
   },
-  "dependencies": { "playwright": "^1.61.1", "zod": "^3.23.0" },
+  "dependencies": {
+    "playwright": "^1.61.1",
+    "zod": "^3.23.0"
+  },
   "devDependencies": {
     "typescript": "^5.6.0",
     "vitest": "^2.1.0",

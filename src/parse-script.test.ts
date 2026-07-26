@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseScript } from "./parse-script";
+import { parseScript, deriveSegmentKinds } from "./parse-script";
 
 const md = `# Demo
 ### SHOT intro
@@ -49,5 +49,28 @@ describe("demos/smoke assets stay valid", () => {
     expect(m.shots.length).toBeGreaterThanOrEqual(3);
     const cfg = loadConfig("demos/smoke/demo.config.json");
     expect(cfg.capture.engine).toBe("screencast");
+  });
+});
+
+describe("fullBleed shots", () => {
+  it("parses fullBleed and derives a segment kind that skips the window framing", () => {
+    const md = [
+      "### SHOT card",
+      "- target: prebaked",
+      "- clip: clips/title.mp4",
+      "- fullBleed: true",
+      "- narration: A finished composition.",
+      "",
+      "### SHOT app",
+      "- target: dashboard",
+      "- narration: A real app recording.",
+      "- action: goto url=\"/\"",
+    ].join("\n");
+    const m = parseScript(md);
+    expect(m.shots[0]?.fullBleed).toBe(true);
+    expect(m.shots[1]?.fullBleed).toBeUndefined();
+    // A motion-graphic clip is already composed, so it must not be re-framed as a
+    // floating window; an app recording still gets the frame treatment.
+    expect(deriveSegmentKinds(m.shots)).toEqual(["card", "shot"]);
   });
 });

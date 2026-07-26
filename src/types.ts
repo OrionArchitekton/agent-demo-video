@@ -32,6 +32,12 @@ export const ShotSchema = z.object({
   actions: z.array(ActionSchema).default([]),
   url: z.string().optional(),
   clip: z.string().optional(),
+  /** This segment is ALREADY a finished composition (e.g. a motion-graphic card
+   *  rendered elsewhere), so the pipeline must not re-treat it: no window frame,
+   *  no segment fade-in. It carries its own framing and its own in-motion.
+   *  Without this, a full-bleed title card is shrunk to theme.frame.scale inside
+   *  a shadowed window it was never designed for. */
+  fullBleed: z.boolean().optional(),
 });
 export type Shot = z.infer<typeof ShotSchema>;
 

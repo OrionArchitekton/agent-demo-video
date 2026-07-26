@@ -29,6 +29,7 @@ export function parseScript(md: string): Manifest {
         actions: cur.actions,
         ...(cur.url ? { url: cur.url } : {}),
         ...(cur.clip ? { clip: cur.clip } : {}),
+        ...(cur.fullBleed ? { fullBleed: true } : {}),
       } as Shot);
     }
   };
@@ -39,9 +40,22 @@ export function parseScript(md: string): Manifest {
     if (!cur) continue;
     const kv = line.match(/^-\s+(target|url|clip|narration):\s*(.*)$/);
     if (kv) { (cur as Record<string, unknown>)[kv[1]!] = kv[2]!.trim(); continue; }
+    const fb = line.match(/^-\s+fullBleed:\s*(true|false)\s*$/);
+    if (fb) { (cur as Record<string, unknown>).fullBleed = fb[1] === "true"; continue; }
     const act = line.match(/^-\s+action:\s*(.*)$/);
     if (act) { cur.actions.push(parseAction(act[1]!)); continue; }
   }
   push();
   return ManifestSchema.parse({ shots });
+}
+
+/**
+ * Per-segment render treatment.
+ *
+ * "card" means the segment is already a final composition, so renderVideo skips
+ * both the window framing and the segment fade-in. The pipeline's own brand
+ * cards use this; a fullBleed shot is the author-declared form of the same fact.
+ */
+export function deriveSegmentKinds(shots: Shot[]): ("shot" | "card")[] {
+  return shots.map((s) => (s.fullBleed ? "card" : "shot"));
 }

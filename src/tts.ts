@@ -4,15 +4,35 @@ import type { Shot, DemoConfig, TtsResult } from "./types";
 import { estimateDurationSec, synthAlignment } from "./fake-tts";
 import { silentMp3Args, ffmpeg, probeDurationSec } from "./ffmpeg";
 
-function isFakeTts(): boolean {
-  return process.env.FAKE_TTS === "1" || !process.env.ELEVENLABS_API_KEY;
+export type TtsMode = "fake" | "real";
+
+/**
+ * Decide whether narration is synthesised for real or faked as silent audio.
+ *
+ * Fake mode must be REQUESTED, never inferred. Inferring it from a missing key
+ * meant a forgotten `doppler run` produced a complete, correctly-timed, captioned
+ * video with no voice at all, and nothing downstream could see it: the estimated
+ * duration IS the clock, so parity verification still passed.
+ */
+export function resolveTtsMode(
+  env: { FAKE_TTS?: string; ELEVENLABS_API_KEY?: string } = process.env,
+): TtsMode {
+  if (env.FAKE_TTS === "1") return "fake";
+  if (!env.ELEVENLABS_API_KEY) {
+    throw new Error(
+      "ELEVENLABS_API_KEY is not set, so narration cannot be synthesised. " +
+        "Supply it (e.g. `doppler run -p claude-code-use -c prd -- pnpm demo <config>`), " +
+        "or set FAKE_TTS=1 to deliberately render silent placeholder narration.",
+    );
+  }
+  return "real";
 }
 
 export async function synthShot(shot: Shot, config: DemoConfig, outDir: string): Promise<TtsResult> {
   await mkdir(outDir, { recursive: true });
   const audioPath = join(outDir, `${shot.id}.mp3`);
 
-  if (isFakeTts()) {
+  if (resolveTtsMode() === "fake") {
     const durationSec = estimateDurationSec(shot.narration);
     const alignment = synthAlignment(shot.narration, durationSec);
     await ffmpeg(silentMp3Args(durationSec, audioPath));

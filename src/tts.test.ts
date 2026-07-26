@@ -1,8 +1,15 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import { mkdtemp, stat } from "node:fs/promises";
 import { tmpdir } from "node:os"; import { join } from "node:path";
-import { synthShot } from "./tts";
+import { synthShot, resolveTtsMode } from "./tts";
 import { DemoConfigSchema } from "./types";
+
+describe("resolveTtsMode", () => {
+  it("refuses to render silently when the key is absent and fake mode was not requested", () => {
+    expect(() => resolveTtsMode({ FAKE_TTS: undefined, ELEVENLABS_API_KEY: undefined }))
+      .toThrowError(/ELEVENLABS_API_KEY/);
+  });
+});
 
 describe("synthShot (FAKE_TTS)", () => {
   beforeAll(() => { process.env.FAKE_TTS = "1"; });

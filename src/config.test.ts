@@ -31,6 +31,31 @@ describe("loadConfig", () => {
     expect(cfg.capture.auth!.profileDir!).toContain("agent-demo-video");
   });
 
+  it("rejects an unrecognised key and names it, at the top level and nested", () => {
+    const dir = mkdtempSync(join(tmpdir(), "cfg-"));
+    const top = join(dir, "top.config.json");
+    writeFileSync(top, JSON.stringify({ script: "DEMO.md", dashboardBaseUrl: "http://x", theem: {} }));
+    expect(() => loadConfig(top)).toThrow(/theem/);
+
+    // The real-world shape: a typo in the remedy for a known defect. `baseZom`
+    // silently applied the 1.08 default that crops ~4% off every edge.
+    const nested = join(dir, "nested.config.json");
+    writeFileSync(nested, JSON.stringify({ script: "DEMO.md", dashboardBaseUrl: "http://x", motion: { baseZom: 1.02 } }));
+    expect(() => loadConfig(nested)).toThrow(/baseZom/);
+  });
+
+  it("defaults maxDurationSec to 300 and honours a declared shorter cap", () => {
+    const dir = mkdtempSync(join(tmpdir(), "cfg-"));
+    const def = join(dir, "default.config.json");
+    writeFileSync(def, JSON.stringify({ script: "DEMO.md", dashboardBaseUrl: "http://x" }));
+    expect(loadConfig(def).maxDurationSec).toBe(300);
+
+    // Events ship against caps shorter than the default (2:00, 3:00).
+    const capped = join(dir, "capped.config.json");
+    writeFileSync(capped, JSON.stringify({ script: "DEMO.md", dashboardBaseUrl: "http://x", maxDurationSec: 120 }));
+    expect(loadConfig(capped).maxDurationSec).toBe(120);
+  });
+
   it("leaves a config without capture.auth untouched (back-compat)", () => {
     const dir = mkdtempSync(join(tmpdir(), "cfg-"));
     const path = join(dir, "demo.config.json");

@@ -35,6 +35,10 @@ export function buildManifest(inputs: RenderInputs): RenderManifest {
       fps: inputs.config.fps,
       theme: inputs.config.theme,
       audio: inputs.config.audio,
+      // Carried across the wire so a remote render enforces the SAME declared
+      // cap as a local one. Dropping it here would silently restore the 300s
+      // default on the remote host.
+      maxDurationSec: inputs.config.maxDurationSec,
     },
   };
 }
@@ -64,6 +68,9 @@ export function loadManifest(manifest: RenderManifest, baseDir: string): RenderI
         annotations: manifest.config.theme.annotations ?? { enabled: true, durationMs: 500, fontSize: 24, position: "top-right" as const },
       },
       audio: manifest.config.audio ?? { soundDesign: false, bedDb: -28, ticks: true, sweeps: true },
+      // Manifests written before the cap was declarable carry no value; 300 is
+      // the constant they were rendered under, so this is legacy-equivalent.
+      maxDurationSec: manifest.config.maxDurationSec ?? 300,
       out: join(baseDir, "out"),
     },
   };

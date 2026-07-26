@@ -33,6 +33,7 @@ function sampleInputs(): RenderInputs {
       fps: 30,
       theme: { captionFont: "Liberation Sans", captionSize: 24, cursor: true, captionBox: true, captionMarginV: 20, captions: "block" as const, captionAccent: "#3fb950", fadeInMs: 250, frame: { enabled: false, scale: 0.86, radius: 24, backdropTop: "#101418", backdropBottom: "#1d2733", shadow: true }, annotations: { enabled: true, durationMs: 500, fontSize: 24, position: "top-right" as const } },
       out: "/local/work/out",
+      maxDurationSec: 300,
     },
   };
 }
@@ -82,6 +83,7 @@ describe("render manifest", () => {
         fps: 15,
         theme: { captionFont: "Liberation Sans", captionSize: 24, cursor: true, captionBox: true, captionMarginV: 20, captions: "block" as const, captionAccent: "#3fb950", fadeInMs: 250, frame: { enabled: false, scale: 0.86, radius: 24, backdropTop: "#101418", backdropBottom: "#1d2733", shadow: true }, annotations: { enabled: true, durationMs: 500, fontSize: 24, position: "top-right" as const } },
         out: "/o",
+        maxDurationSec: 300,
       },
     };
     const m = buildManifest(inputs);
@@ -90,5 +92,31 @@ describe("render manifest", () => {
     const loaded = loadManifest(m, "/base");
     expect(new Set(loaded.rawSegments).size).toBe(2);
     expect(new Set(loaded.tts.map((t) => t.audioPath)).size).toBe(2);
+  });
+});
+
+describe("declared duration cap across the wire", () => {
+  const base: RenderInputs = {
+    rawSegments: ["/local/work/seg/a.webm"],
+    tts: [{ shotId: "s1", audioPath: "/local/work/audio/s1.mp3", durationSec: 1, alignment: { chars: ["a"], startSec: [0], endSec: [1] } }],
+    config: {
+      audio: { soundDesign: false, bedDb: -28, ticks: true, sweeps: true },
+      resolution: { width: 1920, height: 1080 },
+      fps: 30,
+      theme: { captionFont: "Arial", captionSize: 24, cursor: true, captionBox: true, captionMarginV: 20, fadeInMs: 250, captions: "wordpop", captionAccent: "#3fb950", frame: { enabled: true, scale: 0.86, radius: 24, backdropTop: "#101418", backdropBottom: "#1d2733", shadow: true }, annotations: { enabled: true, durationMs: 500, fontSize: 24, position: "top-right" } },
+      maxDurationSec: 120,
+      out: "/local/work/out",
+    },
+  };
+
+  it("preserves a declared cap so a remote render enforces the same limit as a local one", () => {
+    const round = loadManifest(buildManifest(base), "/remote/work");
+    expect(round.config.maxDurationSec).toBe(120);
+  });
+
+  it("defaults a pre-cap manifest to the 300s constant it was rendered under", () => {
+    const m = buildManifest(base) as any;
+    delete m.config.maxDurationSec;
+    expect(loadManifest(m, "/remote/work").config.maxDurationSec).toBe(300);
   });
 });

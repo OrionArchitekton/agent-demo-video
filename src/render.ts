@@ -21,7 +21,7 @@ import { maskGenArgs, shadowGenArgs, frameArgs } from "./framing";
 import { ambientBedArgs, tickWavArgs, sweepWavArgs, soundscapeArgs } from "./sound";
 
 /** The render-affecting subset of the demo config (no capture/tts/auth fields). */
-export type RenderConfig = Pick<DemoConfig, "resolution" | "fps" | "theme" | "out" | "audio">;
+export type RenderConfig = Pick<DemoConfig, "resolution" | "fps" | "theme" | "out" | "audio" | "maxDurationSec">;
 
 /**
  * Everything the render stage consumes, independent of how it was produced.
@@ -257,7 +257,7 @@ export async function renderVideo(inputs: RenderInputs): Promise<RenderResult> {
     videoSegments: segMp4s.length,
     audioSec,
     videoSec,
-    maxSec: 300,
+    maxSec: config.maxDurationSec,
   });
   if (!parity.ok) throw new Error("parity failed: " + parity.problems.join("; "));
 

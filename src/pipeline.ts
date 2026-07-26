@@ -11,6 +11,9 @@ import { ffmpeg, silentMp3Args } from "./ffmpeg";
 import { renderVideo, type RenderResult } from "./render";
 import { renderRemote } from "./remote-render";
 import type { Transport } from "./transport";
+import { buildRenderReport, digest, toolVersions } from "./provenance";
+import { resolveTtsMode } from "./tts";
+import { buildTimeline } from "./timeline";
 
 export interface RunPipelineOpts {
   /** Offload the render stage to a remote host over the given transport. Absent = local render (default). */
@@ -126,13 +129,36 @@ export async function runPipeline(config: DemoConfig, opts: RunPipelineOpts = {}
   // 5-13. Render — locally by default, or offloaded to a render host (same renderVideo
   //       code path runs there). A remote failure rejects loudly (no silent local fallback).
   const inputs = { rawSegments, tts: ttsResults, config, segmentKinds, clickOffsets };
+  let result: RenderResult;
   if (opts.render) {
     const bundlePath = opts.render.bundlePath ?? defaultBundlePath();
     if (!existsSync(bundlePath)) {
       throw new Error(`[agent-demo-video] remote render bundle not found at ${bundlePath}; run \`pnpm build:remote-entry\` first.`);
     }
     const workDir = opts.render.workDir ?? `/tmp/agent-demo-video-render-${Date.now()}-${process.pid}`;
-    return renderRemote(inputs, { transport: opts.render.transport, bundlePath, workDir, outPath: join(out, "final.mp4") });
+    result = await renderRemote(inputs, { transport: opts.render.transport, bundlePath, workDir, outPath: join(out, "final.mp4") });
+  } else {
+    result = await renderVideo(inputs);
   }
-  return renderVideo(inputs);
+
+  // 14. Provenance. Written AFTER a successful render so the file's existence
+  //     means "this artifact shipped under these inputs". Never gates: a
+  //     provenance failure must not discard a completed render.
+  try {
+    const report = buildRenderReport({
+      voice: config.voice,
+      ttsMode: resolveTtsMode(),
+      configHash: digest(JSON.stringify(config)),
+      scriptHash: digest(md),
+      tools: await toolVersions(),
+      timeline: buildTimeline(ttsResults.map((t) => ({ shotId: t.shotId, durationSec: t.durationSec }))),
+      render: result.report,
+      maxDurationSec: config.maxDurationSec,
+    });
+    await writeFile(join(out, "render-report.json"), JSON.stringify(report, null, 2));
+  } catch (e) {
+    console.warn(`[agent-demo-video] could not write render-report.json: ${(e as Error).message}`);
+  }
+
+  return result;
 }

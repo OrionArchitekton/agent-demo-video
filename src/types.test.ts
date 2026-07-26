@@ -24,7 +24,7 @@ describe("schemas", () => {
   });
   it("defaults capture so old configs still validate (screencast engine), and accepts an optional capture.auth", () => {
     const old = DemoConfigSchema.parse({ script: "DEMO.md", dashboardBaseUrl: "http://x" });
-    expect(old.capture).toEqual({ engine: "screencast", screencastQuality: 90 });
+    expect(old.capture).toEqual({ engine: "screencast", screencastQuality: 90, settleMs: 500 });
     expect(old.capture.auth).toBeUndefined();
     const withAuth = DemoConfigSchema.parse({ script: "DEMO.md", dashboardBaseUrl: "http://x", capture: { auth: { loginUrl: "https://app/login" } } });
     expect(withAuth.capture.auth?.loginUrl).toBe("https://app/login");

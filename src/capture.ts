@@ -48,6 +48,7 @@ import {
 } from "./overlay.js";
 import { resolveProfileDir } from "./profile.js";
 import type { Shot, DemoConfig, TimelineEntry } from "./types.js";
+import { waitForReady } from "./ready";
 
 /**
  * Resolves a URL relative to the dashboardBaseUrl.
@@ -76,10 +77,19 @@ async function runActions(
   const mode = cursorMode(config.capture.engine, config.theme.annotations.enabled, config.theme.cursor);
   for (const a of shot.actions) {
     switch (a.kind) {
-      case "goto":
+      case "goto": {
         await page.goto(resolveUrl(a.url ?? "/", config.dashboardBaseUrl), { waitUntil: "load" });
+        // `load` can fire on a page that is still visually blank (font swap,
+        // lazy images, hydration). Settle before anything is recorded, so a
+        // blank opening frame is prevented structurally rather than by the
+        // author remembering to hand-author `wait ms=`. Fails open.
+        const settle = await waitForReady(page, config.capture.settleMs);
+        if (settle.warning) {
+          console.warn(`[agent-demo-video] shot "${shot.id}": ${settle.warning}; recording anyway`);
+        }
         if (onGoto) await onGoto();
         break;
+      }
       case "chapter":
         if (mode === "native") {
           await page.screencast.showChapter(a.label ?? a.text ?? "");

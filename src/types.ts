@@ -46,7 +46,7 @@ export const DemoConfigSchema = z.object({
   script: z.string(),
   dashboardBaseUrl: z.string(),
   out: z.string().default("out"),
-  resolution: z.object({ width: z.number(), height: z.number() }).default({ width: 1920, height: 1080 }),
+  resolution: z.object({ width: z.number(), height: z.number() }).strict().default({ width: 1920, height: 1080 }),
   fps: z.number().default(30),
   voice: z.object({
     voiceId: z.string().default("21m00Tcm4TlvDq8ikWAM"),
@@ -56,7 +56,7 @@ export const DemoConfigSchema = z.object({
     seed: z.number().default(42),
     stability: z.number().default(0.5),
     similarity: z.number().default(0.75),
-  }).default({}),
+  }).strict().default({}),
   theme: z.object({
     captionFont: fontName().default("Arial"),
     captionSize: z.number().default(24),
@@ -80,7 +80,7 @@ export const DemoConfigSchema = z.object({
       backdropTop: hexColor().default("#101418"),
       backdropBottom: hexColor().default("#1d2733"),
       shadow: z.boolean().default(true),
-    }).default({}),
+    }).strict().default({}),
     // Native screencast action annotations (animated cursor between actions,
     // interacted-element highlight, action title). Active only under the
     // screencast engine; suppresses the legacy overlay cursor (see cursorMode).
@@ -89,8 +89,14 @@ export const DemoConfigSchema = z.object({
       durationMs: z.number().default(500),
       fontSize: z.number().default(24),
       position: z.enum(["top-left", "top", "top-right", "bottom-left", "bottom", "bottom-right"]).default("top-right"),
-    }).default({}),
-  }).default({}),
+    }).strict().default({}),
+  }).strict().default({}),
+  // Hard length ceiling for the finished video, in seconds. Declarable because
+  // events ship against caps shorter than the default (2:00 and 3:00 are both
+  // common). Enforced by the same parity check that enforces the default, and
+  // reachable from a keyless FAKE_TTS rehearsal, which measures real capture
+  // wall-clock and so is a genuine pre-spend check of the cap.
+  maxDurationSec: z.number().positive().default(300),
   clipsDir: z.string().default("clips/prebaked"),
   // Sound design (production-polish S2): synthesized ambient bed auto-ducked
   // under narration, soft ticks on recorded clicks, quiet sweeps at segment
@@ -101,7 +107,7 @@ export const DemoConfigSchema = z.object({
     ticks: z.boolean().default(true),
     sweeps: z.boolean().default(true),
     musicPath: z.string().optional(),
-  }).default({}),
+  }).strict().default({}),
   // Camera motion. Zoom-on-action eases the frame toward each interacted
   // element and back (screencast engine only); never changes segment duration.
   motion: z.object({
@@ -117,7 +123,7 @@ export const DemoConfigSchema = z.object({
     baseZoom: z.number().min(1).max(1.5).default(1.08),
     driftAmp: z.number().min(0).max(0.05).default(0.012),
     driftPeriodSec: z.number().min(2).default(11),
-  }).default({})
+  }).strict().default({})
     .refine((m) => m.baseZoom - m.driftAmp >= 1, { message: "baseZoom - driftAmp must stay >= 1 (drift may never zoom out past full frame)" }),
   // Auth-walled SaaS live capture (target: "live"). The whole section is optional so
   // existing dashboard/prebaked configs validate unchanged. `auth` is only required
@@ -133,6 +139,10 @@ export const DemoConfigSchema = z.object({
     engine: z.enum(["screencast", "recordvideo"]).default("screencast"),
     // JPEG quality (1-100) for screencast frames before H.264 encode.
     screencastQuality: z.number().min(1).max(100).default(90),
+    // Budget for the post-navigation readiness settle (fonts ready, visible
+    // images decoded). Fails OPEN: exceeding it warns and records anyway.
+    // 0 disables the probe.
+    settleMs: z.number().min(0).default(500),
     auth: z.object({
       profileDir: z.string().optional(),
       loginUrl: z.string(),
@@ -149,8 +159,8 @@ export const DemoConfigSchema = z.object({
       // (fail-closed). Set this true to record without the guard, accepting that an
       // expired session would be recorded.
       allowUnguardedLiveCapture: z.boolean().default(false),
-    }).optional(),
-  }).default({}),
+    }).strict().optional(),
+  }).strict().default({}),
   // Brand cards (production-polish S5): cold-open title card + closing URL
   // card, rendered on the backdrop gradient as ordinary silent segments.
   brand: z.object({
@@ -161,14 +171,14 @@ export const DemoConfigSchema = z.object({
     cards: z.boolean().default(true),
     titleSec: z.number().min(0.5).default(2.2),
     endSec: z.number().min(0.5).default(3.0),
-  }).optional(),
+  }).strict().optional(),
   // Optional CSS injected into every captured page before interaction. Use to
   // stabilise capture of dashboards taller than the output frame — e.g. bound a
   // growing list's height so the document never overflows the viewport (which
   // otherwise makes the browser scale the page down, producing a "breathing"
   // zoom between shots).
   captureCss: z.string().optional(),
-});
+}).strict();
 export type DemoConfig = z.infer<typeof DemoConfigSchema>;
 
 export interface Alignment { chars: string[]; startSec: number[]; endSec: number[]; }

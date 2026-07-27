@@ -18,6 +18,10 @@ import { join } from "node:path";
 import { frameDurations, framesConcatContent, frameTimestampsToSec, cursorMode } from "./screencast.js";
 import { ffmpeg, framesEncodeArgs } from "./ffmpeg.js";
 import { zoomFilterExpr, cameraFilterExpr, cameraMode, type InteractionEvent } from "./motion.js";
+// Capture runs in VIEWPORT space (decoupled from the output canvas: a shorts
+// render captures 16:9 and composites onto a 9:16 canvas), so every geometry
+// consumer below resolves the viewport, never the canvas resolution.
+import { captureViewport } from "./platforms.js";
 
 /** Collects capture-relative interaction events during a screencast recording. */
 interface EventRecorder {
@@ -278,7 +282,7 @@ async function recordWithScreencast(
   }
 
   await page.screencast.start({
-    size: config.resolution,
+    size: captureViewport(config),
     quality: config.capture.screencastQuality,
     onFrame: (frame) => {
       // Anchor the event clock to the first frame's arrival: video time zero
@@ -353,8 +357,8 @@ async function recordWithScreencast(
     const durationSec = Math.max(MIN_SEGMENT_SEC, capturedDurationSec);
     const m = config.motion;
     const zoomShape = {
-      width: config.resolution.width,
-      height: config.resolution.height,
+      width: captureViewport(config).width,
+      height: captureViewport(config).height,
       fps: config.fps,
       durationSec,
       zoom: m.zoomLevel,
@@ -377,8 +381,8 @@ async function recordWithScreencast(
 
     await ffmpeg(
       framesEncodeArgs(join(framesDir, "frames.txt"), segPath, {
-        width: config.resolution.width,
-        height: config.resolution.height,
+        width: captureViewport(config).width,
+        height: captureViewport(config).height,
         fps: config.fps,
         motionVf,
       }),
@@ -448,8 +452,8 @@ export async function captureShot(
   }
   const useScreencast = config.capture.engine === "screencast";
   const context = await browser.newContext({
-    viewport: config.resolution,
-    ...(useScreencast ? {} : { recordVideo: { dir: outDir, size: config.resolution } }),
+    viewport: captureViewport(config),
+    ...(useScreencast ? {} : { recordVideo: { dir: outDir, size: captureViewport(config) } }),
   });
   await context.addInitScript(overlayInitScript());
   if (config.captureCss) await context.addInitScript(cssInjectScript(config.captureCss));
@@ -532,8 +536,8 @@ async function captureLiveShot(
   // (pipeline records one shot at a time), so this never races a sibling.
   const useScreencast = config.capture.engine === "screencast";
   const context = await chromium.launchPersistentContext(profileDir, {
-    viewport: config.resolution,
-    ...(useScreencast ? {} : { recordVideo: { dir: outDir, size: config.resolution } }),
+    viewport: captureViewport(config),
+    ...(useScreencast ? {} : { recordVideo: { dir: outDir, size: captureViewport(config) } }),
     headless: true,
   });
   let page: Page | undefined;
@@ -634,7 +638,7 @@ export async function captureLogin(config: DemoConfig): Promise<string> {
   await mkdir(profileDir, { recursive: true });
 
   const context = await chromium.launchPersistentContext(profileDir, {
-    viewport: config.resolution,
+    viewport: captureViewport(config),
     headless: auth.headlessLogin,
   });
   try {

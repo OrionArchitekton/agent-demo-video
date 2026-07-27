@@ -8,6 +8,8 @@
  * then uses only fast filters (scale, alphamerge, overlay).
  */
 
+import { x264Args, X264 } from "./ffmpeg.js";
+
 const BASE = ["-y", "-hide_banner", "-loglevel", "error"];
 
 export interface FrameOpts {
@@ -20,12 +22,32 @@ export interface FrameOpts {
   backdropTop: string;
   backdropBottom: string;
   shadow: boolean;
+  /** Geometry of the incoming raw segments (the capture viewport). The window
+   *  keeps THIS aspect, so a 16:9 capture on a 9:16 canvas floats as a 16:9
+   *  window instead of getting letterboxed inside a canvas-shaped one. Absent
+   *  (or same aspect as the canvas): the historical canvas-shaped window. */
+  content?: { width: number; height: number };
 }
 
 /** Scaled window size, forced even (h264 yuv420 chroma subsampling). */
 export function scaledSize(width: number, height: number, scale: number): { width: number; height: number } {
   const even = (n: number) => Math.round(n / 2) * 2;
   return { width: even(width * scale), height: even(height * scale) };
+}
+
+/**
+ * The rounded window's size: the scaled canvas box, reshaped to the content's
+ * aspect when that differs. Same-aspect (and content-absent) configs take the
+ * scaled box UNCHANGED — bit-compatible with every pre-platform render; the
+ * aspect test cross-multiplies so no float division is involved.
+ */
+export function windowSize(o: FrameOpts): { width: number; height: number } {
+  const box = scaledSize(o.width, o.height, o.scale);
+  const c = o.content;
+  if (!c || c.width * o.height === c.height * o.width) return box;
+  const even = (n: number) => Math.round(n / 2) * 2;
+  const f = Math.min(box.width / c.width, box.height / c.height);
+  return { width: even(c.width * f), height: even(c.height * f) };
 }
 
 /** #rrggbb -> ffmpeg 0xRRGGBB. */
@@ -50,7 +72,7 @@ function roundedAlphaExpr(w: number, h: number, r: number): string {
  * channel (a white-but-transparent pixel would read as fully opaque).
  */
 export function maskGenArgs(o: FrameOpts, outPng: string): string[] {
-  const s = scaledSize(o.width, o.height, o.scale);
+  const s = windowSize(o);
   return [
     ...BASE,
     "-f", "lavfi",
@@ -66,7 +88,7 @@ export const SHADOW_PAD = 64;
 
 /** One-frame PNG: blurred dark rounded rect on a transparent, padded canvas. */
 export function shadowGenArgs(o: FrameOpts, outPng: string): string[] {
-  const s = scaledSize(o.width, o.height, o.scale);
+  const s = windowSize(o);
   const w = s.width + SHADOW_PAD * 2;
   const h = s.height + SHADOW_PAD * 2;
   const inner = roundedAlphaExpr(s.width, s.height, o.radius);
@@ -94,7 +116,7 @@ export function frameArgs(
   output: string,
   o: FrameOpts & { fps: number; durationSec: number; fadeInSec?: number },
 ): string[] {
-  const s = scaledSize(o.width, o.height, o.scale);
+  const s = windowSize(o);
   const grad = `gradients=s=${o.width}x${o.height}:c0=${hex(o.backdropTop)}:c1=${hex(o.backdropBottom)}:x0=${Math.round(o.width / 2)}:y0=0:x1=${Math.round(o.width / 2)}:y1=${o.height}:d=${Math.ceil(o.durationSec + 2)}`;
   const inputs = [
     "-i", input,
@@ -118,7 +140,7 @@ export function frameArgs(
     ...inputs,
     "-filter_complex", fc,
     "-map", "[out]",
-    "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-an",
+    ...x264Args(X264.crfComposite), "-an",
     output,
   ];
 }

@@ -65,6 +65,14 @@ describe("render manifest", () => {
     expect(loaded.config.out).toBe(join(base, "out"));
   });
 
+  it("round-trips the content size; a manifest without one leaves it absent", () => {
+    const inputs = { ...sampleInputs(), contentSize: { width: 1920, height: 1080 } };
+    expect(loadManifest(buildManifest(inputs), "/r").contentSize).toEqual({ width: 1920, height: 1080 });
+    // Legacy manifests (pre-platform) carry no content size: render must see
+    // it absent and fall back to canvas geometry, exactly as before.
+    expect(loadManifest(buildManifest(sampleInputs()), "/r").contentSize).toBeUndefined();
+  });
+
   it("serializes to JSON that carries no absolute local paths (host-independent)", () => {
     const json = JSON.stringify(buildManifest(sampleInputs()));
     expect(json).not.toContain("/local/work");

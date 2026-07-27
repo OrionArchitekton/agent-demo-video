@@ -36,6 +36,10 @@ export interface RenderInputs {
   segmentKinds?: ("shot" | "card")[];
   /** Per-segment click offsets (seconds, capture-relative) for sound-design ticks; preferred over reading events files so remote renders match local ones. */
   clickOffsets?: number[][];
+  /** Geometry of the raw segments (the capture viewport). Drives the framed
+   *  window's aspect when it differs from the canvas (a shorts render). Absent
+   *  (legacy callers/manifests): canvas-shaped window, exactly as before. */
+  contentSize?: { width: number; height: number };
 }
 
 export interface RenderResult {
@@ -87,6 +91,7 @@ export async function renderVideo(inputs: RenderInputs): Promise<RenderResult> {
     backdropTop: frame.backdropTop,
     backdropBottom: frame.backdropBottom,
     shadow: frame.shadow,
+    ...(inputs.contentSize ? { content: inputs.contentSize } : {}),
   };
   let maskPng: string | null = null;
   let shadowPng: string | null = null;

@@ -2,6 +2,20 @@ import { spawn } from "node:child_process";
 
 const BASE = ["-y", "-hide_banner", "-loglevel", "error"];
 
+/**
+ * The single video-encode policy (specs/shorts-platform-profile-spec.md AC5).
+ * crfFrames feeds the screencast frame-sequence encode, the master generation
+ * of each shot, so it is tighter; crfComposite covers every later re-encode
+ * (normalize, framing composite, cards, extend, caption burn). Historical
+ * inline values preserved exactly.
+ */
+export const X264 = { preset: "veryfast", crfFrames: "18", crfComposite: "20" } as const;
+
+/** The shared libx264 stanza every encode site splices. */
+export function x264Args(crf: string): string[] {
+  return ["-c:v", "libx264", "-preset", X264.preset, "-crf", crf];
+}
+
 export function normalizeArgs(
   input: string,
   output: string,
@@ -9,7 +23,7 @@ export function normalizeArgs(
 ): string[] {
   const fade = o.fadeInSec && o.fadeInSec > 0 ? `,fade=t=in:st=0:d=${o.fadeInSec}` : "";
   const vf = `scale=${o.width}:${o.height}:force_original_aspect_ratio=decrease,pad=${o.width}:${o.height}:(ow-iw)/2:(oh-ih)/2,fps=${o.fps}${fade},format=yuv420p`;
-  return [...BASE, "-i", input, "-vf", vf, "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-an", output];
+  return [...BASE, "-i", input, "-vf", vf, ...x264Args(X264.crfComposite), "-an", output];
 }
 
 export function concatArgs(listFile: string, output: string): string[] {
@@ -61,7 +75,7 @@ export function muxArgs(video: string, audio: string, output: string): string[] 
 export function burnSubsArgs(video: string, subPath: string, output: string, style?: string): string[] {
   // ASS files carry embedded styles; force_style is only for bare SRT.
   const vf = style ? `subtitles=${subPath}:force_style='${style}'` : `subtitles=${subPath}`;
-  return [...BASE, "-i", video, "-vf", vf, "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-c:a", "aac", output];
+  return [...BASE, "-i", video, "-vf", vf, ...x264Args(X264.crfComposite), "-c:a", "aac", output];
 }
 
 /**
@@ -83,7 +97,7 @@ export function framesEncodeArgs(
     ...(o.motionVf ? [o.motionVf] : []),
     "format=yuv420p",
   ];
-  return [...BASE, "-f", "concat", "-safe", "0", "-i", listFile, "-vf", chain.join(","), "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-an", output];
+  return [...BASE, "-f", "concat", "-safe", "0", "-i", listFile, "-vf", chain.join(","), ...x264Args(X264.crfFrames), "-an", output];
 }
 
 export function padAudioArgs(input: string, output: string, durationSec: number): string[] {
@@ -96,7 +110,7 @@ export function padAudioArgs(input: string, output: string, durationSec: number)
  * occupies the full narration window and the voiceover is not truncated.
  */
 export function extendVideoArgs(input: string, output: string, addSec: number): string[] {
-  return [...BASE, "-i", input, "-vf", `tpad=stop_mode=clone:stop_duration=${addSec}`, "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-an", output];
+  return [...BASE, "-i", input, "-vf", `tpad=stop_mode=clone:stop_duration=${addSec}`, ...x264Args(X264.crfComposite), "-an", output];
 }
 
 export function silentMp3Args(durationSec: number, output: string): string[] {

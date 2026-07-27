@@ -6,7 +6,7 @@
  * ffmpeg argument builders only.
  */
 
-import { filterPathEscape } from "./ffmpeg.js";
+import { filterPathEscape, x264Args, X264 } from "./ffmpeg.js";
 
 const BASE = ["-y", "-hide_banner", "-loglevel", "error"];
 
@@ -61,7 +61,7 @@ function cardArgs(o: CardOpts, lines: string[], out: string): string[] {
     ...gradientInput(o),
     "-t", String(o.durationSec),
     "-vf", vf,
-    "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-an",
+    ...x264Args(X264.crfComposite), "-an",
     out,
   ];
 }

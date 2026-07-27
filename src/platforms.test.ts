@@ -28,6 +28,12 @@ describe("platform presets", () => {
     expect(() => DemoConfigSchema.parse({ ...base, capture: { viewport: { width: 1920, height: 1080.25 } } })).toThrow();
   });
 
+  it("rejects odd canvas or viewport dimensions at parse (libx264 yuv420p needs even)", () => {
+    expect(() => DemoConfigSchema.parse({ ...base, resolution: { width: 1919, height: 1080 } })).toThrow();
+    expect(() => DemoConfigSchema.parse({ ...base, capture: { viewport: { width: 1441, height: 901 } } })).toThrow();
+    expect(() => DemoConfigSchema.parse({ ...base, capture: { viewport: { width: 1440, height: 900 } } })).not.toThrow();
+  });
+
   it("explicit resolution and viewport each override the preset independently", () => {
     const cfg = DemoConfigSchema.parse({
       ...base,

@@ -136,9 +136,41 @@ export function overlayInitScript(): string {
     }, 2000);
   };
 
+  // Draw the box at coordinates the CALLER resolved.
+  //
+  // The selector form below resolves with document.querySelectorAll, which is
+  // CSS-only and does not pierce shadow roots, while capture resolves with
+  // Playwright's engine. Two engines mean two answers: a selector Playwright
+  // resolves to one element inside an open shadow root is invisible to
+  // querySelectorAll. Capture already has a Playwright-resolved bounding box in
+  // hand, so it passes THAT and no second resolution happens at all.
+  window.__demoHighlightBox = function(x, y, w, h) {
+    highlight.style.left = x + 'px';
+    highlight.style.top = y + 'px';
+    highlight.style.width = w + 'px';
+    highlight.style.height = h + 'px';
+    highlight.style.opacity = '1';
+    setTimeout(function() { highlight.style.opacity = '0'; }, 1500);
+  };
+
   window.__demoHighlight = function(selector) {
-    const el = document.querySelector(selector);
-    if (!el) { highlight.style.opacity = '0'; return; }
+    // Fail CLOSED, on this function's own terms.
+    //
+    // Hiding the box and returning meant the shot still rendered, the pipeline
+    // still exited 0, and the highlight simply never happened. AMBIGUITY is a
+    // failure too: document.querySelector silently takes the FIRST match, which
+    // is how a bare tag selector looks correct while pointing somewhere else
+    // entirely. An invalid selector throws out of querySelectorAll by itself,
+    // which is also the behaviour we want.
+    const all = document.querySelectorAll(selector);
+    if (all.length !== 1) {
+      highlight.style.opacity = '0';
+      throw new Error(
+        '__demoHighlight: selector ' + JSON.stringify(selector) +
+        ' matched ' + all.length + ' elements (need exactly 1)'
+      );
+    }
+    const el = all[0];
     const r = el.getBoundingClientRect();
     highlight.style.left = r.left + 'px';
     highlight.style.top = r.top + 'px';
@@ -164,6 +196,18 @@ export function chapterExpr(text: string): string {
 
 export function highlightExpr(selector: string): string {
   return `window.__demoHighlight(${JSON.stringify(selector)})`;
+}
+
+/**
+ * Highlight an already-resolved rectangle.
+ *
+ * Preferred over `highlightExpr` on any path that has already resolved the
+ * element with Playwright: it draws exactly what the caller measured, so the
+ * page never re-resolves the selector with a different engine and cannot
+ * disagree about which element (or whether any) was meant.
+ */
+export function highlightBoxExpr(box: { x: number; y: number; width: number; height: number }): string {
+  return `window.__demoHighlightBox(${box.x}, ${box.y}, ${box.width}, ${box.height})`;
 }
 
 /**

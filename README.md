@@ -135,11 +135,59 @@ The script is a Markdown file. Each shot is a `### SHOT <id>` heading followed b
 | `click` | `selector` | Moves fake cursor then clicks |
 | `type` | `selector`, `text` | Types character-by-character (60 ms delay) |
 | `hover` | `selector` | Hovers (no fake cursor move) |
-| `highlight` | `selector` | Injects a highlight overlay |
+| `highlight` | `selector` | Injects a highlight overlay. The selector must match **exactly one** element |
 | `chapter` | `label` or `text` | Shows a chapter card overlay |
 | `wait` | `ms` | Pauses for N milliseconds |
 
 For `target: prebaked`, set `clip` to the path of an existing video file; no browser is launched for that shot.
+
+## Pre-flight selector gate
+
+Before any narration is synthesized, the pipeline resolves every selector your script
+declares against the page that shot opens at that point, and refuses to start when one of
+them provably will not do what the script says.
+
+```text
+$ demo-video demo.config.json
+  BLOCKING  shot "12-execution-boundary": selector "p" is ambiguous, 43 matches on http://localhost:3000/guide (the strict locator needs exactly one)
+  BLOCKING  shot "05-plate": selector "[data-line='82']" matches nothing on http://localhost:3000/guide
+  BLOCKING  shot "08-recap" uses 2 selector(s) but declares no goto action; capture builds a fresh context per shot, so this shot runs against about:blank and every locator waits out its full timeout
+  INFO      shot "04-approve": selector ".verdict-box" matches nothing on http://localhost:3000/ (an earlier click or type in this shot can change the DOM, and the gate runs no actions, so this could not be verified)
+✗ [agent-demo-video] preflight gate failed: 3 finding(s); no narration was synthesized.
+```
+
+It reports four things a script cannot tell you on its own:
+
+- a selector that matches **nothing**, which the highlight overlay used to turn into a
+  silent no-op;
+- a selector that matches **more than one** element, because `document.querySelector`
+  takes the first match, so a bare `p` or `code` selector looks correct while pointing
+  somewhere else entirely;
+- a shot that references a selector but **never navigates**. Capture builds a fresh
+  browser context per shot, so such a shot runs against `about:blank` and every locator
+  waits out its full timeout;
+- a `prebaked` shot that declares selector actions, which capture never runs.
+
+The gate resolves selectors with the same engine capture uses, against a page carrying
+the same injected overlay, and waits for an element that hydrates in after load. Where it
+resolves differently from the render it would be reporting on its own limitations, not on
+your script.
+
+It therefore only BLOCKS on a claim it can actually make. These are reported at `INFO` and
+never fail a run:
+
+- a selector that a preceding `click` or `type` in the same shot would have revealed (the
+  gate runs no actions, so it cannot see that DOM);
+- an ambiguous `hover`, because `page.hover` resolves non-strictly and renders fine;
+- an auth-walled `live` shot, because the gate runs unauthenticated and would see the
+  login wall;
+- a page that did not settle before its selectors were counted.
+
+`out/render-report.json` records whether the gate ran, whether it was declined, and which
+shots it could not adjudicate, so a finished video says for itself how it was checked.
+
+The gate is fail-closed. Set `preflight: false` in the config, or pass `--no-preflight`
+for a single run, to decline it; a declined run says so in its output.
 
 ## Authenticated SaaS capture (`target: live`)
 
@@ -225,7 +273,8 @@ Key fields in `demo.config.json` (full schema in `src/types.ts`):
 | `audio.soundDesign` | `true` | Synthesized ambient bed ducked under narration, click ticks, segment sweeps |
 | `motion.livingCamera` | `true` | Continuous camera path with drift; `motion.zoomOnAction: false` disables all camera motion |
 | `brand` | (off) | `{ title, subtitle, url, accent, cards }` adds branded title and end cards |
-| `clipsDir` | `"clips/prebaked"` | Directory scanned for prebaked clips |
+| `clipsDir` | `"clips/prebaked"` | Where a **bare** prebaked clip filename resolves. Resolved against the config file's directory unless absolute |
+| `preflight` | `true` | Fail-closed pre-flight selector gate; see [Pre-flight selector gate](#pre-flight-selector-gate). `false` (or `--no-preflight`) declines it |
 | `maxDurationSec` | `300` | Hard ceiling for the finished video. The render fails if the result exceeds it. Set it to the length limit you are shipping against. |
 | `capture.settleMs` | `500` | Budget for the post-navigation readiness wait (fonts ready, visible images decoded). `0` disables the probe. Exceeding the budget warns and records anyway. Under the default `screencast` engine the wait happens BEFORE recording starts, so unsettled frames are excluded; the legacy `recordvideo` engine binds capture at context creation, so there the wait shifts those frames later rather than excluding them. |
 
@@ -242,7 +291,18 @@ For surfaces you cannot or should not drive live (SaaS login walls, desktop apps
 - narration: UiPath Studio opens the workflow we exported earlier.
 ```
 
-Place the clip in `clipsDir`. The pipeline passes it through normalize/mux/caption without launching a browser.
+Clip paths resolve independently of the working directory you run from:
+
+| `clip:` value | Resolves to |
+|---|---|
+| `uipath-studio.mp4` (bare filename) | `<config dir>/<clipsDir>/uipath-studio.mp4` |
+| `clips/prebaked/uipath-studio.mp4` (carries a directory) | `<config dir>/clips/prebaked/uipath-studio.mp4` |
+| `/srv/clips/uipath-studio.mp4` (absolute) | used exactly as given |
+
+Place the clip in `clipsDir` and reference it by bare filename, or give a path relative to
+your config file. Either way the pipeline passes it through normalize/mux/caption without
+launching a browser. A clip that is not present at the resolved path fails immediately,
+naming the path that was tried.
 
 Add `- fullBleed: true` to a shot whose clip is ALREADY a finished composition, such as a
 motion-graphic title card rendered by another tool. The pipeline then skips the window framing and

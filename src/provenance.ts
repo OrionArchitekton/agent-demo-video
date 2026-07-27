@@ -8,6 +8,22 @@ const exec = promisify(execFile);
 
 export type ToolVersions = { ffmpeg: string; ffprobe: string; playwright: string; node: string };
 
+/**
+ * Whether this artifact's selectors were verified before it was made.
+ *
+ * Without it, a render that DECLINED the gate is indistinguishable from one
+ * that passed it: the flag survives only inside the 16-hex config digest, which
+ * also moves for any unrelated edit and cannot be read back. `unverifiedShotIds`
+ * names the shots the gate could not check at all (auth-walled live shots), so
+ * "gated and clean" is distinguishable from "gated, but not where it counted".
+ */
+export type PreflightRecord = {
+  ran: boolean;
+  declined: boolean;
+  findings: number;
+  unverifiedShotIds: string[];
+};
+
 export type RenderReport = {
   voice: DemoConfig["voice"];
   ttsMode: TtsMode;
@@ -21,6 +37,7 @@ export type RenderReport = {
   timeline: { entries: TimelineEntry[]; totalSec: number };
   render: { totalSec: number; segments: number; ticks: number; parity: { ok: boolean; problems: string[] } };
   limits: { maxDurationSec: number };
+  preflight: PreflightRecord;
 };
 
 /** Stable content digest for config/script inputs. Short, for eyeballing in a diff. */
@@ -45,6 +62,7 @@ export function buildRenderReport(o: {
   render: { totalSec: number; segments: number; ticks: number; parity: { ok: boolean; problems: string[] } };
   maxDurationSec: number;
   renderedOn: "local" | "remote";
+  preflight: PreflightRecord;
 }): RenderReport {
   return {
     voice: o.voice,
@@ -55,6 +73,7 @@ export function buildRenderReport(o: {
     timeline: o.timeline,
     render: o.render,
     limits: { maxDurationSec: o.maxDurationSec },
+    preflight: o.preflight,
   };
 }
 
@@ -96,7 +115,10 @@ export async function toolVersions(): Promise<ToolVersions> {
  * which is the exact false attribution this report exists to end.
  */
 export function stableConfigJson(config: DemoConfig): string {
-  const { out: _out, ...rest } = config;
+  // configDir is the absolute directory of the config FILE, set by loadConfig.
+  // Hashing it would give the same committed config a different digest on every
+  // machine — exactly the machine dependence this function exists to remove.
+  const { out: _out, configDir: _configDir, ...rest } = config;
   const auth = rest.capture?.auth;
   return JSON.stringify({
     ...rest,

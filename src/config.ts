@@ -18,6 +18,11 @@ export function loadConfig(path: string): DemoConfig {
       // that a naive string concat would pass through broken.
       cfg.dashboardBaseUrl = pathToFileURL(resolve(join(dirname(resolve(path)), cfg.dashboardBaseUrl))).href;
     }
+    // Prebaked clip paths resolve against THIS file's directory, so the same
+    // config finds the same clips from any working directory. Recording the dir
+    // here (rather than resolving clip paths now) keeps the clips themselves in
+    // the script, which is where an author declares them.
+    cfg.configDir = dirname(resolve(path));
     // Pin the auth profile to an absolute, outside-the-repo path (secrets at rest).
     if (cfg.capture.auth) {
       cfg.capture.auth.profileDir = resolveProfileDir(cfg.capture.auth.profileDir, cfg.capture.auth.loginUrl);

@@ -1,0 +1,18 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Reveal Fixture</title>
+<style>body{font-family:sans-serif;padding:40px;background:#0e1230;color:#fff}</style></head>
+<body><h1>Reveal Fixture</h1>
+<button id="open">Open the panel</button>
+<div id="host"></div>
+<script>
+// #revealed does not exist until the button is clicked. Stands in for the common
+// "click opens a modal, then highlight something inside it" shot: a pre-flight
+// gate resolving against the freshly-loaded page cannot see it, and must not
+// fail-close on that absence.
+document.getElementById('open').onclick = function () {
+  var d = document.createElement('div');
+  d.id = 'revealed';
+  d.textContent = 'panel contents';
+  document.getElementById('host').appendChild(d);
+};
+</script>
+</body></html>

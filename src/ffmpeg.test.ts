@@ -90,9 +90,10 @@ describe("probeSizePx spawn failure (review finding)", () => {
 
   // A missing or non-executable ffprobe emits 'error' on the child, never 'close'.
   // Unlistened, that throws as an unhandled error and leaves the promise pending,
-  // so the geometry guard hangs instead of failing closed.
+  // so the geometry guard hangs instead of failing closed. Match the wrapped spawn
+  // detail, not just the shared prefix, which close/parse failures also carry.
   it("rejects with ffprobe context when the binary cannot be spawned", async () => {
     vi.stubEnv("PATH", "/nonexistent-agent-demo-video-test-bin");
-    await expect(probeSizePx("clip.mp4")).rejects.toThrow(/^ffprobe size clip\.mp4: /);
+    await expect(probeSizePx("clip.mp4")).rejects.toThrow(/^ffprobe size clip\.mp4: spawn ffprobe\b/);
   });
 });

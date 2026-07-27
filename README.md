@@ -304,6 +304,27 @@ your config file. Either way the pipeline passes it through normalize/mux/captio
 launching a browser. A clip that is not present at the resolved path fails immediately,
 naming the path that was tried.
 
+Add `- fullBleed: true` to a shot whose clip is ALREADY a finished composition, such as a
+motion-graphic title card rendered by another tool. The pipeline then skips the window framing and
+the segment fade-in for that shot, because the clip carries its own framing and its own motion.
+Without it a full-bleed card is shrunk to `theme.frame.scale` inside a shadowed window it was never
+designed for.
+
+```markdown
+### SHOT title
+- target: prebaked
+- clip: clips/prebaked/title-card.mp4
+- fullBleed: true
+- narration: A safe harness is defined by what it refuses.
+```
+
+`fullBleed` accepts `true`/`false`, `yes`/`no`, or `1`/`0`, case-insensitively. An
+unrecognised value is an ERROR, not a silently ignored line: a dropped flag would mean you believe
+you opted out of framing while the pipeline frames anyway.
+
+Author the clip to the length of its narration. Segment duration is `max(clipSec, narrationSec)`, so
+a clip shorter than its narration is padded by freezing the last frame, never trimmed.
+
 ## Replicability
 
 Pin `voice.seed` in your config and lock your ffmpeg and Chromium versions to get byte-stable reruns from the same script. The only inputs that change between demo iterations are `DEMO_SCRIPT.md` and `demo.config.json`; everything else is deterministic given the same narration audio.

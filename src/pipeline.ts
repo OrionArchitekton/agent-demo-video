@@ -3,7 +3,7 @@ import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { DemoConfig, TtsResult } from "./types";
-import { parseScript } from "./parse-script";
+import { parseScript, deriveSegmentKinds } from "./parse-script";
 import { formatPreflightReport, runPreflight } from "./preflight";
 import { synthShot } from "./tts";
 import { captureShot } from "./capture";
@@ -151,7 +151,7 @@ export async function runPipeline(config: DemoConfig, opts: RunPipelineOpts = {}
 
   // 4.5 Brand cards: cold-open title + closing URL card as ordinary silent
   //     segments around the shot list (skip framing via segmentKinds).
-  let segmentKinds: ("shot" | "card")[] = shots.map(() => "shot" as const);
+  let segmentKinds: ("shot" | "card")[] = deriveSegmentKinds(shots);
   if (config.brand?.cards) {
     const b = config.brand;
     const cardBase = {

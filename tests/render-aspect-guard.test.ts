@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { ffmpeg } from "../src/ffmpeg";
+import { ffmpeg, probeSizePx } from "../src/ffmpeg";
 import { renderVideo, type RenderInputs } from "../src/render";
 
 /**
@@ -34,5 +34,23 @@ describe("renderVideo framed-aspect guard (shorts)", () => {
       },
     };
     await expect(renderVideo(inputs)).rejects.toThrow(/intro.*fullBleed|fullBleed.*intro/s);
+  }, 60_000);
+});
+
+/**
+ * Phone footage is routinely landscape-CODED with a 90 degree display matrix;
+ * ffmpeg autorotates it to portrait during transcoding. The probe must report
+ * DISPLAY geometry, or such a clip passes the guard as 16:9 and ships bars.
+ */
+describe("probeSizePx display geometry", () => {
+  it("reports coded size for an unrotated clip and swaps axes for a 90-degree display matrix", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "probe-size-"));
+    const plain = join(dir, "plain.mp4");
+    await ffmpeg(["-y", "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "color=c=blue:s=320x180:d=0.2", "-c:v", "libx264", "-pix_fmt", "yuv420p", plain]);
+    expect(await probeSizePx(plain)).toEqual({ width: 320, height: 180 });
+
+    const rotated = join(dir, "rot90.mp4");
+    await ffmpeg(["-y", "-hide_banner", "-loglevel", "error", "-display_rotation", "90", "-i", plain, "-c", "copy", rotated]);
+    expect(await probeSizePx(rotated)).toEqual({ width: 180, height: 320 });
   }, 60_000);
 });

@@ -128,17 +128,30 @@ export function run(bin: string, args: string[]): Promise<void> {
 
 export const ffmpeg = (args: string[]) => run("ffmpeg", args);
 
-/** First video stream's WxH, feeding the framed-aspect guard. Unparseable
- *  output rejects (fail closed) rather than defaulting to a geometry. */
+/** First video stream's DISPLAY WxH, feeding the framed-aspect guard: coded
+ *  size with any 90/270 display rotation applied (matrix side data or legacy
+ *  rotate tag), matching what ffmpeg's autorotation feeds the filter graph.
+ *  Phone footage is routinely landscape-coded portrait. Unparseable output
+ *  rejects (fail closed) rather than defaulting to a geometry. */
 export async function probeSizePx(file: string): Promise<{ width: number; height: number }> {
   return new Promise((res, rej) => {
-    const p = spawn("ffprobe", ["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height", "-of", "csv=s=x:p=0", file]);
+    const p = spawn("ffprobe", ["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height:stream_tags=rotate:stream_side_data=rotation", "-of", "json", file]);
     let out = "";
     p.stdout.on("data", (d) => (out += d));
     p.on("close", (c) => {
-      const m = out.trim().match(/^(\d+)x(\d+)/);
-      if (c === 0 && m) res({ width: Number(m[1]), height: Number(m[2]) });
-      else rej(new Error(`ffprobe size ${file} exited ${c} (${out.trim() || "no video stream"})`));
+      try {
+        if (c !== 0) throw new Error(`exited ${c}`);
+        const st = JSON.parse(out).streams?.[0];
+        if (!st || typeof st.width !== "number" || typeof st.height !== "number") throw new Error("no video stream geometry");
+        let rot = 0;
+        for (const sd of st.side_data_list ?? []) if (typeof sd.rotation === "number") rot = sd.rotation;
+        const tag = Number.parseInt(st.tags?.rotate ?? "", 10);
+        if (!Number.isNaN(tag)) rot = tag;
+        const swap = Math.abs(rot) % 180 === 90;
+        res(swap ? { width: st.height, height: st.width } : { width: st.width, height: st.height });
+      } catch (e) {
+        rej(new Error(`ffprobe size ${file}: ${(e as Error).message}`));
+      }
     });
   });
 }

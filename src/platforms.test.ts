@@ -21,6 +21,13 @@ describe("platform presets", () => {
     expect(captureViewport(custom)).toEqual({ width: 1280, height: 720 });
   });
 
+  it("rejects fractional, zero, and negative canvas or viewport dimensions", () => {
+    expect(() => DemoConfigSchema.parse({ ...base, resolution: { width: 1920.5, height: 1080 } })).toThrow();
+    expect(() => DemoConfigSchema.parse({ ...base, resolution: { width: 0, height: 1080 } })).toThrow();
+    expect(() => DemoConfigSchema.parse({ ...base, capture: { viewport: { width: -1920, height: 1080 } } })).toThrow();
+    expect(() => DemoConfigSchema.parse({ ...base, capture: { viewport: { width: 1920, height: 1080.25 } } })).toThrow();
+  });
+
   it("explicit resolution and viewport each override the preset independently", () => {
     const cfg = DemoConfigSchema.parse({
       ...base,

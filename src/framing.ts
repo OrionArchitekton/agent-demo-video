@@ -50,9 +50,9 @@ export function windowSize(o: FrameOpts): { width: number; height: number } {
   return { width: even(c.width * f), height: even(c.height * f) };
 }
 
-/** Aspect slack absorbing encoder even-rounding (1918x1080 vs 1920x1080), not
- *  real orientation/aspect differences. */
-const ASPECT_EPS = 0.02;
+/** Bars the window may show from encoder even-rounding (a 1918x1080 clip for
+ *  a 1920x1080 viewport lands within 1px), not a real aspect difference. */
+const MAX_WINDOW_PAD_PX = 2;
 
 /**
  * Fail-closed guard for framed segments when the window aspect is decoupled
@@ -70,7 +70,15 @@ export function assertFramedContentAspect(
 ): void {
   const c = o.content;
   if (!c || c.width * o.height === c.height * o.width) return;
-  if (Math.abs(probed.width / probed.height - c.width / c.height) <= ASPECT_EPS) return;
+  // Measure the contract itself: the bars frameArgs' decrease+pad would show
+  // in the actual window. Size-independent (a 1280x720 clip for a 1920x1080
+  // viewport fits exactly), and rounding slack stays a pixel bound instead of
+  // a ratio that widens with resolution.
+  const s = windowSize(o);
+  const f = Math.min(s.width / probed.width, s.height / probed.height);
+  const padW = s.width - Math.round(probed.width * f);
+  const padH = s.height - Math.round(probed.height * f);
+  if (Math.max(padW, padH) <= MAX_WINDOW_PAD_PX) return;
   throw new Error(
     `[agent-demo-video] shot "${shotId}": framed clip is ${probed.width}x${probed.height} but the capture viewport is ` +
       `${c.width}x${c.height}; the aspect mismatch would be padded with bars inside the window. Mark the shot ` +

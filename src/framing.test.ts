@@ -40,9 +40,13 @@ describe("assertFramedContentAspect", () => {
     expect(() => assertFramedContentAspect(decoupled, { width: 1080, height: 1920 }, "intro")).toThrow(/fullBleed/);
     expect(() => assertFramedContentAspect(decoupled, { width: 1080, height: 1920 }, "intro")).toThrow(/intro/);
   });
-  it("accepts viewport-matching geometry, including encoder even-rounding jitter", () => {
+  it("accepts viewport-matching geometry, including encoder even-rounding jitter and same-aspect resizes", () => {
     expect(() => assertFramedContentAspect(decoupled, { width: 1920, height: 1080 }, "a")).not.toThrow();
     expect(() => assertFramedContentAspect(decoupled, { width: 1918, height: 1080 }, "a")).not.toThrow();
+    expect(() => assertFramedContentAspect(decoupled, { width: 1280, height: 720 }, "a")).not.toThrow();
+  });
+  it("rejects a near-aspect clip that would still show real bars (tolerance is rounding slack, not 2%)", () => {
+    expect(() => assertFramedContentAspect(decoupled, { width: 1900, height: 1080 }, "b")).toThrow(/fullBleed/);
   });
   it("never throws when content matches the canvas aspect or is absent (landscape compat)", () => {
     expect(() => assertFramedContentAspect({ ...O, content: { width: 1920, height: 1080 } }, { width: 1080, height: 1920 }, "a")).not.toThrow();

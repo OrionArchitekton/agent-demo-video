@@ -60,7 +60,7 @@ export const DemoConfigSchema = z.object({
   // The output canvas. Absent -> the platform preset's canvas (landscape
   // 1920x1080, shorts 1080x1920), filled by the transform below so every
   // consumer still sees a concrete resolution.
-  resolution: z.object({ width: z.number(), height: z.number() }).strict().optional(),
+  resolution: z.object({ width: z.number().int().positive(), height: z.number().int().positive() }).strict().optional(),
   fps: z.number().default(30),
   voice: z.object({
     voiceId: z.string().default("21m00Tcm4TlvDq8ikWAM"),
@@ -183,7 +183,7 @@ export const DemoConfigSchema = z.object({
     // viewport (shorts captures at a 16:9 desktop viewport while rendering a
     // 9:16 canvas); landscape follows the canvas. Resolved via
     // captureViewport() in platforms.ts, not stored here.
-    viewport: z.object({ width: z.number(), height: z.number() }).strict().optional(),
+    viewport: z.object({ width: z.number().int().positive(), height: z.number().int().positive() }).strict().optional(),
     // JPEG quality (1-100) for screencast frames before H.264 encode.
     screencastQuality: z.number().min(1).max(100).default(90),
     // Budget for the post-navigation readiness settle (fonts ready, visible

@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import {
   normalizeArgs,
   concatArgs,
@@ -9,6 +9,7 @@ import {
   subtitlesFilterPath,
   padAudioArgs,
   extendVideoArgs,
+  probeSizePx,
 } from "./ffmpeg";
 
 describe("ffmpeg arg builders", () => {
@@ -79,5 +80,19 @@ describe("normalizeArgs fade-in", () => {
 describe("filter path escaping of graph separators (pipeline finding)", () => {
   it("escapes comma, semicolon, and link-label brackets so a path cannot split the chain", () => {
     expect(subtitlesFilterPath("/a,b;c[d]/x.srt")).toBe("/a\\,b\\;c\\[d\\]/x.srt");
+  });
+});
+
+describe("probeSizePx spawn failure (review finding)", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  // A missing or non-executable ffprobe emits 'error' on the child, never 'close'.
+  // Unlistened, that throws as an unhandled error and leaves the promise pending,
+  // so the geometry guard hangs instead of failing closed.
+  it("rejects with ffprobe context when the binary cannot be spawned", async () => {
+    vi.stubEnv("PATH", "/nonexistent-agent-demo-video-test-bin");
+    await expect(probeSizePx("clip.mp4")).rejects.toThrow(/^ffprobe size clip\.mp4: /);
   });
 });

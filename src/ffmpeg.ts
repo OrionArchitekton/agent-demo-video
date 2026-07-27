@@ -138,6 +138,10 @@ export async function probeSizePx(file: string): Promise<{ width: number; height
     const p = spawn("ffprobe", ["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height:stream_tags=rotate:stream_side_data=rotation", "-of", "json", file]);
     let out = "";
     p.stdout.on("data", (d) => (out += d));
+    // A missing or non-executable ffprobe emits 'error', never 'close': unlistened
+    // it throws unhandled and leaves this promise pending, so the geometry guard
+    // hangs instead of failing closed.
+    p.on("error", (e) => rej(new Error(`ffprobe size ${file}: ${e.message}`)));
     p.on("close", (c) => {
       try {
         if (c !== 0) throw new Error(`exited ${c}`);

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { scaledSize, windowSize, maskGenArgs, shadowGenArgs, frameArgs } from "./framing";
+import { scaledSize, windowSize, maskGenArgs, shadowGenArgs, frameArgs, assertFramedContentAspect } from "./framing";
 
 const O = {
   width: 1920,
@@ -31,6 +31,22 @@ describe("windowSize", () => {
   it("is exactly the scaled box when content matches the canvas aspect", () => {
     expect(windowSize({ ...O, content: { width: 1920, height: 1080 } })).toEqual(scaledSize(1920, 1080, 0.86));
     expect(windowSize(O)).toEqual(scaledSize(1920, 1080, 0.86));
+  });
+});
+
+describe("assertFramedContentAspect", () => {
+  const decoupled = { ...O, width: 1080, height: 1920, content: { width: 1920, height: 1080 } };
+  it("rejects an aspect-mismatched framed clip when the window is decoupled from the canvas", () => {
+    expect(() => assertFramedContentAspect(decoupled, { width: 1080, height: 1920 }, "intro")).toThrow(/fullBleed/);
+    expect(() => assertFramedContentAspect(decoupled, { width: 1080, height: 1920 }, "intro")).toThrow(/intro/);
+  });
+  it("accepts viewport-matching geometry, including encoder even-rounding jitter", () => {
+    expect(() => assertFramedContentAspect(decoupled, { width: 1920, height: 1080 }, "a")).not.toThrow();
+    expect(() => assertFramedContentAspect(decoupled, { width: 1918, height: 1080 }, "a")).not.toThrow();
+  });
+  it("never throws when content matches the canvas aspect or is absent (landscape compat)", () => {
+    expect(() => assertFramedContentAspect({ ...O, content: { width: 1920, height: 1080 } }, { width: 1080, height: 1920 }, "a")).not.toThrow();
+    expect(() => assertFramedContentAspect(O, { width: 1080, height: 1920 }, "a")).not.toThrow();
   });
 });
 

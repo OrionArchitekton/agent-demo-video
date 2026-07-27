@@ -38,10 +38,18 @@ the rest, captions and brand cards lay out on the canvas.
    the window; the gradient backdrop fills the remaining canvas. When canvas and
    content share an aspect ratio (every existing config), framed output is
    argument-identical to pre-change behavior.
-4. **Remote-render parity.** A manifest built from a shorts config renders the same
+4. **Mixed-geometry framed clips fail closed.** When the window aspect is
+   decoupled from the canvas (a shorts render), a framed clip whose own geometry
+   does not match the declared content size is rejected loudly before
+   compositing, naming the shot and the `fullBleed: true` escape hatch; padding
+   bars inside the window is never shipped silently. A `fullBleed` shot bypasses
+   framing and composites directly onto the canvas, so finished portrait
+   compositions remain first-class in shorts renders. Landscape renders (content
+   absent or canvas-aspect) keep today's pad-inside-window behavior unchanged.
+5. **Remote-render parity.** A manifest built from a shorts config renders the same
    video remotely as locally: canvas and content size both travel. A manifest from
    an older build, which carries no content size, renders exactly as it does today.
-5. **Single encode policy.** Every video-encode call site draws its CRF and preset
+6. **Single encode policy.** Every video-encode call site draws its CRF and preset
    from one named policy instead of six inline literals; current values are
    preserved (frame-sequence encode 18, all composite/normalize encodes 20).
 
@@ -67,10 +75,16 @@ the rest, captions and brand cards lay out on the canvas.
   back to canvas geometry.
 - AC5: all six encode sites emit the centralized policy values; the full suite
   stays green with no argument changes for landscape configs.
+- AC6: with a decoupled window (shorts), rendering a framed clip whose probed
+  geometry mismatches the content size rejects with an error naming the shot and
+  `fullBleed`; matching geometry (within encoder even-rounding slack) passes;
+  canvas-aspect and content-absent configs never reject.
 
 ## Test seams
 
 - Config schema parse (the one `DemoConfigSchema.parse` seam) for scenario 1.
-- Pure ffmpeg argument builders (framing, encode, cards) for scenarios 3 and 5.
+- Pure ffmpeg argument builders (framing, encode, cards) for scenarios 3 and 6.
 - The capture-viewport derivation helper for scenario 2.
-- Manifest build/load round-trip for scenario 4.
+- Manifest build/load round-trip for scenario 5.
+- The render stage invoked directly on prepared segment files (no capture) for
+  scenario 4.

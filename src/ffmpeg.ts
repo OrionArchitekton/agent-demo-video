@@ -128,6 +128,21 @@ export function run(bin: string, args: string[]): Promise<void> {
 
 export const ffmpeg = (args: string[]) => run("ffmpeg", args);
 
+/** First video stream's WxH, feeding the framed-aspect guard. Unparseable
+ *  output rejects (fail closed) rather than defaulting to a geometry. */
+export async function probeSizePx(file: string): Promise<{ width: number; height: number }> {
+  return new Promise((res, rej) => {
+    const p = spawn("ffprobe", ["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height", "-of", "csv=s=x:p=0", file]);
+    let out = "";
+    p.stdout.on("data", (d) => (out += d));
+    p.on("close", (c) => {
+      const m = out.trim().match(/^(\d+)x(\d+)/);
+      if (c === 0 && m) res({ width: Number(m[1]), height: Number(m[2]) });
+      else rej(new Error(`ffprobe size ${file} exited ${c} (${out.trim() || "no video stream"})`));
+    });
+  });
+}
+
 export async function probeDurationSec(file: string): Promise<number> {
   return new Promise((res, rej) => {
     const p = spawn("ffprobe", ["-v", "error", "-show_entries", "format=duration", "-of", "default=nw=1:nk=1", file]);

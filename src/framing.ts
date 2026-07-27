@@ -50,6 +50,35 @@ export function windowSize(o: FrameOpts): { width: number; height: number } {
   return { width: even(c.width * f), height: even(c.height * f) };
 }
 
+/** Aspect slack absorbing encoder even-rounding (1918x1080 vs 1920x1080), not
+ *  real orientation/aspect differences. */
+const ASPECT_EPS = 0.02;
+
+/**
+ * Fail-closed guard for framed segments when the window aspect is decoupled
+ * from the canvas (a platform preset like shorts). frameArgs pads a
+ * mismatched input INSIDE the window, so a framed prebaked clip with its own
+ * geometry would ship bars despite the preset's no-bars contract; reject it
+ * loudly and name the fullBleed escape hatch instead. Content-absent and
+ * canvas-aspect configs never throw: the historical pad-inside-window
+ * behavior stays for landscape renders.
+ */
+export function assertFramedContentAspect(
+  o: FrameOpts,
+  probed: { width: number; height: number },
+  shotId: string,
+): void {
+  const c = o.content;
+  if (!c || c.width * o.height === c.height * o.width) return;
+  if (Math.abs(probed.width / probed.height - c.width / c.height) <= ASPECT_EPS) return;
+  throw new Error(
+    `[agent-demo-video] shot "${shotId}": framed clip is ${probed.width}x${probed.height} but the capture viewport is ` +
+      `${c.width}x${c.height}; the aspect mismatch would be padded with bars inside the window. Mark the shot ` +
+      `"fullBleed: true" to composite it directly onto the ${o.width}x${o.height} canvas, or supply a clip matching ` +
+      `the capture viewport aspect.`,
+  );
+}
+
 /** #rrggbb -> ffmpeg 0xRRGGBB. */
 function hex(c: string): string {
   return "0x" + c.replace(/^#/, "");

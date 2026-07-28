@@ -15,6 +15,8 @@ export interface RenderManifest {
   segments: string[];
   segmentKinds?: ("shot" | "card")[];
   clickOffsets?: number[][];
+  /** Raw-segment geometry (capture viewport); absent in pre-platform manifests. */
+  contentSize?: { width: number; height: number };
   audio: { file: string; durationSec: number; alignment: Alignment; shotId: string }[];
   config: Omit<RenderConfig, "out">;
 }
@@ -24,6 +26,7 @@ export function buildManifest(inputs: RenderInputs): RenderManifest {
     segments: inputs.rawSegments.map((p, i) => `seg_${i}${extname(p)}`),
     ...(inputs.segmentKinds ? { segmentKinds: inputs.segmentKinds } : {}),
     ...(inputs.clickOffsets ? { clickOffsets: inputs.clickOffsets } : {}),
+    ...(inputs.contentSize ? { contentSize: inputs.contentSize } : {}),
     audio: inputs.tts.map((t, i) => ({
       file: `aud_${i}${extname(t.audioPath)}`,
       durationSec: t.durationSec,
@@ -48,6 +51,7 @@ export function loadManifest(manifest: RenderManifest, baseDir: string): RenderI
     rawSegments: manifest.segments.map((f) => join(baseDir, "seg", f)),
     ...(manifest.segmentKinds ? { segmentKinds: manifest.segmentKinds } : {}),
     ...(manifest.clickOffsets ? { clickOffsets: manifest.clickOffsets } : {}),
+    ...(manifest.contentSize ? { contentSize: manifest.contentSize } : {}),
     tts: manifest.audio.map((a) => ({
       shotId: a.shotId,
       audioPath: join(baseDir, "audio", a.file),

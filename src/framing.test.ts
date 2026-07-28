@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { scaledSize, maskGenArgs, shadowGenArgs, frameArgs } from "./framing";
+import { scaledSize, windowSize, maskGenArgs, shadowGenArgs, frameArgs, assertFramedContentAspect } from "./framing";
 
 const O = {
   width: 1920,
@@ -17,6 +17,40 @@ describe("scaledSize", () => {
     expect(s.width % 2).toBe(0);
     expect(s.height % 2).toBe(0);
     expect(s.width).toBeCloseTo(1920 * 0.86, -1);
+  });
+});
+
+describe("windowSize", () => {
+  it("keeps the content aspect inside a portrait canvas (no bars inside the window)", () => {
+    const o = { ...O, width: 1080, height: 1920, content: { width: 1920, height: 1080 } };
+    expect(windowSize(o)).toEqual({ width: 928, height: 522 });
+    expect(maskGenArgs(o, "/tmp/mask.png").join(" ")).toContain("928x522");
+    const framed = frameArgs("in.mp4", "/m.png", "/s.png", "out.mp4", { ...o, fps: 30, durationSec: 12 }).join(" ");
+    expect(framed).toContain("scale=928:522");
+  });
+  it("is exactly the scaled box when content matches the canvas aspect", () => {
+    expect(windowSize({ ...O, content: { width: 1920, height: 1080 } })).toEqual(scaledSize(1920, 1080, 0.86));
+    expect(windowSize(O)).toEqual(scaledSize(1920, 1080, 0.86));
+  });
+});
+
+describe("assertFramedContentAspect", () => {
+  const decoupled = { ...O, width: 1080, height: 1920, content: { width: 1920, height: 1080 } };
+  it("rejects an aspect-mismatched framed clip when the window is decoupled from the canvas", () => {
+    expect(() => assertFramedContentAspect(decoupled, { width: 1080, height: 1920 }, "intro")).toThrow(/fullBleed/);
+    expect(() => assertFramedContentAspect(decoupled, { width: 1080, height: 1920 }, "intro")).toThrow(/intro/);
+  });
+  it("accepts viewport-matching geometry, including encoder even-rounding jitter and same-aspect resizes", () => {
+    expect(() => assertFramedContentAspect(decoupled, { width: 1920, height: 1080 }, "a")).not.toThrow();
+    expect(() => assertFramedContentAspect(decoupled, { width: 1918, height: 1080 }, "a")).not.toThrow();
+    expect(() => assertFramedContentAspect(decoupled, { width: 1280, height: 720 }, "a")).not.toThrow();
+  });
+  it("rejects a near-aspect clip that would still show real bars (tolerance is rounding slack, not 2%)", () => {
+    expect(() => assertFramedContentAspect(decoupled, { width: 1900, height: 1080 }, "b")).toThrow(/fullBleed/);
+  });
+  it("never throws when content matches the canvas aspect or is absent (landscape compat)", () => {
+    expect(() => assertFramedContentAspect({ ...O, content: { width: 1920, height: 1080 } }, { width: 1080, height: 1920 }, "a")).not.toThrow();
+    expect(() => assertFramedContentAspect(O, { width: 1080, height: 1920 }, "a")).not.toThrow();
   });
 });
 

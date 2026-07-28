@@ -1,9 +1,14 @@
 import { z } from "zod";
+import { PLATFORMS } from "./platforms";
 
 // Values spliced into ffmpeg filtergraphs are validated at the boundary: hex
 // colors and font names may not carry filtergraph metacharacters.
 const hexColor = () => z.string().regex(/^#[0-9a-fA-F]{6}$/, "expected #rrggbb");
 const fontName = () => z.string().regex(/^[A-Za-z0-9 ._-]+$/, "font name may contain letters, digits, spaces, . _ -");
+// Canvas/viewport dimensions feed libx264 with yuv420p chroma subsampling,
+// which requires even width and height; reject odd values at parse instead of
+// surfacing a cryptic encoder failure mid-render, after TTS has been paid for.
+const evenDim = () => z.number().int().positive().multipleOf(2, "dimension must be even (libx264 yuv420p)");
 
 export const ActionSchema = z.object({
   kind: z.enum(["goto", "click", "type", "wait", "hover", "highlight", "chapter", "scroll"]),
@@ -52,7 +57,14 @@ export const DemoConfigSchema = z.object({
   script: z.string(),
   dashboardBaseUrl: z.string(),
   out: z.string().default("out"),
-  resolution: z.object({ width: z.number(), height: z.number() }).strict().default({ width: 1920, height: 1080 }),
+  // Distribution preset (specs/shorts-platform-profile-spec.md): picks the
+  // OUTPUT CANVAS default and the capture-viewport default. Explicit
+  // resolution / capture.viewport always win over the preset.
+  platform: z.enum(["landscape", "shorts"]).default("landscape"),
+  // The output canvas. Absent -> the platform preset's canvas (landscape
+  // 1920x1080, shorts 1080x1920), filled by the transform below so every
+  // consumer still sees a concrete resolution.
+  resolution: z.object({ width: evenDim(), height: evenDim() }).strict().optional(),
   fps: z.number().default(30),
   voice: z.object({
     voiceId: z.string().default("21m00Tcm4TlvDq8ikWAM"),
@@ -171,6 +183,11 @@ export const DemoConfigSchema = z.object({
     // (VP8 webm intermediate), kept as an explicit escape hatch. A screencast
     // failure is an error, never a silent fallback to the other engine.
     engine: z.enum(["screencast", "recordvideo"]).default("screencast"),
+    // Browser/capture geometry override. Absent -> the platform preset's
+    // viewport (shorts captures at a 16:9 desktop viewport while rendering a
+    // 9:16 canvas); landscape follows the canvas. Resolved via
+    // captureViewport() in platforms.ts, not stored here.
+    viewport: z.object({ width: evenDim(), height: evenDim() }).strict().optional(),
     // JPEG quality (1-100) for screencast frames before H.264 encode.
     screencastQuality: z.number().min(1).max(100).default(90),
     // Budget for the post-navigation readiness settle (fonts ready, visible
@@ -212,7 +229,12 @@ export const DemoConfigSchema = z.object({
   // otherwise makes the browser scale the page down, producing a "breathing"
   // zoom between shots).
   captureCss: z.string().optional(),
-}).strict();
+}).strict().transform((c) => ({
+  // Fill the canvas from the platform preset so resolution is always concrete
+  // downstream; an explicit resolution wins (spec AC1).
+  ...c,
+  resolution: c.resolution ?? PLATFORMS[c.platform].resolution,
+}));
 export type DemoConfig = z.infer<typeof DemoConfigSchema>;
 
 /**

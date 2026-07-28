@@ -13,11 +13,12 @@ import {
   padAudioArgs,
   extendVideoArgs,
   probeDurationSec,
+  probeSizePx,
 } from "./ffmpeg";
 import { toSrt, toWordAss, captionStyle } from "./captions";
 import { buildTimeline, reconcileSegmentDuration } from "./timeline";
 import { verifyParity } from "./verify";
-import { maskGenArgs, shadowGenArgs, frameArgs } from "./framing";
+import { maskGenArgs, shadowGenArgs, frameArgs, assertFramedContentAspect } from "./framing";
 import { ambientBedArgs, tickWavArgs, sweepWavArgs, soundscapeArgs } from "./sound";
 
 /** The render-affecting subset of the demo config (no capture/tts/auth fields). */
@@ -36,6 +37,10 @@ export interface RenderInputs {
   segmentKinds?: ("shot" | "card")[];
   /** Per-segment click offsets (seconds, capture-relative) for sound-design ticks; preferred over reading events files so remote renders match local ones. */
   clickOffsets?: number[][];
+  /** Geometry of the raw segments (the capture viewport). Drives the framed
+   *  window's aspect when it differs from the canvas (a shorts render). Absent
+   *  (legacy callers/manifests): canvas-shaped window, exactly as before. */
+  contentSize?: { width: number; height: number };
 }
 
 export interface RenderResult {
@@ -87,7 +92,13 @@ export async function renderVideo(inputs: RenderInputs): Promise<RenderResult> {
     backdropTop: frame.backdropTop,
     backdropBottom: frame.backdropBottom,
     shadow: frame.shadow,
+    ...(inputs.contentSize ? { content: inputs.contentSize } : {}),
   };
+  // Same cross-multiplied aspect test as windowSize: true only when a platform
+  // preset actually decoupled the window aspect from the canvas.
+  const contentDecoupled =
+    !!inputs.contentSize &&
+    inputs.contentSize.width * config.resolution.height !== inputs.contentSize.height * config.resolution.width;
   let maskPng: string | null = null;
   let shadowPng: string | null = null;
   if (frame.enabled) {
@@ -109,6 +120,14 @@ export async function renderVideo(inputs: RenderInputs): Promise<RenderResult> {
     const isCard = inputs.segmentKinds?.[i] === "card";
     const fadeInSec = i > 0 && !isCard && config.theme.fadeInMs > 0 ? config.theme.fadeInMs / 1000 : undefined;
     if (frame.enabled && maskPng && !isCard) {
+      // Framed-aspect guard: with the window decoupled from the canvas
+      // (shorts), a prebaked clip with its own geometry would ship bars
+      // inside the window; probe and reject before compositing. Probing is
+      // skipped entirely for canvas-aspect renders (assert is a no-op there),
+      // so landscape stays argument-identical.
+      if (contentDecoupled) {
+        assertFramedContentAspect(frameOpts, await probeSizePx(rawSegments[i]!), tts[i]?.shotId ?? `segment ${i}`);
+      }
       const rawSec = await probeDurationSec(rawSegments[i]!);
       await ffmpeg(
         frameArgs(rawSegments[i]!, maskPng, shadowPng, segMp4, {

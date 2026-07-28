@@ -2,6 +2,20 @@ import { spawn } from "node:child_process";
 
 const BASE = ["-y", "-hide_banner", "-loglevel", "error"];
 
+/**
+ * The single video-encode policy (specs/shorts-platform-profile-spec.md AC5).
+ * crfFrames feeds the screencast frame-sequence encode, the master generation
+ * of each shot, so it is tighter; crfComposite covers every later re-encode
+ * (normalize, framing composite, cards, extend, caption burn). Historical
+ * inline values preserved exactly.
+ */
+export const X264 = { preset: "veryfast", crfFrames: "18", crfComposite: "20" } as const;
+
+/** The shared libx264 stanza every encode site splices. */
+export function x264Args(crf: string): string[] {
+  return ["-c:v", "libx264", "-preset", X264.preset, "-crf", crf];
+}
+
 export function normalizeArgs(
   input: string,
   output: string,
@@ -9,7 +23,7 @@ export function normalizeArgs(
 ): string[] {
   const fade = o.fadeInSec && o.fadeInSec > 0 ? `,fade=t=in:st=0:d=${o.fadeInSec}` : "";
   const vf = `scale=${o.width}:${o.height}:force_original_aspect_ratio=decrease,pad=${o.width}:${o.height}:(ow-iw)/2:(oh-ih)/2,fps=${o.fps}${fade},format=yuv420p`;
-  return [...BASE, "-i", input, "-vf", vf, "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-an", output];
+  return [...BASE, "-i", input, "-vf", vf, ...x264Args(X264.crfComposite), "-an", output];
 }
 
 export function concatArgs(listFile: string, output: string): string[] {
@@ -61,7 +75,7 @@ export function muxArgs(video: string, audio: string, output: string): string[] 
 export function burnSubsArgs(video: string, subPath: string, output: string, style?: string): string[] {
   // ASS files carry embedded styles; force_style is only for bare SRT.
   const vf = style ? `subtitles=${subPath}:force_style='${style}'` : `subtitles=${subPath}`;
-  return [...BASE, "-i", video, "-vf", vf, "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-c:a", "aac", output];
+  return [...BASE, "-i", video, "-vf", vf, ...x264Args(X264.crfComposite), "-c:a", "aac", output];
 }
 
 /**
@@ -83,7 +97,7 @@ export function framesEncodeArgs(
     ...(o.motionVf ? [o.motionVf] : []),
     "format=yuv420p",
   ];
-  return [...BASE, "-f", "concat", "-safe", "0", "-i", listFile, "-vf", chain.join(","), "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-an", output];
+  return [...BASE, "-f", "concat", "-safe", "0", "-i", listFile, "-vf", chain.join(","), ...x264Args(X264.crfFrames), "-an", output];
 }
 
 export function padAudioArgs(input: string, output: string, durationSec: number): string[] {
@@ -96,7 +110,7 @@ export function padAudioArgs(input: string, output: string, durationSec: number)
  * occupies the full narration window and the voiceover is not truncated.
  */
 export function extendVideoArgs(input: string, output: string, addSec: number): string[] {
-  return [...BASE, "-i", input, "-vf", `tpad=stop_mode=clone:stop_duration=${addSec}`, "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-an", output];
+  return [...BASE, "-i", input, "-vf", `tpad=stop_mode=clone:stop_duration=${addSec}`, ...x264Args(X264.crfComposite), "-an", output];
 }
 
 export function silentMp3Args(durationSec: number, output: string): string[] {
@@ -113,6 +127,38 @@ export function run(bin: string, args: string[]): Promise<void> {
 }
 
 export const ffmpeg = (args: string[]) => run("ffmpeg", args);
+
+/** First video stream's DISPLAY WxH, feeding the framed-aspect guard: coded
+ *  size with any 90/270 display rotation applied (matrix side data or legacy
+ *  rotate tag), matching what ffmpeg's autorotation feeds the filter graph.
+ *  Phone footage is routinely landscape-coded portrait. Unparseable output
+ *  rejects (fail closed) rather than defaulting to a geometry. */
+export async function probeSizePx(file: string): Promise<{ width: number; height: number }> {
+  return new Promise((res, rej) => {
+    const p = spawn("ffprobe", ["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height:stream_tags=rotate:stream_side_data=rotation", "-of", "json", file]);
+    let out = "";
+    p.stdout.on("data", (d) => (out += d));
+    // A missing or non-executable ffprobe emits 'error', never 'close': unlistened
+    // it throws unhandled and leaves this promise pending, so the geometry guard
+    // hangs instead of failing closed.
+    p.on("error", (e) => rej(new Error(`ffprobe size ${file}: ${e.message}`)));
+    p.on("close", (c) => {
+      try {
+        if (c !== 0) throw new Error(`exited ${c}`);
+        const st = JSON.parse(out).streams?.[0];
+        if (!st || typeof st.width !== "number" || typeof st.height !== "number") throw new Error("no video stream geometry");
+        let rot = 0;
+        for (const sd of st.side_data_list ?? []) if (typeof sd.rotation === "number") rot = sd.rotation;
+        const tag = Number.parseInt(st.tags?.rotate ?? "", 10);
+        if (!Number.isNaN(tag)) rot = tag;
+        const swap = Math.abs(rot) % 180 === 90;
+        res(swap ? { width: st.height, height: st.width } : { width: st.width, height: st.height });
+      } catch (e) {
+        rej(new Error(`ffprobe size ${file}: ${(e as Error).message}`));
+      }
+    });
+  });
+}
 
 export async function probeDurationSec(file: string): Promise<number> {
   return new Promise((res, rej) => {

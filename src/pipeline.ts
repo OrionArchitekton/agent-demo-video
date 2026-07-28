@@ -14,6 +14,7 @@ import { renderRemote } from "./remote-render";
 import type { Transport } from "./transport";
 import { buildRenderReport, digest, stableConfigJson, toolVersions, type PreflightRecord } from "./provenance";
 import { resolveTtsMode } from "./tts";
+import { captureViewport } from "./platforms";
 
 export interface RunPipelineOpts {
   /** Offload the render stage to a remote host over the given transport. Absent = local render (default). */
@@ -204,7 +205,9 @@ export async function runPipeline(config: DemoConfig, opts: RunPipelineOpts = {}
 
   // 5-13. Render — locally by default, or offloaded to a render host (same renderVideo
   //       code path runs there). A remote failure rejects loudly (no silent local fallback).
-  const inputs = { rawSegments, tts: ttsResults, config, segmentKinds, clickOffsets };
+  // Raw shot segments are captured at the VIEWPORT geometry; the render frames
+  // them into the canvas, keeping the viewport aspect for the window.
+  const inputs = { rawSegments, tts: ttsResults, config, segmentKinds, clickOffsets, contentSize: captureViewport(config) };
   let result: RenderResult;
   if (opts.render) {
     const bundlePath = opts.render.bundlePath ?? defaultBundlePath();

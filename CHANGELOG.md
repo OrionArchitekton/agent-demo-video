@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+### Added
+
+- `platform` distribution preset. `"shorts"` renders a 9:16 `1080x1920` canvas for
+  Shorts/TikTok/Reels cuts while still capturing web apps at a 16:9 desktop viewport;
+  the framed scene keeps the capture's aspect for the floating window, so nothing is
+  letterboxed inside it. Explicit `resolution` and the new `capture.viewport` each
+  override their preset value; configs that declare no `platform` behave exactly as
+  before. Render manifests carry the capture geometry (`contentSize`) so remote
+  renders match local ones; older manifests without it render unchanged. All video
+  encode call sites now draw CRF/preset from one policy (`X264`), preserving the
+  historical values (frames 18, composite 20).
+- Framed-aspect guard for shorts renders: a framed clip (e.g. a prebaked one) whose
+  probed geometry mismatches the capture viewport is rejected before compositing,
+  naming the shot and the `fullBleed: true` escape hatch, instead of silently
+  shipping bars inside the window. Landscape renders are unaffected.
+
 ### Breaking
 
 - A prebaked `clip:` that does not exist at its resolved path now fails immediately,

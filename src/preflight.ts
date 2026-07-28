@@ -6,6 +6,7 @@ import { resolveUrl } from "./urls.js";
 import { resolveClipPath } from "./clips.js";
 import { redactUrl, redactUrlsInText, scrubControlChars } from "./sanitize.js";
 import { SELECTOR_TIMEOUT_MS } from "./timeouts.js";
+import { captureViewport } from "./platforms.js";
 import type { Action, DemoConfig, Manifest, PreflightFinding, Shot } from "./types";
 
 /** Action kinds that cannot run at all without a selector. */
@@ -221,7 +222,9 @@ export async function resolveSelectorFindings(
       // One shared context would accumulate cookies and storage, so a
       // first-visit banner would be present for the first URL and gone after,
       // making the gate's verdict depend on the ORDER shots are declared in.
-      const context = await browser.newContext({ viewport: config.resolution });
+      // Resolve selectors at the SAME viewport the capture will use (viewport
+      // space, not the output canvas) so responsive layouts match the render.
+      const context = await browser.newContext({ viewport: captureViewport(config) });
       // The captured page carries these, and they add elements: the overlay
       // appends four divs to document.body. Without them a `div` selector can
       // count 1 here and 5 at render.

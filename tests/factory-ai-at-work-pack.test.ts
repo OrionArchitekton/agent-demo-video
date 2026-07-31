@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { closeSync, existsSync, openSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { closeSync, existsSync, openSync, readFileSync, readdirSync, realpathSync, statSync } from "node:fs";
 import { chmod, link, mkdir, mkdtemp, readFile, rename, rmdir, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -34,16 +34,8 @@ const DISCLOSURE = "Produced by AI, directed and reviewed by Dan Mercede";
 const RECEIPT_VALIDATOR = "scripts/validate-factory-ai-at-work-receipt.sh";
 const ATTEMPT_PROMOTER = "scripts/promote-factory-ai-at-work-attempt.sh";
 const SOURCE_ATTESTED_LAUNCHER = "scripts/run-source-attested-render.sh";
+const NODE_BIN = realpathSync("/usr/bin/node");
 const SOURCE_COMMIT = execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim();
-const OTHER_SOURCE_COMMIT = execFileSync(
-  "git",
-  ["rev-parse", "HEAD^"],
-  { encoding: "utf8" },
-).trim();
-const SOURCE_BUILD_ATTESTATION = computeSourceBuildAttestation(
-  resolve("."),
-  SOURCE_COMMIT,
-);
 const VOICE = {
   voiceId: "AwstCxsCY8YE2KYw66By",
   modelId: "eleven_multilingual_v2",
@@ -53,14 +45,14 @@ const VOICE = {
 };
 const CHAPTERS_BYTES = [
   "0:00 What you'll build",
-  "0:01 The 4 steps",
-  "0:02 What you need",
-  "0:03 Step 1: Install it right (2 traps)",
-  "0:04 Step 2: First real task on real files",
-  "0:05 Step 3: Where Cowork actually runs",
-  "0:06 Step 4: Web, phone, and schedules",
-  "0:07 Recap",
-  "0:08 What's next",
+  "0:10 The 4 steps",
+  "0:20 What you need",
+  "0:30 Step 1: Install it right (2 traps)",
+  "0:40 Step 2: First real task on real files",
+  "0:50 Step 3: Where Cowork actually runs",
+  "1:00 Step 4: Web, phone, and schedules",
+  "1:10 Recap",
+  "1:20 What's next",
   "",
 ].join("\n");
 const artifactReportBytes = (
@@ -135,9 +127,9 @@ async function getMediaFixtures(): Promise<{
         if (result.status !== 0) throw new Error(`ffmpeg fixture failed: ${result.stderr}`);
         return path;
       };
-      const landscapePath = render("landscape", "1920x1080");
+      const landscapePath = render("landscape", "1920x1080", 10);
       const landscapeEndCardPath = render("landscape-end-card", "1920x1080", 15);
-      const landscapeFinalPath = render("landscape-final", "1920x1080", 24);
+      const landscapeFinalPath = render("landscape-final", "1920x1080", 105);
       const portraitPath = render("portrait", "1080x1920");
       return {
         landscape: await readFile(landscapePath),
@@ -234,7 +226,10 @@ function completeProductionReceipt(
 
 async function writeProductionArtifacts(root: string): Promise<ArtifactHashes> {
   const media = await getMediaFixtures();
-  const sourceBuildAttestation = await SOURCE_BUILD_ATTESTATION;
+  const sourceBuildAttestation = await computeSourceBuildAttestation(
+    resolve("."),
+    SOURCE_COMMIT,
+  );
   const hashes: ArtifactHashes = {};
   const definitions = [
     {
@@ -307,7 +302,9 @@ async function writeProductionArtifacts(root: string): Promise<ArtifactHashes> {
         ? config.brand!.titleSec
         : shotId === "__card-end"
           ? config.brand!.endSec
-          : 1;
+          : definition.name === "master"
+            ? 10
+            : 1;
       const entry = { shotId, startSec, durationSec };
       startSec += durationSec;
       return entry;
@@ -438,7 +435,7 @@ describe("Factory AI at Work Gate 1 production pack", () => {
     }
   });
 
-  it("cold-opens the master on proof and closes on the 15 second disclosure card", () => {
+  it("cold-opens the master on proof and closes on the 15-second disclosure card", () => {
     const { config, manifest } = loadPack(MASTER);
     expect(config.platform).toBe("landscape");
     expect(config.resolution).toEqual({ width: 1920, height: 1080 });
@@ -501,7 +498,15 @@ describe("Factory AI at Work Gate 1 production pack", () => {
     expect(completed).not.toContain("PENDING");
     const run = (path: string, env: NodeJS.ProcessEnv = process.env) => spawnSync(
       "/usr/bin/bash",
-      ["--noprofile", "--norc", "-p", RECEIPT_VALIDATOR, path],
+      [
+        "--noprofile",
+        "--norc",
+        "-p",
+        RECEIPT_VALIDATOR,
+        "--node-bin",
+        NODE_BIN,
+        path,
+      ],
       { encoding: "utf8", env },
     );
 
@@ -509,6 +514,84 @@ describe("Factory AI at Work Gate 1 production pack", () => {
     await writeFile(validPath, completed);
     const valid = run(validPath);
     expect(valid.status, valid.stderr).toBe(0);
+    const minimalEnvironmentValid = run(validPath, {
+      PATH: "/usr/bin:/bin",
+      LC_ALL: "C",
+      NODE_OPTIONS: "--require=/definitely/not/a/preload.cjs",
+      NODE_PATH: "/definitely/not/a/node/path",
+      TSX_TSCONFIG_PATH: "/definitely/not/a/tsconfig.json",
+      ELEVENLABS_API_KEY: "must-not-be-needed-for-receipt-validation",
+    });
+    expect(minimalEnvironmentValid.status, minimalEnvironmentValid.stderr).toBe(0);
+    const esbuildOverrideMarker = join(dir, "caller-esbuild-override-ran");
+    const esbuildOverride = join(dir, "caller-esbuild-override");
+    await writeFile(
+      esbuildOverride,
+      `#!/usr/bin/env bash\nprintf 'executed\\n' > "${esbuildOverrideMarker}"\nexit 97\n`,
+    );
+    await chmod(esbuildOverride, 0o755);
+    const esbuildScrubbed = run(validPath, {
+      ...process.env,
+      ESBUILD_BINARY_PATH: esbuildOverride,
+    });
+    expect(esbuildScrubbed.status, esbuildScrubbed.stderr).toBe(0);
+    expect(existsSync(esbuildOverrideMarker)).toBe(false);
+
+    const relativeNode = spawnSync(
+      "/usr/bin/bash",
+      [
+        "--noprofile",
+        "--norc",
+        "-p",
+        RECEIPT_VALIDATOR,
+        "--node-bin",
+        "node",
+        validPath,
+      ],
+      { encoding: "utf8" },
+    );
+    expect(relativeNode.status).not.toBe(0);
+    expect(relativeNode.stderr).toContain("Node binary path must be absolute");
+    const nonNodeExecutable = spawnSync(
+      "/usr/bin/bash",
+      [
+        "--noprofile",
+        "--norc",
+        "-p",
+        RECEIPT_VALIDATOR,
+        "--node-bin",
+        "/usr/bin/true",
+        validPath,
+      ],
+      { encoding: "utf8" },
+    );
+    expect(nonNodeExecutable.status).not.toBe(0);
+    expect(nonNodeExecutable.stderr).toContain(
+      "selected executable did not prove it is Node",
+    );
+    const sentinelSpoof = join(dir, "caller-owned-node-spoof");
+    await writeFile(
+      sentinelSpoof,
+      "#!/usr/bin/env bash\nprintf '%s' agent-demo-video-node-ok\n",
+    );
+    await chmod(sentinelSpoof, 0o700);
+    const spoofedNode = spawnSync(
+      "/usr/bin/bash",
+      [
+        "--noprofile",
+        "--norc",
+        "-p",
+        RECEIPT_VALIDATOR,
+        "--node-bin",
+        sentinelSpoof,
+        validPath,
+      ],
+      { encoding: "utf8" },
+    );
+    expect(spoofedNode.status).not.toBe(0);
+    expect(spoofedNode.stderr).toContain(
+      "Node binary must be root-owned",
+    );
 
     const masterSegmentList = join(dir, "master", "seg", "list.txt");
     const originalMasterSegmentList = await readFile(masterSegmentList);
@@ -637,6 +720,8 @@ describe("Factory AI at Work Gate 1 production pack", () => {
         "--norc",
         "-p",
         RECEIPT_VALIDATOR,
+        "--node-bin",
+        NODE_BIN,
         poisonedCommitPath,
       ],
       {
@@ -654,19 +739,26 @@ describe("Factory AI at Work Gate 1 production pack", () => {
       "Source commit SHA does not resolve to a commit in the source repository",
     );
 
-    const unrelatedCommitPath = join(dir, "unrelated-commit.md");
-    await writeFile(
-      unrelatedCommitPath,
-      completed.replace(
-        `- Source commit SHA: ${SOURCE_COMMIT}`,
-        `- Source commit SHA: ${OTHER_SOURCE_COMMIT}`,
-      ),
+    const parentCommit = spawnSync(
+      "git",
+      ["rev-parse", "--verify", "HEAD^"],
+      { encoding: "utf8" },
     );
-    const unrelatedCommit = run(unrelatedCommitPath);
-    expect(unrelatedCommit.status).not.toBe(0);
-    expect(unrelatedCommit.stderr).toContain(
-      "source-build attestation does not match the production receipt commit",
-    );
+    if (parentCommit.status === 0) {
+      const unrelatedCommitPath = join(dir, "unrelated-commit.md");
+      await writeFile(
+        unrelatedCommitPath,
+        completed.replace(
+          `- Source commit SHA: ${SOURCE_COMMIT}`,
+          `- Source commit SHA: ${parentCommit.stdout.trim()}`,
+        ),
+      );
+      const unrelatedCommit = run(unrelatedCommitPath);
+      expect(unrelatedCommit.status).not.toBe(0);
+      expect(unrelatedCommit.stderr).toContain(
+        "source-build attestation does not match the production receipt commit",
+      );
+    }
 
     const masterReportPath = join(dir, "master", "render-report.json");
     const forgedSourceReport = JSON.parse(
@@ -703,9 +795,9 @@ describe("Factory AI at Work Gate 1 production pack", () => {
         }>;
       };
     };
-    redistributedTimelineReport.timeline.entries[0]!.durationSec = 1.5;
-    redistributedTimelineReport.timeline.entries[1]!.startSec = 1.5;
-    redistributedTimelineReport.timeline.entries[1]!.durationSec = 0.5;
+    redistributedTimelineReport.timeline.entries[0]!.durationSec = 10.2;
+    redistributedTimelineReport.timeline.entries[1]!.startSec = 10.2;
+    redistributedTimelineReport.timeline.entries[1]!.durationSec = 9.8;
     const redistributedTimelineBytes = JSON.stringify(
       redistributedTimelineReport,
     );
@@ -724,6 +816,48 @@ describe("Factory AI at Work Gate 1 production pack", () => {
       "measured segment duration does not match its timeline",
     );
     await writeFile(masterReportPath, artifactHashes.master!.reportBytes);
+
+    const shortChapterReport = JSON.parse(
+      artifactHashes.master!.reportBytes,
+    ) as {
+      timeline: {
+        entries: Array<{
+          shotId: string;
+          startSec: number;
+          durationSec: number;
+        }>;
+      };
+    };
+    shortChapterReport.timeline.entries[0]!.durationSec = 9.95;
+    shortChapterReport.timeline.entries[1]!.startSec = 9.95;
+    shortChapterReport.timeline.entries[1]!.durationSec = 10.05;
+    const shortChapterReportBytes = JSON.stringify(shortChapterReport);
+    const shortChapterBytes = CHAPTERS_BYTES.replace(
+      "0:10 The 4 steps",
+      "0:09 The 4 steps",
+    );
+    await writeFile(masterReportPath, shortChapterReportBytes);
+    await writeFile(join(dir, "YOUTUBE_CHAPTERS.txt"), shortChapterBytes);
+    const shortChapterPath = join(dir, "short-chapter.md");
+    await writeFile(
+      shortChapterPath,
+      completed
+        .replace(
+          artifactHashes.master!.report,
+          sha256Text(shortChapterReportBytes),
+        )
+        .replace(
+          sha256Text(CHAPTERS_BYTES),
+          sha256Text(shortChapterBytes),
+        ),
+    );
+    const shortChapter = run(shortChapterPath);
+    expect(shortChapter.status).not.toBe(0);
+    expect(shortChapter.stderr).toContain(
+      "master chapter 01-cold-open is shorter than 10 seconds",
+    );
+    await writeFile(masterReportPath, artifactHashes.master!.reportBytes);
+    await writeFile(join(dir, "YOUTUBE_CHAPTERS.txt"), CHAPTERS_BYTES);
 
     const failedPath = join(dir, "failed.md");
     await writeFile(failedPath, completed.replace("- Disposition: PASS", "- Disposition: FAIL"));
@@ -848,11 +982,12 @@ describe("Factory AI at Work Gate 1 production pack", () => {
     const wrongGeometryPath = join(dir, "wrong-geometry.md");
     const masterFinalHash = artifactHashes.master!.final;
     const masterReportHash = artifactHashes.master!.report;
+    const masterDuration = artifactHashes.master!.durationSec.toFixed(1);
     await writeFile(
       wrongGeometryPath,
       completed.replace(
-        `| master | ${masterFinalHash} | ${masterReportHash} | 24.0s | 1920x1080, SAR 1:1 |`,
-        `| master | ${masterFinalHash} | ${masterReportHash} | 24.0s | 1080x1920, SAR 1:1 |`,
+        `| master | ${masterFinalHash} | ${masterReportHash} | ${masterDuration}s | 1920x1080, SAR 1:1 |`,
+        `| master | ${masterFinalHash} | ${masterReportHash} | ${masterDuration}s | 1080x1920, SAR 1:1 |`,
       ),
     );
     expect(run(wrongGeometryPath).status).not.toBe(0);
@@ -869,6 +1004,47 @@ describe("Factory AI at Work Gate 1 production pack", () => {
     expect(finalRenamePhase).toBeGreaterThan(0);
     expect(finalRenamePhase).toBeLessThan(finalRename);
     expect(promoterSource).toContain("trap - EXIT\n  trap '' HUP INT TERM");
+    const missingNodeSelection = spawnSync(
+      "/usr/bin/bash",
+      ["--noprofile", "--norc", "-p", ATTEMPT_PROMOTER],
+      { encoding: "utf8" },
+    );
+    expect(missingNodeSelection.status).not.toBe(0);
+    expect(missingNodeSelection.stderr).toContain("--node-bin");
+    const relativeNodeSelection = spawnSync(
+      "/usr/bin/bash",
+      [
+        "--noprofile",
+        "--norc",
+        "-p",
+        ATTEMPT_PROMOTER,
+        "--node-bin",
+        "node",
+        "--verify",
+        "/definitely/not/a/reviewed/root",
+      ],
+      { encoding: "utf8" },
+    );
+    expect(relativeNodeSelection.status).not.toBe(0);
+    expect(relativeNodeSelection.stderr).toContain("Node binary path must be absolute");
+    const nonNodeSelection = spawnSync(
+      "/usr/bin/bash",
+      [
+        "--noprofile",
+        "--norc",
+        "-p",
+        ATTEMPT_PROMOTER,
+        "--node-bin",
+        "/usr/bin/true",
+        "--verify",
+        "/definitely/not/a/reviewed/root",
+      ],
+      { encoding: "utf8" },
+    );
+    expect(nonNodeSelection.status).not.toBe(0);
+    expect(nonNodeSelection.stderr).toContain(
+      "selected executable did not prove it is Node",
+    );
 
     const dir = await mkdtemp(join(tmpdir(), "factory-attempt-promoter-"));
     const template = readFileSync(`${ROOT}/PRODUCTION_RECEIPT_TEMPLATE.md`, "utf8");
@@ -887,7 +1063,15 @@ describe("Factory AI at Work Gate 1 production pack", () => {
     };
     const run = (...args: string[]) => spawnSync(
       "/usr/bin/bash",
-      ["--noprofile", "--norc", "-p", ATTEMPT_PROMOTER, ...args],
+      [
+        "--noprofile",
+        "--norc",
+        "-p",
+        ATTEMPT_PROMOTER,
+        "--node-bin",
+        NODE_BIN,
+        ...args,
+      ],
       { encoding: "utf8" },
     );
 
@@ -908,6 +1092,26 @@ describe("Factory AI at Work Gate 1 production pack", () => {
     await writeFile(unexpectedFile, "still writable");
     expect(await readFile(unexpectedFile, "utf8")).toBe("still writable");
 
+    const directoryAudio = await makeAttempt("directory-audio");
+    const expectedAudioFile = join(
+      directoryAudio.attempt,
+      "master",
+      "audio",
+      "pad_0.mp3",
+    );
+    await rename(expectedAudioFile, join(dir, "displaced-pad_0.mp3"));
+    await mkdir(expectedAudioFile);
+    const directoryAudioRun = run(
+      directoryAudio.attempt,
+      directoryAudio.reviewed,
+    );
+    expect(directoryAudioRun.status).not.toBe(0);
+    expect(directoryAudioRun.stderr).toContain("must be a regular file");
+    expect(existsSync(directoryAudio.attempt)).toBe(true);
+    expect(
+      existsSync(join(directoryAudio.attempt, "PRODUCTION_RECEIPT.sha256")),
+    ).toBe(false);
+
     const startupBypass = await makeAttempt("startup-bypass");
     await writeFile(
       join(startupBypass.attempt, "PRODUCTION_RECEIPT.md"),
@@ -920,7 +1124,13 @@ describe("Factory AI at Work Gate 1 production pack", () => {
     );
     const startupBypassRun = spawnSync(
       "/usr/bin/bash",
-      [resolve(ATTEMPT_PROMOTER), startupBypass.attempt, startupBypass.reviewed],
+      [
+        resolve(ATTEMPT_PROMOTER),
+        "--node-bin",
+        NODE_BIN,
+        startupBypass.attempt,
+        startupBypass.reviewed,
+      ],
       {
         encoding: "utf8",
         env: {
@@ -942,6 +1152,8 @@ describe("Factory AI at Work Gate 1 production pack", () => {
         "--norc",
         "-p",
         ATTEMPT_PROMOTER,
+        "--node-bin",
+        NODE_BIN,
         interrupted.attempt,
         interrupted.reviewed,
       ],
@@ -998,6 +1210,8 @@ describe("Factory AI at Work Gate 1 production pack", () => {
             "--norc",
             "-p",
             ATTEMPT_PROMOTER,
+            "--node-bin",
+            NODE_BIN,
             fullStdout.attempt,
             fullStdout.reviewed,
           ],
@@ -1055,6 +1269,8 @@ describe("Factory AI at Work Gate 1 production pack", () => {
         "--norc",
         "-p",
         ATTEMPT_PROMOTER,
+        "--node-bin",
+        NODE_BIN,
         "--verify",
         changed.reviewed,
       ],
@@ -1096,6 +1312,8 @@ describe("Factory AI at Work Gate 1 production pack", () => {
         "--norc",
         "-p",
         resolve(ATTEMPT_PROMOTER),
+        "--node-bin",
+        NODE_BIN,
         optionLike.attempt,
         "--version",
       ],
@@ -1270,7 +1488,6 @@ describe("Factory AI at Work Gate 1 production pack", () => {
     const toolchainRoot = join(fixture, "operator-toolchain");
     const invocationMarker = join(fixture, "snapshot-cli-invocation");
     const pnpmInvocationMarker = join(fixture, "snapshot-pnpm-invocation");
-    const fakeNode = join(toolchainRoot, "node");
     const fakePnpm = join(toolchainRoot, "pnpm.cjs");
     await mkdir(callerRoot);
     await mkdir(toolchainRoot);
@@ -1279,36 +1496,80 @@ describe("Factory AI at Work Gate 1 production pack", () => {
       '{"compilerOptions":{"paths":{"zod":["./caller-selected-module.ts"]}}}\n',
     );
     await writeFile(join(callerRoot, "caller-selected-module.ts"), "throw new Error('caller cwd');\n");
-    await writeFile(fakePnpm, "// operator-selected package-manager fixture\n");
+    const fakeTsx = [
+      'import { writeFileSync } from "node:fs";',
+      "const lines = [",
+      "  `cwd=${process.cwd()}`,",
+      "  `node_env=${process.env.NODE_ENV ?? \"unset\"}`,",
+      "  `tts_secret=${process.env.ELEVENLABS_API_KEY ?? \"unset\"}`,",
+      "  `esbuild_binary_path=${process.env.ESBUILD_BINARY_PATH ?? \"unset\"}`,",
+      "  ...process.argv.slice(1).map((arg) => `arg=${arg}`),",
+      "];",
+      `writeFileSync(${JSON.stringify(invocationMarker)}, \`\${lines.join("\\n")}\\n\`);`,
+      "",
+    ].join("\n");
     await writeFile(
-      fakeNode,
+      fakePnpm,
       [
-        "#!/usr/bin/bash",
-        "set -euo pipefail",
-        `if [ "\${1:-}" = "${fakePnpm}" ]; then`,
-        `  {`,
-        `    printf 'node_env=%s\\n' "\${NODE_ENV-unset}"`,
-        `    printf 'tts_secret=%s\\n' "\${ELEVENLABS_API_KEY-unset}"`,
-        `    printf 'home=%s\\n' "\${HOME-unset}"`,
-        `    printf 'xdg_config_home=%s\\n' "\${XDG_CONFIG_HOME-unset}"`,
-        `    printf 'npm_userconfig=%s\\n' "\${NPM_CONFIG_USERCONFIG-unset}"`,
-        `    printf 'npm_globalconfig=%s\\n' "\${NPM_CONFIG_GLOBALCONFIG-unset}"`,
-        `    printf 'arg=%s\\n' "$@"`,
-        `  } > "${pnpmInvocationMarker}"`,
-        "  mkdir -p node_modules/tsx/dist",
-        "  printf '%s\\n' '// pinned tsx fixture' > node_modules/tsx/dist/cli.mjs",
-        "  exit 0",
-        "fi",
-        `{`,
-        `  printf 'cwd=%s\\n' "$PWD"`,
-        `  printf 'node_env=%s\\n' "\${NODE_ENV-unset}"`,
-        `  printf 'tts_secret=%s\\n' "\${ELEVENLABS_API_KEY-unset}"`,
-        `  printf 'arg=%s\\n' "$@"`,
-        `} > "${invocationMarker}"`,
+        'const { mkdirSync, writeFileSync } = require("node:fs");',
+        "const lines = [",
+        "  `node_env=${process.env.NODE_ENV ?? \"unset\"}`,",
+        "  `tts_secret=${process.env.ELEVENLABS_API_KEY ?? \"unset\"}`,",
+        "  `home=${process.env.HOME ?? \"unset\"}`,",
+        "  `xdg_config_home=${process.env.XDG_CONFIG_HOME ?? \"unset\"}`,",
+        "  `npm_userconfig=${process.env.NPM_CONFIG_USERCONFIG ?? \"unset\"}`,",
+        "  `npm_globalconfig=${process.env.NPM_CONFIG_GLOBALCONFIG ?? \"unset\"}`,",
+        "  ...process.argv.slice(1).map((arg) => `arg=${arg}`),",
+        "];",
+        `writeFileSync(${JSON.stringify(pnpmInvocationMarker)}, \`\${lines.join("\\n")}\\n\`);`,
+        'mkdirSync("node_modules/tsx/dist", { recursive: true });',
+        `writeFileSync("node_modules/tsx/dist/cli.mjs", ${JSON.stringify(fakeTsx)});`,
         "",
       ].join("\n"),
     );
-    await chmod(fakeNode, 0o755);
+    const callerOwnedNode = join(toolchainRoot, "caller-owned-node");
+    await writeFile(
+      callerOwnedNode,
+      [
+        "#!/usr/bin/env bash",
+        "set -euo pipefail",
+        `if [ "\${1:-}" = "${fakePnpm}" ]; then`,
+        '  mkdir -p node_modules/tsx/dist',
+        "  printf '%s\\n' '// attacker-selected tsx' > node_modules/tsx/dist/cli.mjs",
+        "fi",
+        "",
+      ].join("\n"),
+    );
+    await chmod(callerOwnedNode, 0o700);
+    const callerOwnedNodeRun = spawnSync(
+      "/usr/bin/bash",
+      [
+        "--noprofile",
+        "--norc",
+        "-p",
+        "-s",
+        "--",
+        fixture,
+        commit,
+        "--node-bin",
+        callerOwnedNode,
+        "--pnpm-cli",
+        fakePnpm,
+        "--",
+        join(callerRoot, "config.json"),
+      ],
+      {
+        cwd: callerRoot,
+        encoding: "utf8",
+        input: launcherBytes,
+        env: process.env,
+      },
+    );
+    expect(callerOwnedNodeRun.status).not.toBe(0);
+    expect(callerOwnedNodeRun.stderr).toContain(
+      "Node binary must be root-owned",
+    );
+
     const fullLaunch = spawnSync(
       "/usr/bin/bash",
       [
@@ -1320,7 +1581,7 @@ describe("Factory AI at Work Gate 1 production pack", () => {
         fixture,
         commit,
         "--node-bin",
-        fakeNode,
+        NODE_BIN,
         "--pnpm-cli",
         fakePnpm,
         "--",
@@ -1337,6 +1598,7 @@ describe("Factory AI at Work Gate 1 production pack", () => {
           NODE_ENV: "production",
           ELEVENLABS_API_KEY: "must-reach-render-only",
           TSX_TSCONFIG_PATH: join(callerRoot, "tsconfig.json"),
+          ESBUILD_BINARY_PATH: "/usr/bin/false",
         },
       },
     );
@@ -1368,6 +1630,7 @@ describe("Factory AI at Work Gate 1 production pack", () => {
     );
     expect(invocation).toContain("node_env=unset");
     expect(invocation).toContain("tts_secret=must-reach-render-only");
+    expect(invocation).toContain("esbuild_binary_path=unset");
     expect(existsSync(startupMarker)).toBe(false);
     expect(existsSync(toolMarker)).toBe(false);
 
@@ -1379,17 +1642,17 @@ describe("Factory AI at Work Gate 1 production pack", () => {
     expect(worktreeList.match(/^worktree /gm)).toHaveLength(1);
 
     const heldGitDirectory = join(fixture, ".git-cleanup-failure-fixture");
+    const cleanupFailureTsx = [
+      'import { renameSync } from "node:fs";',
+      `renameSync(${JSON.stringify(join(fixture, ".git"))}, ${JSON.stringify(heldGitDirectory)});`,
+      "",
+    ].join("\n");
     await writeFile(
-      fakeNode,
+      fakePnpm,
       [
-        "#!/usr/bin/bash",
-        "set -euo pipefail",
-        `if [ "\${1:-}" = "${fakePnpm}" ]; then`,
-        "  mkdir -p node_modules/tsx/dist",
-        "  printf '%s\\n' '// pinned tsx fixture' > node_modules/tsx/dist/cli.mjs",
-        "  exit 0",
-        "fi",
-        `mv -- "${join(fixture, ".git")}" "${heldGitDirectory}"`,
+        'const { mkdirSync, writeFileSync } = require("node:fs");',
+        'mkdirSync("node_modules/tsx/dist", { recursive: true });',
+        `writeFileSync("node_modules/tsx/dist/cli.mjs", ${JSON.stringify(cleanupFailureTsx)});`,
         "",
       ].join("\n"),
     );
@@ -1408,7 +1671,7 @@ describe("Factory AI at Work Gate 1 production pack", () => {
           fixture,
           commit,
           "--node-bin",
-          fakeNode,
+          NODE_BIN,
           "--pnpm-cli",
           fakePnpm,
           "--",
@@ -1460,6 +1723,7 @@ describe("Factory AI at Work Gate 1 production pack", () => {
     const cutCScript = readFileSync(`${ROOT}/cuts/cut-c/DEMO_SCRIPT.md`, "utf8");
     const runbook = readFileSync("docs/runbooks/factory-ai-at-work-gate-01-production.md", "utf8");
     const sourceLauncher = readFileSync(SOURCE_ATTESTED_LAUNCHER, "utf8");
+    const attemptPromoter = readFileSync(ATTEMPT_PROMOTER, "utf8");
     const receiptValidator = readFileSync(RECEIPT_VALIDATOR, "utf8");
     expect(publishing).toContain(DISCLOSURE);
     expect(publishing).not.toContain("unmodified captures");
@@ -1501,6 +1765,7 @@ describe("Factory AI at Work Gate 1 production pack", () => {
     expect(runbook).toContain("scripts/run-source-attested-render.sh");
     expect(runbook).toContain("factory_attested_render");
     expect(runbook).toMatch(/private detached no-checkout\s+worktree/);
+    expect(runbook).toContain("root-owned Node binary");
     expect(runbook).toContain("/usr/bin/env -i PATH=/usr/bin:/bin LC_ALL=C");
     expect(runbook).toContain("/usr/bin/git --no-replace-objects");
     for (const authorityScript of [sourceLauncher, receiptValidator]) {
@@ -1508,12 +1773,18 @@ describe("Factory AI at Work Gate 1 production pack", () => {
       expect(authorityScript).toContain("GIT_CONFIG_GLOBAL=/dev/null");
       expect(authorityScript).toContain("core.fsmonitor=false");
     }
+    expect(receiptValidator).not.toContain("/usr/bin/node");
+    expect(attemptPromoter).toContain("ESBUILD_BINARY_PATH");
+    expect(receiptValidator).toContain("ESBUILD_BINARY_PATH");
+    expect(sourceLauncher).toContain("ESBUILD_BINARY_PATH");
     expect(runbook).toContain("/usr/bin/doppler run");
     expect(runbook).toContain("/usr/bin/bash --noprofile --norc -p -s --");
     expect(runbook).toContain(
       "LD_PRELOAD= LD_AUDIT= LD_LIBRARY_PATH= \\\n  /usr/bin/env -i PATH=/usr/bin:/bin LC_ALL=C",
     );
-    expect(runbook).toContain("--node-bin \"$FACTORY_NODE_BIN\"");
+    expect(
+      runbook.match(/--node-bin "\$FACTORY_NODE_BIN"/g),
+    ).toHaveLength(3);
     expect(runbook).toContain("--pnpm-cli \"$FACTORY_PNPM_CLI\"");
     expect(runbook).not.toContain("bash -s --");
     expect(runbook).not.toContain("pnpm demo \"$FACTORY_ATTEMPT_ABS/evidence/source");
@@ -1523,14 +1794,25 @@ describe("Factory AI at Work Gate 1 production pack", () => {
     expect(runbook).toContain("closed-world promoter");
     expect(runbook).toContain("mkdir \"$FACTORY_ATTEMPT_ROOT\"");
     expect(runbook).toContain("PRODUCTION_RECEIPT_TEMPLATE.md");
-    expect(runbook).toContain("node --input-type=module - \"$FACTORY_ATTEMPT_ROOT\"");
-    expect(runbook).not.toContain("node --input-type=module \"$FACTORY_ATTEMPT_ROOT\"");
+    expect(runbook).toContain(
+      "\"$FACTORY_NODE_BIN\" --input-type=module - \"$FACTORY_ATTEMPT_ROOT\"",
+    );
+    expect(runbook).not.toMatch(/(?:^|\n)node --input-type=module/);
     expect(runbook).toContain("PRODUCTION_RECEIPT.sha256");
     expect(runbook).toContain("scripts/promote-factory-ai-at-work-attempt.sh");
+    expect(runbook).toContain("scripts/cleanup-stale-render-input-root.sh");
+    expect(runbook).toContain(
+      "LD_PRELOAD= LD_AUDIT= LD_LIBRARY_PATH= \\\n" +
+        "  /usr/bin/env -i PATH=/usr/bin:/bin LC_ALL=C \\\n" +
+        "  /usr/bin/bash --noprofile --norc -p \\\n" +
+        "  scripts/cleanup-stale-render-input-root.sh",
+    );
+    expect(runbook).toContain("PRIVATE_INPUT_CLEANUP_FAILED");
     expect(runbook).toContain("scripts/validate-factory-ai-at-work-inputs.ts");
     expect(runbook).toContain(".agent-demo-video-output-claim");
     expect(runbook).toContain("malicious process with the same Unix identity");
     expect(runbook).toContain("YOUTUBE_CHAPTERS.txt");
+    expect(runbook).toContain("shorter than 10 seconds");
     expect(runbook).toContain("does not");
     expect(runbook).toContain("maintain the three-video counter");
     expect(runbook).not.toContain("PUBLICATION_RECEIPT_TEMPLATE.md");

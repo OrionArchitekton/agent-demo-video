@@ -29,7 +29,7 @@ esac
 # boundary. The launcher itself uses only Bash and system tools.
 while IFS= read -r factory_environment_name; do
   case "$factory_environment_name" in
-    BASH_ENV|ENV|CDPATH|LD_PRELOAD|LD_LIBRARY_PATH|LD_AUDIT|GIT_*|TAR_OPTIONS|TAPE|RSH|NODE_*|TSX_*|NPM_CONFIG_*|npm_config_*|PNPM_*|COREPACK_*|FAKE_TTS)
+    BASH_ENV|ENV|CDPATH|LD_PRELOAD|LD_LIBRARY_PATH|LD_AUDIT|GIT_*|TAR_OPTIONS|TAPE|RSH|NODE_*|TSX_*|ESBUILD_BINARY_PATH|NPM_CONFIG_*|npm_config_*|PNPM_*|COREPACK_*|FAKE_TTS)
       unset "$factory_environment_name"
       ;;
   esac
@@ -132,12 +132,32 @@ factory_require_tool_file() {
     factory_fail "$factory_tool_label must be executable"
   fi
   factory_tool_owner="$(/usr/bin/stat -c '%u' -- "$factory_tool_path")"
-  if [ "$factory_tool_owner" -ne 0 ] && [ "$factory_tool_owner" -ne "$EUID" ]; then
+  if [ "$factory_tool_label" = "Node binary" ]; then
+    if [ "$factory_tool_owner" -ne 0 ]; then
+      factory_fail "Node binary must be root-owned"
+    fi
+  elif [ "$factory_tool_owner" -ne 0 ] && [ "$factory_tool_owner" -ne "$EUID" ]; then
     factory_fail "$factory_tool_label must be owned by root or the rendering user"
   fi
   factory_tool_permissions="$(/usr/bin/stat -c '%a' -- "$factory_tool_path")"
   if (( (8#$factory_tool_permissions & 0022) != 0 )); then
     factory_fail "$factory_tool_label must not be group- or world-writable"
+  fi
+  if [ "$factory_tool_label" = "Node binary" ]; then
+    factory_tool_parent="$(/usr/bin/dirname -- "$factory_tool_path")"
+    while true; do
+      factory_tool_parent_owner="$(/usr/bin/stat -c '%u' -- "$factory_tool_parent")"
+      factory_tool_parent_permissions="$(/usr/bin/stat -c '%a' -- "$factory_tool_parent")"
+      if
+        [ "$factory_tool_parent_owner" -ne 0 ] ||
+        (( (8#$factory_tool_parent_permissions & 0022) != 0 ))
+      then
+        factory_fail \
+          "Node binary ancestors must be root-owned without group/world write: $factory_tool_parent"
+      fi
+      [ "$factory_tool_parent" = "/" ] && break
+      factory_tool_parent="$(/usr/bin/dirname -- "$factory_tool_parent")"
+    done
   fi
   printf '%s\n' "$factory_tool_path"
 }

@@ -19,7 +19,7 @@ hash -r
 # Node, package-manager, or tool-search overrides.
 while IFS= read -r factory_environment_name; do
   case "$factory_environment_name" in
-    BASH_ENV|ENV|CDPATH|LD_PRELOAD|LD_LIBRARY_PATH|LD_AUDIT|RIPGREP_CONFIG_PATH|GIT_*|NODE_*|TSX_*|NPM_CONFIG_*|npm_config_*|PNPM_*|COREPACK_*)
+    BASH_ENV|ENV|CDPATH|LD_PRELOAD|LD_LIBRARY_PATH|LD_AUDIT|RIPGREP_CONFIG_PATH|GIT_*|NODE_*|TSX_*|ESBUILD_BINARY_PATH|NPM_CONFIG_*|npm_config_*|PNPM_*|COREPACK_*)
       unset "$factory_environment_name"
       ;;
   esac
@@ -30,12 +30,96 @@ GIT_CONFIG_GLOBAL=/dev/null
 GIT_ATTR_NOSYSTEM=1
 export GIT_CONFIG_NOSYSTEM GIT_CONFIG_GLOBAL GIT_ATTR_NOSYSTEM
 
-if [ "$#" -ne 1 ]; then
-  echo "usage: $0 <PRODUCTION_RECEIPT.md>" >&2
+factory_require_node_binary() {
+  local node_input="$1"
+  local node_path
+  case "$node_input" in
+    /*) ;;
+    *)
+      echo "Node binary path must be absolute" >&2
+      return 1
+      ;;
+  esac
+  if ! node_path="$(/usr/bin/realpath -e -- "$node_input")"; then
+    echo "Node binary path does not resolve: $node_input" >&2
+    return 1
+  fi
+  if [ "$node_path" != "$node_input" ]; then
+    echo "Node binary path must already be canonical: $node_input" >&2
+    return 1
+  fi
+  if [ -L "$node_path" ] || [ ! -f "$node_path" ] || [ ! -x "$node_path" ]; then
+    echo "Node binary must be a regular executable file: $node_path" >&2
+    return 1
+  fi
+  local node_owner
+  node_owner="$(/usr/bin/stat -c '%u' -- "$node_path")"
+  if [ "$node_owner" -ne 0 ]; then
+    echo "Node binary must be root-owned: $node_path" >&2
+    return 1
+  fi
+  local node_permissions
+  node_permissions="$(/usr/bin/stat -c '%a' -- "$node_path")"
+  if (( (8#$node_permissions & 0022) != 0 )); then
+    echo "Node binary must not be group- or world-writable: $node_path" >&2
+    return 1
+  fi
+  local node_parent
+  node_parent="$(/usr/bin/dirname -- "$node_path")"
+  while true; do
+    local node_parent_owner
+    local node_parent_permissions
+    node_parent_owner="$(/usr/bin/stat -c '%u' -- "$node_parent")"
+    node_parent_permissions="$(/usr/bin/stat -c '%a' -- "$node_parent")"
+    if
+      [ "$node_parent_owner" -ne 0 ] ||
+      (( (8#$node_parent_permissions & 0022) != 0 ))
+    then
+      echo "Node binary ancestors must be root-owned without group/world write: $node_parent" >&2
+      return 1
+    fi
+    [ "$node_parent" = "/" ] && break
+    node_parent="$(/usr/bin/dirname -- "$node_parent")"
+  done
+  local node_identity
+  local node_sha256
+  node_identity="$(/usr/bin/stat -c '%d:%i' -- "$node_path")"
+  node_sha256="$(/usr/bin/sha256sum -- "$node_path")"
+  node_sha256="${node_sha256%% *}"
+  local node_probe
+  if ! node_probe="$(
+    "$node_path" --input-type=module - "$node_path" 2>/dev/null <<'NODE'
+import { realpathSync } from "node:fs";
+const expectedPath = process.argv[2];
+if (
+  process.release?.name !== "node" ||
+  realpathSync(process.execPath) !== expectedPath
+) {
+  process.exit(1);
+}
+process.stdout.write("agent-demo-video-node-ok");
+NODE
+  )" || [ "$node_probe" != "agent-demo-video-node-ok" ]; then
+    echo "selected executable did not prove it is Node: $node_path" >&2
+    return 1
+  fi
+  if
+    [ "$(/usr/bin/stat -c '%d:%i' -- "$node_path")" != "$node_identity" ] ||
+    [ "$(/usr/bin/sha256sum -- "$node_path" | { read -r hash _; printf '%s' "$hash"; })" != "$node_sha256" ]
+  then
+    echo "root-owned Node binary changed during admission: $node_path" >&2
+    return 1
+  fi
+  printf '%s\n' "$node_path"
+}
+
+if [ "$#" -ne 3 ] || [ "${1:-}" != "--node-bin" ]; then
+  echo "usage: $0 --node-bin <canonical-absolute-node-binary> <PRODUCTION_RECEIPT.md>" >&2
   exit 2
 fi
 
-factory_receipt_path="$1"
+factory_node_bin="$(factory_require_node_binary "$2")"
+factory_receipt_path="$3"
 if [ ! -s "$factory_receipt_path" ]; then
   echo "production receipt is missing or empty: $factory_receipt_path" >&2
   exit 1
@@ -54,7 +138,7 @@ else
   fi
 fi
 
-/usr/bin/node --input-type=module - "$factory_receipt_path" <<'NODE'
+"$factory_node_bin" --input-type=module - "$factory_receipt_path" <<'NODE'
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
@@ -395,7 +479,7 @@ test -f "$factory_tsx_cli"
 test ! -L "$factory_tsx_cli"
 (
   cd "$factory_repo_root"
-  /usr/bin/node \
+  "$factory_node_bin" \
     "$factory_tsx_cli" \
     --tsconfig "$factory_repo_root/tsconfig.json" \
     "$factory_repo_root/scripts/validate-factory-ai-at-work-inputs.ts" \

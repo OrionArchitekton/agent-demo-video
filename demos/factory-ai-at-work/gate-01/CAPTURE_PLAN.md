@@ -40,7 +40,7 @@ production preflight and render read only those owned copies.
 | `clips/master/08-recap.mp4` | Four real payoff shots replayed in order. |
 | `clips/master/09-next.mp4` | Channel close with one subscribe action and the next episode topic. |
 
-The pipeline generates the final 15 second disclosure card. Do not prepend a
+The pipeline generates the final 15-second disclosure card. Do not prepend a
 title card: the first frame must be the finished artifact.
 
 ## Portrait cut clips

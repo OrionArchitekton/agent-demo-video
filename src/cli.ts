@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { realpathSync } from "node:fs";
+import { isAbsolute } from "node:path";
 import { fileURLToPath } from "node:url";
 
 /**
@@ -11,9 +12,9 @@ import { fileURLToPath } from "node:url";
  *                                 (the config key `preflight` is the durable declaration).
  * - `--out <new-dir>`           → override config.out, atomically reserve a
  *                                 fresh name, and bind writes to private staging.
- * - `--clips-dir <dir>`         → override clipsDir for this run so production
+ * - `--clips-dir <absolute-dir>` → override clipsDir for this run so production
  *                                 can render attempt-owned evidence copies.
- * - `--script <file>`           → override the narration manifest for this run
+ * - `--script <absolute-file>`   → override the narration manifest for this run
  *                                 so production can render an owned script copy.
  * - `--attest-source-build`     → reserved for the committed detached-snapshot
  *                                 launcher; bind and recheck that frozen source.
@@ -42,6 +43,30 @@ export function parseCommand(argv: string[]): {
     }
     seenFlags.add(flag);
   };
+  const requireValue = (
+    flag: string,
+    noun: string,
+    value: string | undefined,
+  ): string => {
+    requireOnce(flag);
+    if (!value || value.trim().length === 0 || value.startsWith("-")) {
+      throw new Error(
+        `${flag} requires a non-empty ${noun} argument that does not start with '-'`,
+      );
+    }
+    return value;
+  };
+  const requireAbsoluteValue = (
+    flag: string,
+    noun: string,
+    value: string | undefined,
+  ): string => {
+    const parsed = requireValue(flag, noun, value);
+    if (!isAbsolute(parsed)) {
+      throw new Error(`${flag} requires an absolute ${noun} argument`);
+    }
+    return parsed;
+  };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
     // Consumed as a flag, never pushed to positional: otherwise a leading
@@ -57,59 +82,51 @@ export function parseCommand(argv: string[]): {
       continue;
     }
     if (a === "--render-host") {
-      requireOnce("--render-host");
-      const next = argv[i + 1];
-      if (next === undefined || next.startsWith("-")) throw new Error("--render-host requires a host argument");
-      renderHost = argv[++i];
+      renderHost = requireValue("--render-host", "host", argv[i + 1]);
+      i++;
       continue;
     }
     if (a.startsWith("--render-host=")) {
-      requireOnce("--render-host");
-      renderHost = a.slice("--render-host=".length);
-      if (!renderHost || renderHost.startsWith("-"))
-        throw new Error("--render-host requires a non-empty host argument that does not start with '-'");
+      renderHost = requireValue(
+        "--render-host",
+        "host",
+        a.slice("--render-host=".length),
+      );
       continue;
     }
     if (a === "--out") {
-      requireOnce("--out");
-      const next = argv[i + 1];
-      if (!next || next.startsWith("-")) throw new Error("--out requires a new directory argument");
-      out = argv[++i];
+      out = requireValue("--out", "new directory", argv[i + 1]);
+      i++;
       continue;
     }
     if (a.startsWith("--out=")) {
-      requireOnce("--out");
-      out = a.slice("--out=".length);
-      if (!out || out.startsWith("-"))
-        throw new Error("--out requires a non-empty directory argument that does not start with '-'");
+      out = requireValue("--out", "new directory", a.slice("--out=".length));
       continue;
     }
     if (a === "--clips-dir") {
-      requireOnce("--clips-dir");
-      const next = argv[i + 1];
-      if (!next || next.startsWith("-")) throw new Error("--clips-dir requires a directory argument");
-      clipsDir = argv[++i];
+      clipsDir = requireAbsoluteValue("--clips-dir", "directory", argv[i + 1]);
+      i++;
       continue;
     }
     if (a.startsWith("--clips-dir=")) {
-      requireOnce("--clips-dir");
-      clipsDir = a.slice("--clips-dir=".length);
-      if (!clipsDir || clipsDir.startsWith("-"))
-        throw new Error("--clips-dir requires a non-empty directory argument that does not start with '-'");
+      clipsDir = requireAbsoluteValue(
+        "--clips-dir",
+        "directory",
+        a.slice("--clips-dir=".length),
+      );
       continue;
     }
     if (a === "--script") {
-      requireOnce("--script");
-      const next = argv[i + 1];
-      if (!next || next.startsWith("-")) throw new Error("--script requires a file argument");
-      script = argv[++i];
+      script = requireAbsoluteValue("--script", "file", argv[i + 1]);
+      i++;
       continue;
     }
     if (a.startsWith("--script=")) {
-      requireOnce("--script");
-      script = a.slice("--script=".length);
-      if (!script || script.startsWith("-"))
-        throw new Error("--script requires a non-empty file argument that does not start with '-'");
+      script = requireAbsoluteValue(
+        "--script",
+        "file",
+        a.slice("--script=".length),
+      );
       continue;
     }
     if (a.startsWith("-")) {

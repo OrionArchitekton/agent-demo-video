@@ -48,6 +48,9 @@ describe("parseCommand (CLI dispatch)", () => {
     expect(() => parseCommand(["my.json", "--clips-dir"])).toThrow(/--clips-dir/);
     expect(() => parseCommand(["my.json", "--clips-dir="])).toThrow(/--clips-dir/);
     expect(() => parseCommand(["my.json", "--clips-dir", "--out"])).toThrow(/--clips-dir/);
+    expect(() => parseCommand(["my.json", "--clips-dir", "evidence/clips"])).toThrow(
+      /absolute/,
+    );
     expect(() => parseCommand(["login", "my.json", "--clips-dir", "/tmp/clips"])).toThrow(/pipeline run/);
   });
   it("accepts both per-run --script forms and rejects invalid values", () => {
@@ -63,6 +66,9 @@ describe("parseCommand (CLI dispatch)", () => {
     });
     expect(() => parseCommand(["my.json", "--script"])).toThrow(/--script/);
     expect(() => parseCommand(["my.json", "--script="])).toThrow(/--script/);
+    expect(() => parseCommand(["my.json", "--script=DEMO_SCRIPT.md"])).toThrow(
+      /absolute/,
+    );
     expect(() => parseCommand(["login", "my.json", "--script", "/tmp/script.md"])).toThrow(/pipeline run/);
   });
   it("defaults to demo.config.json when no path is given", () => {
@@ -91,6 +97,17 @@ describe("parseCommand (CLI dispatch)", () => {
     expect(() =>
       parseCommand(["my.json", "--attest-source-build", "--attest-source-build"]),
     ).toThrow(/--attest-source-build.*once/);
+  });
+  it("rejects empty or whitespace-only render hosts", () => {
+    expect(() => parseCommand(["my.json", "--render-host", ""])).toThrow(
+      /--render-host/,
+    );
+    expect(() => parseCommand(["my.json", "--render-host", "   "])).toThrow(
+      /--render-host/,
+    );
+    expect(() => parseCommand(["my.json", "--render-host=   "])).toThrow(
+      /--render-host/,
+    );
   });
   it("accepts --attest-source-build only for a local pipeline run", () => {
     expect(parseCommand(["my.json", "--attest-source-build"])).toEqual({

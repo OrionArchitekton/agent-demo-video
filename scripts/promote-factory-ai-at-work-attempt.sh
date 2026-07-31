@@ -18,7 +18,7 @@ export PATH
 hash -r
 while IFS= read -r factory_environment_name; do
   case "$factory_environment_name" in
-    BASH_ENV|ENV|CDPATH|LD_PRELOAD|LD_LIBRARY_PATH|LD_AUDIT|GIT_*|NODE_*|TSX_*|NPM_CONFIG_*|npm_config_*|PNPM_*|COREPACK_*)
+    BASH_ENV|ENV|CDPATH|LD_PRELOAD|LD_LIBRARY_PATH|LD_AUDIT|GIT_*|NODE_*|TSX_*|ESBUILD_BINARY_PATH|NPM_CONFIG_*|npm_config_*|PNPM_*|COREPACK_*)
       unset "$factory_environment_name"
       ;;
   esac
@@ -41,6 +41,89 @@ factory_strip_trailing_slashes() {
     path="${path%/}"
   done
   printf '%s\n' "$path"
+}
+
+factory_require_node_binary() {
+  local node_input="$1"
+  local node_path
+  case "$node_input" in
+    /*) ;;
+    *)
+      echo "Node binary path must be absolute" >&2
+      return 1
+      ;;
+  esac
+  if ! node_path="$(/usr/bin/realpath -e -- "$node_input")"; then
+    echo "Node binary path does not resolve: $node_input" >&2
+    return 1
+  fi
+  if [ "$node_path" != "$node_input" ]; then
+    echo "Node binary path must already be canonical: $node_input" >&2
+    return 1
+  fi
+  if [ -L "$node_path" ] || [ ! -f "$node_path" ] || [ ! -x "$node_path" ]; then
+    echo "Node binary must be a regular executable file: $node_path" >&2
+    return 1
+  fi
+  local node_owner
+  node_owner="$(/usr/bin/stat -c '%u' -- "$node_path")"
+  if [ "$node_owner" -ne 0 ]; then
+    echo "Node binary must be root-owned: $node_path" >&2
+    return 1
+  fi
+  local node_permissions
+  node_permissions="$(/usr/bin/stat -c '%a' -- "$node_path")"
+  if (( (8#$node_permissions & 0022) != 0 )); then
+    echo "Node binary must not be group- or world-writable: $node_path" >&2
+    return 1
+  fi
+  local node_parent
+  node_parent="$(/usr/bin/dirname -- "$node_path")"
+  while true; do
+    local node_parent_owner
+    local node_parent_permissions
+    node_parent_owner="$(/usr/bin/stat -c '%u' -- "$node_parent")"
+    node_parent_permissions="$(/usr/bin/stat -c '%a' -- "$node_parent")"
+    if
+      [ "$node_parent_owner" -ne 0 ] ||
+      (( (8#$node_parent_permissions & 0022) != 0 ))
+    then
+      echo "Node binary ancestors must be root-owned without group/world write: $node_parent" >&2
+      return 1
+    fi
+    [ "$node_parent" = "/" ] && break
+    node_parent="$(/usr/bin/dirname -- "$node_parent")"
+  done
+  local node_identity
+  local node_sha256
+  node_identity="$(/usr/bin/stat -c '%d:%i' -- "$node_path")"
+  node_sha256="$(/usr/bin/sha256sum -- "$node_path")"
+  node_sha256="${node_sha256%% *}"
+  local node_probe
+  if ! node_probe="$(
+    "$node_path" --input-type=module - "$node_path" 2>/dev/null <<'NODE'
+import { realpathSync } from "node:fs";
+const expectedPath = process.argv[2];
+if (
+  process.release?.name !== "node" ||
+  realpathSync(process.execPath) !== expectedPath
+) {
+  process.exit(1);
+}
+process.stdout.write("agent-demo-video-node-ok");
+NODE
+  )" || [ "$node_probe" != "agent-demo-video-node-ok" ]; then
+    echo "selected executable did not prove it is Node: $node_path" >&2
+    return 1
+  fi
+  if
+    [ "$(/usr/bin/stat -c '%d:%i' -- "$node_path")" != "$node_identity" ] ||
+    [ "$(/usr/bin/sha256sum -- "$node_path" | { read -r hash _; printf '%s' "$hash"; })" != "$node_sha256" ]
+  then
+    echo "root-owned Node binary changed during admission: $node_path" >&2
+    return 1
+  fi
+  printf '%s\n' "$node_path"
 }
 
 factory_generate_manifest() {
@@ -126,6 +209,20 @@ factory_require_allowed_entries() {
   done
 }
 
+factory_require_named_regular_files() {
+  local root="$1"
+  local label="$2"
+  shift 2
+
+  local name
+  for name in "$@"; do
+    if [ -L "$root/$name" ] || [ ! -f "$root/$name" ]; then
+      echo "$label must be a regular file: $root/$name" >&2
+      return 1
+    fi
+  done
+}
+
 factory_validate_artifact_topology() {
   local root="$1"
   local artifact="$2"
@@ -136,6 +233,17 @@ factory_validate_artifact_topology() {
     .agent-demo-video-output-claim \
     audio \
     seg \
+    captions.srt \
+    captions.ass \
+    video.mp4 \
+    audio.mp3 \
+    muxed.mp4 \
+    final.mp4 \
+    render-report.json
+  factory_require_named_regular_files \
+    "$root" \
+    "$artifact renderer output" \
+    .agent-demo-video-output-claim \
     captions.srt \
     captions.ass \
     video.mp4 \
@@ -197,6 +305,10 @@ factory_validate_artifact_topology() {
   factory_require_exact_entries \
     "$root/audio" \
     "$artifact audio artifacts" \
+    "${audio_entries[@]}"
+  factory_require_named_regular_files \
+    "$root/audio" \
+    "$artifact audio artifact" \
     "${audio_entries[@]}"
 
   local -a required_segments=(list.txt)
@@ -396,6 +508,7 @@ factory_validate_attempt_root() {
   FACTORY_EXPECTED_REVIEWED_ROOT="$factory_expected_reviewed_root" \
     /usr/bin/bash --noprofile --norc -p \
       "$factory_receipt_validator" \
+      --node-bin "$factory_node_bin" \
       "$root/PRODUCTION_RECEIPT.md" \
       >/dev/null
 }
@@ -439,6 +552,7 @@ factory_verify_closed_root() {
   FACTORY_EXPECTED_REVIEWED_ROOT="$factory_expected_reviewed_root" \
     /usr/bin/bash --noprofile --norc -p \
       "$factory_receipt_validator" \
+      --node-bin "$factory_node_bin" \
       "$root/PRODUCTION_RECEIPT.md" \
       >/dev/null
 }
@@ -535,9 +649,17 @@ factory_promotion_cleanup() {
   exit "$cleanup_status"
 }
 
+if [ "$#" -lt 2 ] || [ "${1:-}" != "--node-bin" ]; then
+  echo "usage: $0 --node-bin <canonical-absolute-node-binary> <attempt-root> <reviewed-root>" >&2
+  echo "       $0 --node-bin <canonical-absolute-node-binary> --verify <reviewed-root>" >&2
+  exit 2
+fi
+factory_node_bin="$(factory_require_node_binary "$2")"
+shift 2
+
 if [ "${1:-}" = "--verify" ]; then
   if [ "$#" -ne 2 ]; then
-    echo "usage: $0 --verify <reviewed-root>" >&2
+    echo "usage: $0 --node-bin <canonical-absolute-node-binary> --verify <reviewed-root>" >&2
     exit 2
   fi
   factory_verify_operand="$(factory_strip_trailing_slashes "$2")"
@@ -552,7 +674,7 @@ if [ "${1:-}" = "--verify" ]; then
 fi
 
 if [ "$#" -ne 2 ]; then
-  echo "usage: $0 <attempt-root> <reviewed-root>" >&2
+  echo "usage: $0 --node-bin <canonical-absolute-node-binary> <attempt-root> <reviewed-root>" >&2
   exit 2
 fi
 

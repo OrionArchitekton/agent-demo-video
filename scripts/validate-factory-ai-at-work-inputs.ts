@@ -455,11 +455,13 @@ async function validateArtifact(
 function validateChapters(root: string, masterReport: RenderReport): void {
   const seen = new Set<string>();
   const expectedLines: string[] = [];
+  const chapterEntries: TimelineEntry[] = [];
   for (const entry of masterReport.timeline.entries) {
     const label = CHAPTER_LABELS.get(entry.shotId);
     if (!label) continue;
     if (seen.has(entry.shotId)) fail(`master timeline repeats chapter shot ${entry.shotId}`);
     seen.add(entry.shotId);
+    chapterEntries.push(entry);
     const seconds = Math.floor(entry.startSec);
     expectedLines.push(
       `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")} ${label}`,
@@ -467,6 +469,16 @@ function validateChapters(root: string, masterReport: RenderReport): void {
   }
   const missing = [...CHAPTER_LABELS.keys()].filter((shotId) => !seen.has(shotId));
   if (missing.length > 0) fail(`master timeline is missing chapter shots: ${missing.join(", ")}`);
+  for (const [index, entry] of chapterEntries.entries()) {
+    const endSec = chapterEntries[index + 1]?.startSec ?? masterReport.timeline.totalSec;
+    const durationSec = endSec - entry.startSec;
+    if (!Number.isFinite(durationSec) || durationSec < 10) {
+      fail(
+        `master chapter ${entry.shotId} is shorter than 10 seconds ` +
+        `(${durationSec.toFixed(3)}s)`,
+      );
+    }
+  }
   const expected = `${expectedLines.join("\n")}\n`;
   const actual = readRequiredText(join(root, "YOUTUBE_CHAPTERS.txt"), "YouTube chapters");
   if (actual !== expected) {

@@ -1,4 +1,4 @@
-import { existsSync, statSync } from "node:fs";
+import { lstatSync } from "node:fs";
 import { chromium, type Page } from "playwright";
 import { cssInjectScript, overlayInitScript } from "./overlay.js";
 import { waitForReady } from "./ready.js";
@@ -21,6 +21,15 @@ const SELECTOR_REQUIRED: Action["kind"][] = ["click", "type", "hover", "highligh
  * actually enforces rather than imposing a stricter rule of its own.
  */
 const ambiguityIsFatal = (kind: Action["kind"]): boolean => kind !== "hover";
+
+const isRegularNonSymlink = (path: string): boolean => {
+  try {
+    const entry = lstatSync(path);
+    return entry.isFile() && !entry.isSymbolicLink();
+  } catch {
+    return false;
+  }
+};
 
 interface SelectorProbe {
   shot: Shot;
@@ -106,7 +115,7 @@ export function structuralFindings(manifest: Manifest, config: DemoConfig): Pref
         });
       } else {
         const clipPath = resolveClipPath(shot.clip, config.clipsDir, config.configDir ?? process.cwd());
-        if (!existsSync(clipPath) || !statSync(clipPath).isFile()) {
+        if (!isRegularNonSymlink(clipPath)) {
           findings.push({
             shotId: shot.id,
             kind: "missing-clip",
@@ -164,7 +173,7 @@ async function clipGeometryFindings(
   for (const shot of manifest.shots) {
     if (shot.target !== "prebaked" || !shot.fullBleed || !shot.clip) continue;
     const clipPath = resolveClipPath(shot.clip, config.clipsDir, config.configDir ?? process.cwd());
-    if (!existsSync(clipPath) || !statSync(clipPath).isFile()) continue;
+    if (!isRegularNonSymlink(clipPath)) continue;
     try {
       assertFullBleedCanvasAspect(config.resolution, await probeSizePx(clipPath), shot.id);
     } catch (error) {

@@ -31,7 +31,7 @@ capture stops before narration spend.
 
 Given the Gate 1 master config, when the pipeline builds its segment plan, then
 the first frame is the finished Cowork artifact rather than a generated title
-card, and the video closes on a 15 second generated disclosure card. Existing
+card, and the video closes on a 15-second generated disclosure card. Existing
 configs that use the single `brand.cards` switch continue to get both cards.
 
 ### S2 - Real-capture-only episode
@@ -107,7 +107,7 @@ is promoted only after every output and receipt pass validation.
 - AC1: the brand config can independently disable the opening card and enable
   the closing card; the legacy `cards` value remains the default for both.
 - AC2: the master config selects landscape output, a 600 second hard cap, no
-  opening card, and a 15 second closing disclosure card. Its fake-TTS estimate,
+  opening card, and a 15-second closing disclosure card. Its fake-TTS estimate,
   including that card, is at most 75 percent of the cap.
 - AC3: exactly three cut configs select the shorts preset and a 60 second hard
   cap; their estimated narration windows are between 20 and 45 seconds.
@@ -123,32 +123,46 @@ is promoted only after every output and receipt pass validation.
   approved disclosure is present in publishing copy.
 - AC7: the operator runbook and receipt template cover rollout, monitoring,
   validation, rollback, all twelve channel checks, full final-mix playback,
-  cue-by-cue voice review, final-render-derived chapter timing, and the
-  separation between render completion and public publishing. The pack stops at
-  reviewed local evidence: it does not model served state, the three-video
-  streak, or promotion authority. Those remain in the ratified channel format
-  and operator state.
+  cue-by-cue voice review, final-render-derived chapter timing with every
+  chapter spanning at least 10 seconds, and the separation between render
+  completion and public publishing. The pack stops at reviewed local evidence:
+  it does not model served state, the three-video streak, or promotion
+  authority. Those remain in the ratified channel format and operator state.
 - AC8: `--out` overrides the config output only for that run, requires a fresh
   name, refuses an existing target before changing any artifact, keeps all
   render writes in a private handle-bound directory while that name is claimed,
   leaves pathnames untouched on claim initialization failure, retains the
   authenticated claim as an output marker, and publishes without clobbering a
   competing target under the cooperative-process boundary. `--clips-dir` and
-  `--script` select attempt-owned clip and narration copies for that run. The
-  CLI rejects unknown or duplicate options and extra config paths rather than
-  silently falling back to reusable output.
+  `--script` require absolute paths and select attempt-owned clip and narration
+  sources for that run.
+  Before narration spend, each prebaked clip is copied into a private read-only
+  render binding; the renderer and report consume only those bound bytes, so an
+  ordinary later export to the operator source path cannot change the artifact
+  or its digest. The binding root is removed on success, ordinary failure,
+  SIGINT, and SIGTERM. A cleanup failure preserves the primary pipeline error,
+  blocks fresh-output publication, and reports both the retained binding root
+  and the unpublished output stage when present. Dashboard-only renders create
+  no private binding root. The CLI rejects unknown or duplicate options and
+  extra config paths rather than silently falling back to reusable output.
 - AC9: reviewed-pack promotion requires the exact archived Gate 1 support,
   config, script, clip, and renderer-output inventory; recomputes full config,
   script, claim-ledger, and ordered per-shot clip SHA-256 values; validates the
   exact relative concat selection, shot and card timelines against the same
-  measured archived segment bytes, and derived chapters; rejects placeholder
-  review evidence; refuses cross-device or nested-mount mutation before
+  measured archived segment bytes, and derived chapters whose adjacent starts
+  (or final start and master total) are at least 10 seconds apart; rejects
+  placeholder review evidence; refuses cross-device or nested-mount mutation before
   sealing; and closes every regular file under one locale-independent read-only
   manifest. Promotion and receipt validation start in privileged Bash, fix
   system-tool lookup, and scrub caller shell, preload, Git, Node, and
   package-manager injection variables. The operator entrypoint clears
-  dynamic-loader variables before Bash starts and admits only the fixed path
-  and locale. If promotion stops while the
+  dynamic-loader variables before Bash starts, admits only the fixed path and
+  locale in the environment, and passes one already-canonical root-owned Node
+  binary explicitly to promotion and both receipt-validation phases. Each
+  entrypoint requires root-owned non-writable ancestry and binds the canonical
+  file identity and digest across its functional Node probe before accepting
+  its exit status. If
+  promotion stops while the
   authenticated private pack is still writable, it is restored without
   clobbering the attempt path. Once sealing starts, failure retains and reports
   the exact authenticated private or reviewed path. Once final verification
@@ -161,8 +175,9 @@ is promoted only after every output and receipt pass validation.
   without checkout filters, directly verifies and freezes the scoped bytes
   before application modules load, and runs the snapshot CLI. The streamed
   shell starts in privileged mode before reading caller startup files, fixes
-  system-tool lookup independently of caller `PATH`, and invokes explicit
-  operator-selected Node and package-manager files. Authority-sensitive Git
+  system-tool lookup independently of caller `PATH`, and invokes a canonical
+  root-owned Node file plus the explicit operator-selected package-manager file.
+  Authority-sensitive Git
   calls ignore caller global and system configuration and disable
   repository-local hooks and filesystem monitors. Frozen dependency
   installation runs in a minimal environment that excludes render secrets,

@@ -1,7 +1,17 @@
-import { constants, existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import {
+  constants,
+  existsSync,
+  lstatSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  statSync,
+} from "node:fs";
 import { randomUUID } from "node:crypto";
-import { lstat, mkdir, mkdtemp, open, readFile, readdir, realpath, rm, writeFile, type FileHandle } from "node:fs/promises";
-import { basename, dirname, join, resolve } from "node:path";
+import { chmod, lstat, mkdir, mkdtemp, open, readFile, readdir, realpath, rm, writeFile, type FileHandle } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { basename, dirname, extname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { DemoConfig, Shot, TtsResult } from "./types";
 import { parseScript, deriveSegmentKinds } from "./parse-script";
@@ -46,6 +56,7 @@ interface FreshOutputClaim {
   requestedPath: string;
   claimPath: string;
   stagingPath: string;
+  recoveryPath: string;
   boundPath: string;
   parentHandle: FileHandle;
   claimHandle: FileHandle;
@@ -58,52 +69,438 @@ interface FreshOutputClaim {
   published: boolean;
 }
 
-type ResolvedClipInputDigest = ClipInputDigest & { path: string };
+type BoundClipInputDigest = ClipInputDigest & {
+  path: string;
+  dev: number;
+  ino: number;
+};
 
-async function digestPrebakedInputs(
-  shots: Shot[],
-  config: DemoConfig,
-): Promise<ResolvedClipInputDigest[]> {
-  const inputs: ResolvedClipInputDigest[] = [];
-  for (const shot of shots) {
-    if (shot.target !== "prebaked") continue;
-    if (!shot.clip) {
-      throw new Error(`[agent-demo-video] prebaked shot ${shot.id} has no clip path to hash`);
-    }
-    const path = resolveClipPath(
-      shot.clip,
-      config.clipsDir,
-      config.configDir ?? process.cwd(),
+interface BoundPrebakedInputs {
+  root?: string;
+  inputs: BoundClipInputDigest[];
+  pathByShotId: Map<string, string>;
+}
+
+const PRIVATE_INPUT_ROOT_MARKER_NAME = ".agent-demo-video-private-input-root";
+const PRIVATE_INPUT_ROOT_MARKER_CONTENT = "agent-demo-video-private-input-root-v1\n";
+
+export class PrivateInputCleanupError extends Error {
+  readonly code = "PRIVATE_INPUT_CLEANUP_FAILED";
+
+  constructor(
+    readonly retainedPath: string,
+    cause: unknown,
+    readonly retainedOutputPath?: string,
+  ) {
+    super(
+      `[agent-demo-video] PRIVATE_INPUT_CLEANUP_FAILED: private render-input cleanup failed; ` +
+        `retained binding path: ${retainedPath}: ` +
+        `${cause instanceof Error ? cause.message : String(cause)}` +
+        (retainedOutputPath
+          ? `; unpublished output remains at: ${retainedOutputPath}`
+          : ""),
+      { cause },
     );
+    this.name = "PrivateInputCleanupError";
+  }
+}
+
+const activePrivateInputRoots = new Map<string, string>();
+let handlingPrivateInputSignal = false;
+
+function removePrivateInputSignalHandlers(): void {
+  process.removeListener("SIGINT", handlePrivateInputSignal);
+  process.removeListener("SIGTERM", handlePrivateInputSignal);
+}
+
+function addPrivateInputSignalHandlers(): void {
+  process.prependListener("SIGINT", handlePrivateInputSignal);
+  process.prependListener("SIGTERM", handlePrivateInputSignal);
+}
+
+function handlePrivateInputSignal(signal: NodeJS.Signals): void {
+  if (handlingPrivateInputSignal) return;
+  handlingPrivateInputSignal = true;
+  const hasOtherSignalListeners = process
+    .listeners(signal)
+    .some((listener) => listener !== handlePrivateInputSignal);
+  removePrivateInputSignalHandlers();
+  for (const [root, expectedIdentity] of activePrivateInputRoots) {
     try {
-      inputs.push({ shotId: shot.id, path, sha256: await digestFile(path) });
+      if (assertPrivateInputRootIdentity(root, expectedIdentity)) {
+        rmSync(root, { recursive: true, force: true });
+      }
+      activePrivateInputRoots.delete(root);
     } catch (error) {
-      throw new Error(
-        `[agent-demo-video] could not hash prebaked input for shot "${shot.id}" at ${path}: ` +
-        `${(error as Error).message}`,
+      console.error(
+        new PrivateInputCleanupError(root, error).message,
       );
     }
   }
-  return inputs;
+  handlingPrivateInputSignal = false;
+  if (hasOtherSignalListeners) {
+    // Node suppresses its default exit whenever another listener exists. Let
+    // the original delivery reach that listener exactly once. If cleanup
+    // retained a root, keep our handlers armed for a later signal.
+    if (activePrivateInputRoots.size > 0) addPrivateInputSignalHandlers();
+    return;
+  }
+  // Re-deliver after synchronous cleanup so ordinary Node signal semantics
+  // (128 + signal, or signalCode for a direct Node process) remain intact.
+  process.kill(process.pid, signal);
 }
 
-async function assertPrebakedInputsUnchanged(
-  inputs: ResolvedClipInputDigest[],
+function registerPrivateInputRoot(root: string, identity: string): void {
+  if (activePrivateInputRoots.size === 0) {
+    addPrivateInputSignalHandlers();
+  }
+  activePrivateInputRoots.set(root, identity);
+}
+
+function unregisterPrivateInputRoot(root: string): void {
+  activePrivateInputRoots.delete(root);
+  if (activePrivateInputRoots.size === 0) {
+    removePrivateInputSignalHandlers();
+    handlingPrivateInputSignal = false;
+  }
+}
+
+async function cleanupPrivateInputRoot(
+  root: string,
+  retainedOutputPath?: string,
 ): Promise<void> {
-  for (const input of inputs) {
-    let current: string;
-    try {
-      current = await digestFile(input.path);
-    } catch (error) {
+  try {
+    const expectedIdentity = activePrivateInputRoots.get(root);
+    if (expectedIdentity) {
+      if (assertPrivateInputRootIdentity(root, expectedIdentity)) {
+        await rm(root, { recursive: true, force: true });
+      }
+    } else {
+      try {
+        lstatSync(root);
+        throw new Error("private render-input root is no longer registered for cleanup");
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      }
+    }
+    unregisterPrivateInputRoot(root);
+  } catch (error) {
+    unregisterPrivateInputRoot(root);
+    throw new PrivateInputCleanupError(root, error, retainedOutputPath);
+  }
+}
+
+function assertPrivateInputRootIdentity(
+  root: string,
+  expectedIdentity: string,
+): boolean {
+  let current: ReturnType<typeof lstatSync>;
+  try {
+    current = lstatSync(root);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+    throw error;
+  }
+  if (
+    !current.isDirectory() ||
+    current.isSymbolicLink() ||
+    `${current.dev}:${current.ino}` !== expectedIdentity
+  ) {
+    throw new Error(`private render-input root identity changed before cleanup: ${root}`);
+  }
+  return true;
+}
+
+async function trustedPrivateInputParent(): Promise<string> {
+  const input = tmpdir();
+  const lexical = resolve(input);
+  const entry = await lstat(input);
+  const canonical = await realpath(input);
+  if (
+    !entry.isDirectory() ||
+    entry.isSymbolicLink() ||
+    input !== lexical ||
+    canonical !== input ||
+    canonical === "/"
+  ) {
+    throw new Error(
+      `[agent-demo-video] private render-input temporary root is not trusted: ${input}`,
+    );
+  }
+
+  const euid = typeof process.geteuid === "function"
+    ? process.geteuid()
+    : entry.uid;
+  const selectedMode = entry.mode & 0o7777;
+  const selectedTrusted =
+    (entry.uid === 0 && (selectedMode & 0o1000) !== 0) ||
+    (entry.uid === euid && (selectedMode & 0o022) === 0);
+  if (!selectedTrusted) {
+    throw new Error(
+      `[agent-demo-video] private render-input temporary root is not trusted: ${canonical}`,
+    );
+  }
+
+  let ancestor = canonical;
+  while (true) {
+    const ancestorStat = await lstat(ancestor);
+    const ancestorMode = ancestorStat.mode & 0o7777;
+    const rootOwnedTrusted =
+      ancestorStat.uid === 0 &&
+      ((ancestorMode & 0o022) === 0 || (ancestorMode & 0o1000) !== 0);
+    const userOwnedTrusted =
+      ancestorStat.uid === euid && (ancestorMode & 0o022) === 0;
+    if (
+      !ancestorStat.isDirectory() ||
+      ancestorStat.isSymbolicLink() ||
+      (!rootOwnedTrusted && !userOwnedTrusted)
+    ) {
       throw new Error(
-        `[agent-demo-video] could not re-check prebaked input for shot "${input.shotId}" at ${input.path}: ` +
-        `${(error as Error).message}`,
+        `[agent-demo-video] private render-input temporary root ancestor is not trusted: ${ancestor}`,
       );
     }
-    if (current !== input.sha256) {
+    if (ancestor === "/") break;
+    ancestor = dirname(ancestor);
+  }
+  return canonical;
+}
+
+function combinePrimaryAndCleanupErrors(
+  primary: unknown,
+  cleanup: PrivateInputCleanupError,
+): AggregateError {
+  const primaryError = primary instanceof Error ? primary : new Error(String(primary));
+  return new AggregateError(
+    [primaryError, cleanup],
+    `${primaryError.message}; additionally, ${cleanup.message}`,
+    { cause: primaryError },
+  );
+}
+
+function containsPrivateInputCleanupError(error: unknown): boolean {
+  const pending: unknown[] = [error];
+  const seen = new Set<unknown>();
+  while (pending.length > 0) {
+    const current = pending.pop();
+    if (current instanceof PrivateInputCleanupError) return true;
+    if (current instanceof AggregateError && !seen.has(current)) {
+      seen.add(current);
+      pending.push(...current.errors);
+    }
+  }
+  return false;
+}
+
+function combinePrimaryAndPublicationErrors(
+  primary: unknown,
+  publication: unknown,
+): AggregateError {
+  const primaryError = primary instanceof Error ? primary : new Error(String(primary));
+  const publicationError = publication instanceof Error
+    ? publication
+    : new Error(String(publication));
+  return new AggregateError(
+    [primaryError, publicationError],
+    `${primaryError.message}; additionally, ${publicationError.message}`,
+    { cause: primaryError },
+  );
+}
+
+/**
+ * Snapshot every operator-owned prebaked source into one private directory,
+ * seal each snapshot read-only, and hash the bytes the renderer will consume.
+ *
+ * Re-checking an operator pathname before rendering still leaves a window in
+ * which an ordinary capture/export process can replace or partially rewrite
+ * that file before ffmpeg opens it. A private copy closes that race: later
+ * source-path updates cannot affect either the render or its reported digest.
+ * A malicious process running as the same Unix uid remains outside the stated
+ * isolation boundary.
+ */
+async function bindPrebakedInputs(
+  shots: Shot[],
+  config: DemoConfig,
+  retainedOutputPath?: string,
+): Promise<BoundPrebakedInputs> {
+  if (!shots.some((shot) => shot.target === "prebaked")) {
+    return { inputs: [], pathByShotId: new Map() };
+  }
+  const privateInputParent = await trustedPrivateInputParent();
+  const root = mkdtempSync(
+    join(privateInputParent, `agent-demo-video-render-inputs-${process.pid}-`),
+  );
+  const rootStat = lstatSync(root);
+  registerPrivateInputRoot(root, `${rootStat.dev}:${rootStat.ino}`);
+  try {
+    if (
+      !rootStat.isDirectory() ||
+      rootStat.isSymbolicLink() ||
+      (rootStat.mode & 0o777) !== 0o700 ||
+      (typeof process.geteuid === "function" && rootStat.uid !== process.geteuid())
+    ) {
+      throw new Error("private render-input directory did not bind as an owned 0700 directory");
+    }
+    const markerPath = join(root, PRIVATE_INPUT_ROOT_MARKER_NAME);
+    await writeFile(markerPath, PRIVATE_INPUT_ROOT_MARKER_CONTENT, {
+      encoding: "utf8",
+      flag: "wx",
+      mode: 0o400,
+    });
+    await chmod(markerPath, 0o400);
+    const markerStat = await lstat(markerPath);
+    if (
+      !markerStat.isFile() ||
+      markerStat.isSymbolicLink() ||
+      markerStat.nlink !== 1 ||
+      (markerStat.mode & 0o777) !== 0o400 ||
+      (typeof process.geteuid === "function" && markerStat.uid !== process.geteuid())
+    ) {
+      throw new Error("private render-input directory marker did not bind as an owned 0400 file");
+    }
+
+    const inputs: BoundClipInputDigest[] = [];
+    const pathByShotId = new Map<string, string>();
+    for (const shot of shots) {
+      if (shot.target !== "prebaked") continue;
+      if (!shot.clip) {
+        throw new Error(`[agent-demo-video] prebaked shot ${shot.id} has no clip path to bind`);
+      }
+      const sourcePath = resolveClipPath(
+        shot.clip,
+        config.clipsDir,
+        config.configDir ?? process.cwd(),
+      );
+      const sourceExtension = extname(sourcePath);
+      const safeExtension = /^\.[A-Za-z0-9]{1,10}$/.test(sourceExtension)
+        ? sourceExtension
+        : ".bin";
+      const boundPath = join(
+        root,
+        `input-${String(inputs.length).padStart(4, "0")}${safeExtension}`,
+      );
+      let sourceHandle: FileHandle | undefined;
+      let boundHandle: FileHandle | undefined;
+      try {
+        const namedSource = await lstat(sourcePath);
+        if (!namedSource.isFile() || namedSource.isSymbolicLink()) {
+          throw new Error("prebaked source must be a regular, non-symbolic-link file");
+        }
+        sourceHandle = await open(
+          sourcePath,
+          constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
+        );
+        const openedSource = await sourceHandle.stat();
+        if (
+          !openedSource.isFile() ||
+          openedSource.dev !== namedSource.dev ||
+          openedSource.ino !== namedSource.ino
+        ) {
+          throw new Error("prebaked source changed while its regular-file identity was bound");
+        }
+        boundHandle = await open(
+          boundPath,
+          constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW,
+          0o600,
+        );
+        const copyBuffer = Buffer.allocUnsafe(1024 * 1024);
+        let readPosition = 0;
+        while (true) {
+          const { bytesRead } = await sourceHandle.read(
+            copyBuffer,
+            0,
+            copyBuffer.length,
+            readPosition,
+          );
+          if (bytesRead === 0) break;
+          let written = 0;
+          while (written < bytesRead) {
+            const result = await boundHandle.write(
+              copyBuffer,
+              written,
+              bytesRead - written,
+              readPosition + written,
+            );
+            if (result.bytesWritten === 0) {
+              throw new Error("private render-input copy made no write progress");
+            }
+            written += result.bytesWritten;
+          }
+          readPosition += bytesRead;
+        }
+        await boundHandle.sync();
+        await boundHandle.close();
+        boundHandle = undefined;
+        await sourceHandle.close();
+        sourceHandle = undefined;
+        await chmod(boundPath, 0o400);
+        const boundStat = await lstat(boundPath);
+        if (
+          !boundStat.isFile() ||
+          boundStat.isSymbolicLink() ||
+          boundStat.nlink !== 1 ||
+          (boundStat.mode & 0o777) !== 0o400 ||
+          (typeof process.geteuid === "function" && boundStat.uid !== process.geteuid())
+        ) {
+          throw new Error("private render-input copy is not an owned, single-link 0400 file");
+        }
+        if (boundStat.size === 0) {
+          throw new Error("private render-input copy is empty");
+        }
+        inputs.push({
+          shotId: shot.id,
+          path: boundPath,
+          sha256: await digestFile(boundPath),
+          dev: boundStat.dev,
+          ino: boundStat.ino,
+        });
+        pathByShotId.set(shot.id, boundPath);
+      } catch (error) {
+        throw new Error(
+          `[agent-demo-video] could not bind prebaked input for shot "${shot.id}" at ${sourcePath}: ` +
+          `${(error as Error).message}`,
+          { cause: error },
+        );
+      } finally {
+        await boundHandle?.close().catch(() => {});
+        await sourceHandle?.close().catch(() => {});
+      }
+    }
+    return { root, inputs, pathByShotId };
+  } catch (error) {
+    try {
+      await cleanupPrivateInputRoot(root, retainedOutputPath);
+    } catch (cleanupError) {
+      throw combinePrimaryAndCleanupErrors(
+        error,
+        cleanupError as PrivateInputCleanupError,
+      );
+    }
+    throw error;
+  }
+}
+
+async function assertBoundPrebakedInputsUnchanged(
+  inputs: BoundClipInputDigest[],
+): Promise<void> {
+  for (const input of inputs) {
+    try {
+      const currentStat = await lstat(input.path);
+      if (
+        !currentStat.isFile() ||
+        currentStat.isSymbolicLink() ||
+        currentStat.dev !== input.dev ||
+        currentStat.ino !== input.ino ||
+        currentStat.nlink !== 1 ||
+        (currentStat.mode & 0o777) !== 0o400 ||
+        await digestFile(input.path) !== input.sha256
+      ) {
+        throw new Error("identity, mode, link count, or digest changed");
+      }
+    } catch (error) {
       throw new Error(
-        `[agent-demo-video] prebaked input changed during capture for shot "${input.shotId}": ${input.path}. ` +
-        "No render was started; use an immutable attempt-owned clip copy and retry.",
+        `[agent-demo-video] private prebaked input changed before render for shot "${input.shotId}": ` +
+        `${(error as Error).message}`,
+        { cause: error },
       );
     }
   }
@@ -203,6 +600,7 @@ async function claimFreshOutputDir(requestedPath: string): Promise<FreshOutputCl
       );
     }
     const boundPath = `/proc/${process.pid}/fd/${stagingHandle.fd}`;
+    const recoveryPath = join(requestedParent, basename(stagingPath));
     const bound = await lstat(boundPath);
     if (!bound.isSymbolicLink()) {
       throw new Error(`[agent-demo-video] could not bind fresh output through ${boundPath}`);
@@ -225,6 +623,7 @@ async function claimFreshOutputDir(requestedPath: string): Promise<FreshOutputCl
       requestedPath,
       claimPath,
       stagingPath,
+      recoveryPath,
       boundPath,
       parentHandle,
       claimHandle,
@@ -480,6 +879,7 @@ export async function runPipeline(config: DemoConfig, opts: RunPipelineOpts = {}
     : undefined;
   const out = freshClaim?.boundPath ?? requestedOut;
   if (freshClaim) config = { ...config, out };
+  let boundPrebakedRoot: string | undefined;
 
   try {
     if (!freshClaim) {
@@ -509,6 +909,25 @@ export async function runPipeline(config: DemoConfig, opts: RunPipelineOpts = {}
   const configSha256 = digestFull(stableConfig);
   const scriptSha256 = digestFull(md);
 
+  // Bind every prebaked pathname before any preflight tool can open it. The
+  // preflight manifest points at these private copies, so ffprobe never consumes
+  // the mutable operator pathname that the renderer has not yet authenticated.
+  const boundPrebaked = await bindPrebakedInputs(
+    shots,
+    config,
+    freshClaim?.recoveryPath,
+  );
+  boundPrebakedRoot = boundPrebaked.root;
+  const clipInputs = boundPrebaked.inputs;
+  const preflightManifest = {
+    ...manifest,
+    shots: shots.map((shot) => {
+      if (shot.target !== "prebaked") return shot;
+      const boundPath = boundPrebaked.pathByShotId.get(shot.id);
+      return boundPath ? { ...shot, clip: boundPath } : shot;
+    }),
+  };
+
   // 1.5 Pre-flight selector gate — BEFORE any spend.
   //
   // Ordering is the whole point. TTS is the first thing this pipeline pays for,
@@ -518,7 +937,7 @@ export async function runPipeline(config: DemoConfig, opts: RunPipelineOpts = {}
   // selector, with every narration already synthesized.
   let preflightRecord: PreflightRecord = { ran: false, declined: true, findings: 0, unverifiedShotIds: [] };
   if (config.preflight) {
-    const findings = await runPreflight(manifest, config);
+    const findings = await runPreflight(preflightManifest, config);
     if (findings.length > 0) console.warn(formatPreflightReport(findings));
     const blocking = findings.filter((f) => f.severity === "blocking");
     preflightRecord = {
@@ -545,10 +964,6 @@ export async function runPipeline(config: DemoConfig, opts: RunPipelineOpts = {}
     console.warn("[agent-demo-video] preflight gate DECLINED: selectors were NOT verified before this render.");
   }
 
-  // Preflight owns missing/invalid-clip diagnostics. Once it has passed (or was
-  // explicitly declined), bind the exact clip bytes before narration or capture.
-  const clipInputs = await digestPrebakedInputs(shots, config);
-
   // 2. Make dirs
   const audioDir = join(out, "audio");
   const segDir = join(out, "seg");
@@ -572,13 +987,27 @@ export async function runPipeline(config: DemoConfig, opts: RunPipelineOpts = {}
   for (let i = 0; i < shots.length; i++) {
     const shot = shots[i]!;
     const tts = ttsResults[i]!;
-    const raw = await captureShot(shot, { shotId: shot.id, startSec: 0, durationSec: tts.durationSec }, config, segDir);
+    let raw: string | undefined;
+    if (shot.target === "prebaked") {
+      // captureShot historically removed a reusable output's stale event file
+      // before returning a prebaked path. Preserve that cleanup without
+      // reopening the operator-owned source path.
+      await rm(join(segDir, `events_${shot.id}.json`), { force: true });
+      raw = boundPrebaked.pathByShotId.get(shot.id);
+    } else {
+      raw = await captureShot(
+        shot,
+        { shotId: shot.id, startSec: 0, durationSec: tts.durationSec },
+        config,
+        segDir,
+      );
+    }
+    if (!raw) {
+      throw new Error(`[agent-demo-video] no private prebaked input was bound for shot "${shot.id}"`);
+    }
     rawSegments.push(raw);
   }
-  // Prebaked capture returns the declared source path. Re-hash each source after
-  // capture and before render so the report cannot bind bytes different from the
-  // ones the render is about to consume.
-  await assertPrebakedInputsUnchanged(clipInputs);
+  await assertBoundPrebakedInputsUnchanged(clipInputs);
 
   // 4.4 Click offsets for sound-design ticks, read once here so remote renders
   //     get identical ticks (events files are never staged to a render host).
@@ -716,6 +1145,13 @@ export async function runPipeline(config: DemoConfig, opts: RunPipelineOpts = {}
     console.warn(`[agent-demo-video] could not write render-report.json: ${(e as Error).message}`);
   }
 
+    if (boundPrebakedRoot) {
+      await cleanupPrivateInputRoot(
+        boundPrebakedRoot,
+        freshClaim?.recoveryPath,
+      );
+      boundPrebakedRoot = undefined;
+    }
     if (freshClaim) {
       await publishFreshOutput(freshClaim);
       return { ...result, outPath: join(requestedOut, "final.mp4") };
@@ -724,16 +1160,34 @@ export async function runPipeline(config: DemoConfig, opts: RunPipelineOpts = {}
   } catch (error) {
     // Match the historical diagnostic behavior: a failed fresh run still
     // exposes its partial artifacts at the requested path when that can be
-    // done without touching a competing target. A publication-integrity error
-    // is added to the original failure instead of being silently swallowed.
-    if (freshClaim && !freshClaim.publishAttempted) {
+    // done without touching a competing target. Private-input cleanup is the
+    // first failure action: no output is published while private source bytes
+    // remain retained. Every secondary error stays structured and preserves
+    // the original pipeline failure as AggregateError.errors[0].
+    const cleanupAlreadyFailed = containsPrivateInputCleanupError(error);
+    if (!cleanupAlreadyFailed && boundPrebakedRoot) {
+      try {
+        await cleanupPrivateInputRoot(
+          boundPrebakedRoot,
+          freshClaim?.recoveryPath,
+        );
+        boundPrebakedRoot = undefined;
+      } catch (cleanupError) {
+        throw combinePrimaryAndCleanupErrors(
+          error,
+          cleanupError as PrivateInputCleanupError,
+        );
+      }
+    }
+    if (
+      !cleanupAlreadyFailed &&
+      freshClaim &&
+      !freshClaim.publishAttempted
+    ) {
       try {
         await publishFreshOutput(freshClaim);
       } catch (publishError) {
-        throw new Error(
-          `${(error as Error).message}; additionally, ${(publishError as Error).message}`,
-          { cause: error },
-        );
+        throw combinePrimaryAndPublicationErrors(error, publishError);
       }
     }
     throw error;

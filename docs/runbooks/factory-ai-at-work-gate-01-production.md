@@ -25,10 +25,12 @@ references:
   - src/source-build.ts
   - src/git-environment.ts
   - scripts/run-source-attested-render.sh
+  - scripts/cleanup-stale-render-input-root.sh
   - scripts/validate-factory-ai-at-work-inputs.ts
   - scripts/validate-factory-ai-at-work-receipt.sh
   - scripts/promote-factory-ai-at-work-attempt.sh
   - tests/factory-ai-at-work-pack.test.ts
+  - tests/prebaked-input-binding.test.ts
   - tests/pipeline.smoke.test.ts
   - tests/preflight.smoke.test.ts
   - tests/render-aspect-guard.test.ts
@@ -49,10 +51,11 @@ public publishing are separate operator actions.
    Linux directory handles. This protects against accidental or cooperating
    path reuse, not a malicious process running with the same Unix user.
 2. Install the locked dependencies and verify ffmpeg, ffprobe, Chromium, and
-   the pinned caption font are available. Select the canonical absolute Node
-   binary and bundled `pnpm.cjs` entrypoint from the operator-approved
-   toolchain. Do not derive either production path from the caller's `PATH`.
-   The pnpm entrypoint must report the repository-pinned `9.12.0`.
+   the pinned caption font are available. Select a canonical root-owned Node
+   binary beneath root-owned, non-writable ancestors and the bundled
+   `pnpm.cjs` entrypoint from the operator-approved toolchain. Do not derive
+   either production path from the caller's `PATH`. The pnpm entrypoint must
+   report the repository-pinned `9.12.0`.
 3. Capture every source listed in `CAPTURE_PLAN.md` from a real run. Keep the
    source media in the ignored pack-local `clips/` directories.
 4. Prepare the run-dependent evidence required by
@@ -171,11 +174,21 @@ while IFS= read -r FACTORY_GIT_ENVIRONMENT_NAME; do
   esac
 done < <(compgen -e)
 unset FACTORY_GIT_ENVIRONMENT_NAME
-: "${FACTORY_NODE_BIN:?set the operator-approved canonical absolute Node binary}"
+: "${FACTORY_NODE_BIN:?set the operator-approved canonical root-owned Node binary}"
 : "${FACTORY_PNPM_CLI:?set the operator-approved canonical absolute bundled pnpm.cjs path}"
 FACTORY_NODE_BIN="$(/usr/bin/realpath -e -- "$FACTORY_NODE_BIN")"
 FACTORY_PNPM_CLI="$(/usr/bin/realpath -e -- "$FACTORY_PNPM_CLI")"
 test -x "$FACTORY_NODE_BIN"
+test "$(/usr/bin/stat -c '%u' -- "$FACTORY_NODE_BIN")" = 0
+test "$((8#$(/usr/bin/stat -c '%a' -- "$FACTORY_NODE_BIN") & 0022))" = 0
+FACTORY_NODE_PARENT="$(/usr/bin/dirname -- "$FACTORY_NODE_BIN")"
+while true; do
+  test "$(/usr/bin/stat -c '%u' -- "$FACTORY_NODE_PARENT")" = 0
+  test "$((8#$(/usr/bin/stat -c '%a' -- "$FACTORY_NODE_PARENT") & 0022))" = 0
+  test "$FACTORY_NODE_PARENT" = / && break
+  FACTORY_NODE_PARENT="$(/usr/bin/dirname -- "$FACTORY_NODE_PARENT")"
+done
+unset FACTORY_NODE_PARENT
 test -f "$FACTORY_PNPM_CLI"
 test "$("$FACTORY_NODE_BIN" "$FACTORY_PNPM_CLI" --version)" = "9.12.0"
 /usr/bin/sha256sum -- "$FACTORY_NODE_BIN" "$FACTORY_PNPM_CLI"
@@ -249,10 +262,11 @@ after confirming the process is gone, then use a new run ID.
 
 The committed launcher requires Bash privileged startup mode, which suppresses
 `BASH_ENV` and imported functions before streamed bytes execute. It then fixes
-`PATH` to system directories, uses absolute Git, Node, and package-manager
-entrypoints, and pins the two operator-selected tool files by SHA-256 for the
-run. Every authority-sensitive Git call ignores caller global and system
-configuration and disables repository-local hooks and filesystem monitors. It
+`PATH` to system directories, admits only a canonical root-owned Node binary
+beneath root-owned non-writable ancestors, uses an explicit package-manager
+entrypoint, and pins both selected tool files by SHA-256 for the run. Every
+authority-sensitive Git call ignores caller global and system configuration
+and disables repository-local hooks and filesystem monitors. It
 fixes one full commit, registers a private detached no-checkout worktree,
 materializes the commit archive without checkout filters, rebuilds the detached
 index, and compares every scoped file byte and executable bit directly with
@@ -293,11 +307,12 @@ For every output:
    Sans.
 5. Watch every source clip end to end for frozen, blank, login, notification,
    credential, account, and unrelated-file exposure.
-6. Confirm the master cold-opens on the finished artifact and ends on a 15
-   second disclosure card. Confirm each portrait cut has its own hook and
+6. Confirm the master cold-opens on the finished artifact and ends on a
+   15-second disclosure card. Confirm each portrait cut has its own hook and
    payoff and stays at or below 60 seconds.
-7. Generate chapter timestamps from the final real-voice master report and
-   spot check every timestamp against the first frame of that section.
+7. Generate chapter timestamps from the final real-voice master report, require
+   every chapter to span at least 10 seconds, and spot check every timestamp
+   against the first frame of that section.
 8. Complete all twelve items in the copied production receipt with concrete
    evidence, Dan's review timestamps, disclosure-field answers and rationale,
    the full source commit copied from the snapshot-attested master report, the
@@ -319,7 +334,7 @@ The dash scan returns no matches.
 Require all four real receipts before promotion:
 
 ```bash
-node --input-type=module - "$FACTORY_ATTEMPT_ROOT" <<'NODE'
+"$FACTORY_NODE_BIN" --input-type=module - "$FACTORY_ATTEMPT_ROOT" <<'NODE'
 import { readFileSync } from "node:fs";
 const root = process.argv[2];
 for (const name of ["master", "cut-a", "cut-b", "cut-c"]) {
@@ -355,7 +370,7 @@ NODE
 Generate and persist the measured YouTube chapter block:
 
 ```bash
-node --input-type=module - "$FACTORY_ATTEMPT_ROOT" \
+"$FACTORY_NODE_BIN" --input-type=module - "$FACTORY_ATTEMPT_ROOT" \
   > "$FACTORY_ATTEMPT_ROOT/YOUTUBE_CHAPTERS.txt" <<'NODE'
 import { readFileSync } from "node:fs";
 const root = process.argv[2];
@@ -375,16 +390,27 @@ const labels = new Map([
 ]);
 const lines = [];
 const seen = new Set();
+const chapterEntries = [];
 for (const { shotId, startSec } of timeline.entries) {
   const label = labels.get(shotId);
   if (!label) continue;
   if (seen.has(shotId)) throw new Error(`duplicate chapter shot: ${shotId}`);
   seen.add(shotId);
+  chapterEntries.push({ shotId, startSec });
   const sec = Math.floor(startSec);
   lines.push(`${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, "0")} ${label}`);
 }
 const missing = [...labels.keys()].filter((shotId) => !seen.has(shotId));
 if (missing.length > 0) throw new Error(`missing chapter shots: ${missing.join(", ")}`);
+for (const [index, entry] of chapterEntries.entries()) {
+  const endSec = chapterEntries[index + 1]?.startSec ?? timeline.totalSec;
+  const durationSec = endSec - entry.startSec;
+  if (!Number.isFinite(durationSec) || durationSec < 10) {
+    throw new Error(
+      `chapter ${entry.shotId} is shorter than 10 seconds (${durationSec.toFixed(3)}s)`,
+    );
+  }
+}
 process.stdout.write(`${lines.join("\n")}\n`);
 NODE
 test -s "$FACTORY_ATTEMPT_ROOT/YOUTUBE_CHAPTERS.txt"
@@ -399,12 +425,14 @@ LD_PRELOAD= LD_AUDIT= LD_LIBRARY_PATH= \
   /usr/bin/env -i PATH=/usr/bin:/bin LC_ALL=C \
   /usr/bin/bash --noprofile --norc -p \
   scripts/promote-factory-ai-at-work-attempt.sh \
+  --node-bin "$FACTORY_NODE_BIN" \
   "$FACTORY_ATTEMPT_ROOT" \
   "$FACTORY_REVIEWED_ROOT"
 LD_PRELOAD= LD_AUDIT= LD_LIBRARY_PATH= \
   /usr/bin/env -i PATH=/usr/bin:/bin LC_ALL=C \
   /usr/bin/bash --noprofile --norc -p \
   scripts/promote-factory-ai-at-work-attempt.sh \
+  --node-bin "$FACTORY_NODE_BIN" \
   --verify "$FACTORY_REVIEWED_ROOT"
 ```
 
@@ -414,8 +442,13 @@ cross-filesystem moves before permission mutation. Both the promoter and its
 semantic receipt validator require privileged Bash startup, fix system-tool
 lookup, and scrub caller shell, preload, Git, Node, ripgrep, and package-manager
 injection variables. The operator command clears dynamic-loader variables
-before Bash starts, then passes only the fixed path and locale into the
-promoter. It writes the sealed
+before Bash starts, then passes only the fixed path and locale in the
+environment and the already-canonical root-owned Node binary as an explicit
+operand. The promoter forwards that same binary to both semantic validation
+phases. Both entrypoints require root-owned non-writable ancestry, bind the
+file's canonical identity and digest across their functional Node probe, and
+then trust the root-owned executable for semantic validation. The promoter
+writes the sealed
 `PRODUCTION_RECEIPT.sha256` manifest only after moving the authenticated pack
 to a private same-filesystem name, makes the tree read-only, regenerates the
 full regular-file path-plus-digest set, runs the semantic receipt validator,
@@ -495,6 +528,50 @@ GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null GIT_ATTR_NOSYSTEM=1 \
     worktree remove --force "$FACTORY_STALE_SOURCE_SNAPSHOT"
 rmdir -- "$(dirname -- "$FACTORY_STALE_SOURCE_SNAPSHOT")"
 ```
+
+The render pipeline separately removes every private
+`agent-demo-video-render-inputs-*` binding root on success, ordinary failure,
+SIGINT, and SIGTERM. A cleanup failure is classified as
+`PRIVATE_INPUT_CLEANUP_FAILED` and prints the exact retained binding path plus
+the exact unpublished fresh-output staging path when one exists. If the render
+itself also failed, the original pipeline error remains the primary error. If
+rendering succeeded but binding cleanup failed, the fresh output claim stays
+unpublished; do not promote that attempt.
+
+An uncatchable kill or host loss can leave one of these binding roots behind.
+After confirming that no render process is using the exact path, use the
+bounded recovery helper. It removes one explicitly named, current-user-owned
+0700 directory directly beneath the selected temporary root. The helper
+requires the exact pipeline name
+`agent-demo-video-render-inputs-<dead-pid>-<six-alphanumeric-characters>`, the
+owned single-link 0400 created-by-pipeline marker, a trusted selected
+temporary root and ancestor chain, no live `/proc/<pid>`, no target or
+descendant mount, and a root at least the declared age (between 60 seconds and
+seven days). It refuses symlinks, trailing-slash aliases, and unexpected
+names:
+
+```bash
+set -euo pipefail
+
+FACTORY_STALE_RENDER_INPUT_ROOT="/tmp/agent-demo-video-render-inputs-REPLACE"
+LD_PRELOAD= LD_AUDIT= LD_LIBRARY_PATH= \
+  /usr/bin/env -i PATH=/usr/bin:/bin LC_ALL=C \
+  /usr/bin/bash --noprofile --norc -p \
+  scripts/cleanup-stale-render-input-root.sh \
+  --tmp-root /tmp \
+  --older-than-seconds 3600 \
+  "$FACTORY_STALE_RENDER_INPUT_ROOT"
+```
+
+The cleared loader environment protects Bash itself before the helper starts.
+The empty environment and privileged Bash mode then suppress caller startup
+files, imported functions, and inherited tool-selection variables before the
+exact destructive path is evaluated. A successful deletion remains successful
+even if the final stdout status write fails; the helper emits a best-effort
+stderr notice instead of reporting that the already-committed removal failed.
+
+The same-UID isolation boundary still applies: do not run recovery while a
+render or another process under the same Unix identity can rename that path.
 
 The pack promoter also handles ordinary failure, HUP, INT, and TERM by
 promotion phase. Before sealing, it restores the authenticated writable pack to

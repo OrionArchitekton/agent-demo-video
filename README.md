@@ -203,15 +203,17 @@ the same Unix user, which can manipulate that user's pathnames and `/proc`
 handles.
 Omitting the flag preserves the legacy reusable `config.out` behavior. Use
 distinct fresh directories for rehearsal and real narration.
-`--clips-dir <directory>` can pin a run to attempt-owned copies of prebaked
-inputs without changing the config file. `--script <file>` does the same for a
-copied narration manifest.
+`--clips-dir <absolute-directory>` can pin a run to attempt-owned copies of
+prebaked inputs without changing the config file. `--script <absolute-file>`
+does the same for a copied narration manifest. Both overrides require absolute
+paths so their meaning never changes with the launch or config directory.
 
 Every successful `render-report.json` keeps the existing short config and
 script hashes and also records full SHA-256 values for the resolved config,
-script, and each ordered prebaked clip. The pipeline hashes clip bytes before
-spend and rechecks them after capture, before rendering, so a changed input
-cannot be attributed to the finished artifact.
+script, and each ordered prebaked clip. Before narration spend, the pipeline
+copies each source clip into a private read-only render binding. The renderer
+and report consume only those bound bytes, so an ordinary later export to the
+operator source path cannot change the artifact or its digest.
 
 For a local source-run production render, `--attest-source-build` is reserved
 for the committed snapshot launcher. The launcher bytes are streamed from one
@@ -293,7 +295,7 @@ Key fields in `demo.config.json` (full schema in `src/types.ts`):
 
 | Field | Default | Notes |
 |---|---|---|
-| `script` | — | Path to DEMO_SCRIPT.md. `--script <file>` overrides it for one run |
+| `script` | — | Path to DEMO_SCRIPT.md. `--script <absolute-file>` overrides it for one run |
 | `dashboardBaseUrl` | — | Base URL of the running app (e.g. `http://localhost:3000`) |
 | `out` | `"out"` | Output directory. On a Linux filesystem under Linux or WSL, `--out <new-directory>` overrides it for one run, reserves a nonexistent target, renders through a private directory handle, retains the authenticated claim marker, and publishes with a no-clobber rename. This is a cooperative-process guarantee, not hostile same-UID isolation |
 | `platform` | `"landscape"` | Distribution preset. `"shorts"` renders a 9:16 `1080x1920` canvas for Shorts/TikTok/Reels while still capturing at a 16:9 desktop viewport; the framed scene floats the capture as a window on the tall canvas. Explicit `resolution` / `capture.viewport` override the preset |
@@ -313,7 +315,7 @@ Key fields in `demo.config.json` (full schema in `src/types.ts`):
 | `audio.soundDesign` | `true` | Synthesized ambient bed ducked under narration, click ticks, segment sweeps |
 | `motion.livingCamera` | `true` | Continuous camera path with drift; `motion.zoomOnAction: false` disables all camera motion |
 | `brand` | (off) | `{ title, subtitle, url, accent, cards }` adds branded title and end cards. `titleCard` / `endCard` may override either side independently while `cards` remains the shared default |
-| `clipsDir` | `"clips/prebaked"` | Where a **bare** prebaked clip filename resolves. Resolved against the config file's directory unless absolute; `--clips-dir <directory>` overrides it for one run |
+| `clipsDir` | `"clips/prebaked"` | Where a **bare** prebaked clip filename resolves. Resolved against the config file's directory unless absolute; `--clips-dir <absolute-directory>` overrides it for one run |
 | `preflight` | `true` | Fail-closed pre-flight selector gate; see [Pre-flight selector gate](#pre-flight-selector-gate). `false` (or `--no-preflight`) declines it |
 | `maxDurationSec` | `300` | Hard ceiling for the finished video. The render fails if the result exceeds it. Set it to the length limit you are shipping against. |
 | `capture.settleMs` | `500` | Budget for the post-navigation readiness wait (fonts ready, visible images decoded). `0` disables the probe. Exceeding the budget warns and records anyway. Under the default `screencast` engine the wait happens BEFORE recording starts, so unsettled frames are excluded; the legacy `recordvideo` engine binds capture at context creation, so there the wait shifts those frames later rather than excluding them. |

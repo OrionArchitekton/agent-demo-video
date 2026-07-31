@@ -1,6 +1,6 @@
 import { describe, it, expect, afterAll, beforeAll } from "vitest";
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -276,9 +276,11 @@ describe("preflight gate in runPipeline (smoke)", () => {
     const landscape = join(dir, "landscape.mp4");
     const portrait = join(dir, "portrait.mp4");
     const portraitSar = join(dir, "portrait-sar.mp4");
+    const portraitSymlink = join(dir, "portrait-symlink.mp4");
     await ffmpeg(["-y", "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "color=c=red:s=320x180:d=0.2", "-c:v", "libx264", "-pix_fmt", "yuv420p", landscape]);
     await ffmpeg(["-y", "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "color=c=blue:s=180x320:d=0.2", "-c:v", "libx264", "-pix_fmt", "yuv420p", portrait]);
     await ffmpeg(["-y", "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "color=c=green:s=90x320:d=0.2", "-vf", "setsar=2/1", "-c:v", "libx264", "-pix_fmt", "yuv420p", portraitSar]);
+    await symlink(portrait, portraitSymlink);
     const config = DemoConfigSchema.parse({
       script: join(dir, "demo.md"),
       dashboardBaseUrl: "http://localhost:3000",
@@ -297,6 +299,15 @@ describe("preflight gate in runPipeline (smoke)", () => {
     });
 
     expect(await runPreflight(manifestFor(portrait), config)).toEqual([]);
+    const symlinkFindings = await runPreflight(
+      manifestFor(portraitSymlink),
+      config,
+    );
+    expect(symlinkFindings).toMatchObject([{
+      shotId: "portrait-proof",
+      kind: "missing-clip",
+      severity: "blocking",
+    }]);
     const findings = await runPreflight(manifestFor(landscape), config);
     expect(findings).toMatchObject([{
       shotId: "portrait-proof",

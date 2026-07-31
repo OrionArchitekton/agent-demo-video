@@ -1,11 +1,12 @@
 import { describe, it, expect, afterAll, beforeAll } from "vitest";
 import { existsSync } from "node:fs";
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { resolveSelectorFindings } from "../src/preflight";
+import { resolveSelectorFindings, runPreflight } from "../src/preflight";
 import { runPipeline } from "../src/pipeline";
+import { ffmpeg } from "../src/ffmpeg";
 import { DemoConfigSchema, ManifestSchema } from "../src/types";
 
 const fixture = () => pathToFileURL(resolve("tests/fixtures/page.html")).href;
@@ -249,6 +250,79 @@ describe("preflight gate in runPipeline (smoke)", () => {
     });
 
     await expect(runPipeline(cfg)).rejects.toThrow(/preflight/i);
+    expect(existsSync(join(dir, "out", "audio"))).toBe(false);
+  }, 120_000);
+
+  it("invalidates an earlier render receipt before a blocking preflight exits", async () => {
+    const { dir, scriptPath } = await ambiguousScript();
+    const out = join(dir, "out");
+    const report = join(out, "render-report.json");
+    await mkdir(out, { recursive: true });
+    await writeFile(report, '{"parity":{"status":"pass"}}\n');
+    const cfg = DemoConfigSchema.parse({
+      script: scriptPath,
+      dashboardBaseUrl: "http://localhost:3000",
+      out,
+      resolution: { width: 1280, height: 720 },
+    });
+
+    await expect(runPipeline(cfg)).rejects.toThrow(/preflight/i);
+
+    expect(existsSync(report)).toBe(false);
+  }, 120_000);
+
+  it("blocks a wrong-aspect fullBleed clip before narration while accepting a matching composition", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "preflight-fullbleed-"));
+    const landscape = join(dir, "landscape.mp4");
+    const portrait = join(dir, "portrait.mp4");
+    const portraitSar = join(dir, "portrait-sar.mp4");
+    await ffmpeg(["-y", "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "color=c=red:s=320x180:d=0.2", "-c:v", "libx264", "-pix_fmt", "yuv420p", landscape]);
+    await ffmpeg(["-y", "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "color=c=blue:s=180x320:d=0.2", "-c:v", "libx264", "-pix_fmt", "yuv420p", portrait]);
+    await ffmpeg(["-y", "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "color=c=green:s=90x320:d=0.2", "-vf", "setsar=2/1", "-c:v", "libx264", "-pix_fmt", "yuv420p", portraitSar]);
+    const config = DemoConfigSchema.parse({
+      script: join(dir, "demo.md"),
+      dashboardBaseUrl: "http://localhost:3000",
+      out: join(dir, "out"),
+      resolution: { width: 360, height: 640 },
+    });
+    const manifestFor = (clip: string) => ManifestSchema.parse({
+      shots: [{
+        id: "portrait-proof",
+        target: "prebaked",
+        clip,
+        fullBleed: true,
+        narration: "A finished portrait composition.",
+        actions: [],
+      }],
+    });
+
+    expect(await runPreflight(manifestFor(portrait), config)).toEqual([]);
+    const findings = await runPreflight(manifestFor(landscape), config);
+    expect(findings).toMatchObject([{
+      shotId: "portrait-proof",
+      kind: "invalid-clip-geometry",
+      severity: "blocking",
+    }]);
+    const sarFindings = await runPreflight(manifestFor(portraitSar), config);
+    expect(sarFindings).toMatchObject([{
+      shotId: "portrait-proof",
+      kind: "invalid-clip-geometry",
+      severity: "blocking",
+    }]);
+    expect(sarFindings[0]?.message).toMatch(/non-square sample aspect ratio 2:1.*square pixels/s);
+
+    await writeFile(
+      config.script,
+      [
+        "### SHOT portrait-proof",
+        "- target: prebaked",
+        `- clip: ${landscape}`,
+        "- fullBleed: true",
+        "- narration: A finished portrait composition.",
+        "",
+      ].join("\n"),
+    );
+    await expect(runPipeline(config)).rejects.toThrow(/preflight/i);
     expect(existsSync(join(dir, "out", "audio"))).toBe(false);
   }, 120_000);
 

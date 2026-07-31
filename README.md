@@ -189,6 +189,44 @@ shots it could not adjudicate, so a finished video says for itself how it was ch
 The gate is fail-closed. Set `preflight: false` in the config, or pass `--no-preflight`
 for a single run, to decline it; a declined run says so in its output.
 
+For a production attempt, pass `--out <new-directory>`. This per-run override
+atomically reserves the fresh output name and refuses an existing path before
+reading the script or changing an artifact. On a Linux filesystem under Linux
+or WSL (not a mounted Windows/DrvFs path), later writes stay bound to a new
+private staging-directory handle while the requested name remains occupied.
+A changed claim fails the run without deleting the replacement; success parks
+and retains the authenticated claim as `.agent-demo-video-output-claim` inside
+the output, then publishes the staged directory with a no-clobber rename. This
+protects against existing targets and accidental or cooperating concurrent
+reuse. It is not an isolation boundary against a malicious process running as
+the same Unix user, which can manipulate that user's pathnames and `/proc`
+handles.
+Omitting the flag preserves the legacy reusable `config.out` behavior. Use
+distinct fresh directories for rehearsal and real narration.
+`--clips-dir <directory>` can pin a run to attempt-owned copies of prebaked
+inputs without changing the config file. `--script <file>` does the same for a
+copied narration manifest.
+
+Every successful `render-report.json` keeps the existing short config and
+script hashes and also records full SHA-256 values for the resolved config,
+script, and each ordered prebaked clip. The pipeline hashes clip bytes before
+spend and rechecks them after capture, before rendering, so a changed input
+cannot be attributed to the finished artifact.
+
+For a local source-run production render, `--attest-source-build` is reserved
+for the committed snapshot launcher. The launcher bytes are streamed from one
+fixed commit, create a private detached worktree, verify and freeze every
+scoped repository byte before application modules load, and then invoke that
+snapshot's `src/cli.ts`. Direct mutable-checkout use is refused. The report
+records snapshot execution, the commit, scoped Git tree, package manifest, and
+dependency-lock hashes, and the pipeline blocks the receipt if that state
+changes during rendering. Installed dependency and system-tool bytes remain
+reported toolchain inputs, not part of the repository source claim. The frozen
+dependency install receives no render secrets and ignores caller npm/pnpm
+configuration, lifecycle scripts, and pnpm hook files. Snapshot attestation is
+intentionally incompatible with `--render-host` until remote bundles have their
+own content-addressed attestation.
+
 ## Authenticated SaaS capture (`target: live`)
 
 `target: live` drives an authenticated SaaS app (Slack, Notion, Linear, Stripe, any
@@ -255,9 +293,9 @@ Key fields in `demo.config.json` (full schema in `src/types.ts`):
 
 | Field | Default | Notes |
 |---|---|---|
-| `script` | — | Path to DEMO_SCRIPT.md |
+| `script` | — | Path to DEMO_SCRIPT.md. `--script <file>` overrides it for one run |
 | `dashboardBaseUrl` | — | Base URL of the running app (e.g. `http://localhost:3000`) |
-| `out` | `"out"` | Output directory |
+| `out` | `"out"` | Output directory. On a Linux filesystem under Linux or WSL, `--out <new-directory>` overrides it for one run, reserves a nonexistent target, renders through a private directory handle, retains the authenticated claim marker, and publishes with a no-clobber rename. This is a cooperative-process guarantee, not hostile same-UID isolation |
 | `platform` | `"landscape"` | Distribution preset. `"shorts"` renders a 9:16 `1080x1920` canvas for Shorts/TikTok/Reels while still capturing at a 16:9 desktop viewport; the framed scene floats the capture as a window on the tall canvas. Explicit `resolution` / `capture.viewport` override the preset |
 | `resolution` | preset (`1920×1080` landscape) | Output canvas of the finished video |
 | `capture.viewport` | preset (follows canvas on landscape; `1920×1080` on shorts) | Browser capture geometry, decoupled from the canvas |
@@ -274,13 +312,18 @@ Key fields in `demo.config.json` (full schema in `src/types.ts`):
 | `theme.frame.enabled` | `true` | Scene framing: the capture floats as a rounded, shadowed window on a gradient backdrop |
 | `audio.soundDesign` | `true` | Synthesized ambient bed ducked under narration, click ticks, segment sweeps |
 | `motion.livingCamera` | `true` | Continuous camera path with drift; `motion.zoomOnAction: false` disables all camera motion |
-| `brand` | (off) | `{ title, subtitle, url, accent, cards }` adds branded title and end cards |
-| `clipsDir` | `"clips/prebaked"` | Where a **bare** prebaked clip filename resolves. Resolved against the config file's directory unless absolute |
+| `brand` | (off) | `{ title, subtitle, url, accent, cards }` adds branded title and end cards. `titleCard` / `endCard` may override either side independently while `cards` remains the shared default |
+| `clipsDir` | `"clips/prebaked"` | Where a **bare** prebaked clip filename resolves. Resolved against the config file's directory unless absolute; `--clips-dir <directory>` overrides it for one run |
 | `preflight` | `true` | Fail-closed pre-flight selector gate; see [Pre-flight selector gate](#pre-flight-selector-gate). `false` (or `--no-preflight`) declines it |
 | `maxDurationSec` | `300` | Hard ceiling for the finished video. The render fails if the result exceeds it. Set it to the length limit you are shipping against. |
 | `capture.settleMs` | `500` | Budget for the post-navigation readiness wait (fonts ready, visible images decoded). `0` disables the probe. Exceeding the budget warns and records anyway. Under the default `screencast` engine the wait happens BEFORE recording starts, so unsettled frames are excluded; the legacy `recordvideo` engine binds capture at context creation, so there the wait shifts those frames later rather than excluding them. |
 
 Sample: `demo.config.sample.json`.
+
+An executable real-production example lives at
+[`demos/factory-ai-at-work/gate-01/`](demos/factory-ai-at-work/gate-01/README.md):
+one landscape master and three portrait cuts, all pinned and fail-closed on
+operator-supplied captures.
 
 ## Third-party tabs
 
@@ -310,7 +353,11 @@ Add `- fullBleed: true` to a shot whose clip is ALREADY a finished composition, 
 motion-graphic title card rendered by another tool. The pipeline then skips the window framing and
 the segment fade-in for that shot, because the clip carries its own framing and its own motion.
 Without it a full-bleed card is shrunk to `theme.frame.scale` inside a shadowed window it was never
-designed for.
+designed for. A finished composition must match the output canvas aspect. Preflight probes existing
+full-bleed clips before TTS, and the renderer checks again before normalization; a mismatch is
+rejected instead of silently padded with bars. Finished compositions must use square sample pixels
+(`1:1` SAR). The guard rejects anamorphic input because the current render filters operate on coded
+geometry, and normalization pins the same `v:0` stream that the geometry probe validates.
 
 ```markdown
 ### SHOT title

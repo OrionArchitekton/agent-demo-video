@@ -43,9 +43,12 @@ the rest, captions and brand cards lay out on the canvas.
    does not match the declared content size is rejected loudly before
    compositing, naming the shot and the `fullBleed: true` escape hatch; padding
    bars inside the window is never shipped silently. A `fullBleed` shot bypasses
-   framing and composites directly onto the canvas, so finished portrait
-   compositions remain first-class in shorts renders. Landscape renders (content
-   absent or canvas-aspect) keep today's pad-inside-window behavior unchanged.
+   framing and composites directly onto the canvas, so its source must match the
+   canvas aspect within encoder-rounding slack; preflight and render both reject
+   a mismatch rather than padding it. Inputs inspected at this seam must use
+   square sample pixels and normalization pins the same first video stream that
+   geometry probing validates. Landscape framed renders (content absent or
+   canvas-aspect) keep today's pad-inside-window behavior unchanged.
 5. **Remote-render parity.** A manifest built from a shorts config renders the same
    video remotely as locally: canvas and content size both travel. A manifest from
    an older build, which carries no content size, renders exactly as it does today.
@@ -79,6 +82,10 @@ the rest, captions and brand cards lay out on the canvas.
   geometry mismatches the content size rejects with an error naming the shot and
   `fullBleed`; matching geometry (within encoder even-rounding slack) passes;
   canvas-aspect and content-absent configs never reject.
+- AC7: an existing `fullBleed` clip whose display aspect differs from the output
+  canvas is a blocking preflight finding before TTS and is independently
+  rejected by the renderer before normalization; matching square-pixel aspects
+  pass, while non-square sample aspect ratios fail closed at both seams.
 
 ## Test seams
 
@@ -88,3 +95,4 @@ the rest, captions and brand cards lay out on the canvas.
 - Manifest build/load round-trip for scenario 5.
 - The render stage invoked directly on prepared segment files (no capture) for
   scenario 4.
+- The full preflight-to-pipeline seam for full-bleed source geometry.

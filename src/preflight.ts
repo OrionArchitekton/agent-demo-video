@@ -7,6 +7,8 @@ import { resolveClipPath } from "./clips.js";
 import { redactUrl, redactUrlsInText, scrubControlChars } from "./sanitize.js";
 import { SELECTOR_TIMEOUT_MS } from "./timeouts.js";
 import { captureViewport } from "./platforms.js";
+import { probeSizePx } from "./ffmpeg.js";
+import { assertFullBleedCanvasAspect } from "./framing.js";
 import type { Action, DemoConfig, Manifest, PreflightFinding, Shot } from "./types";
 
 /** Action kinds that cannot run at all without a selector. */
@@ -142,6 +144,38 @@ export function structuralFindings(manifest: Manifest, config: DemoConfig): Pref
           `shot "${shot.id}" uses ${selectors} selector(s) but declares no goto action; ` +
           "capture builds a fresh context per shot, so this shot runs against about:blank " +
           "and every locator waits out its full timeout",
+      });
+    }
+  }
+  return findings;
+}
+
+/**
+ * Probe finished full-bleed compositions before narration spend. Merely
+ * finding the file is insufficient: normalize preserves aspect and pads, so a
+ * landscape mistake can otherwise become a formally valid portrait file with
+ * hidden bars.
+ */
+async function clipGeometryFindings(
+  manifest: Manifest,
+  config: DemoConfig,
+): Promise<PreflightFinding[]> {
+  const findings: PreflightFinding[] = [];
+  for (const shot of manifest.shots) {
+    if (shot.target !== "prebaked" || !shot.fullBleed || !shot.clip) continue;
+    const clipPath = resolveClipPath(shot.clip, config.clipsDir, config.configDir ?? process.cwd());
+    if (!existsSync(clipPath) || !statSync(clipPath).isFile()) continue;
+    try {
+      assertFullBleedCanvasAspect(config.resolution, await probeSizePx(clipPath), shot.id);
+    } catch (error) {
+      findings.push({
+        shotId: shot.id,
+        kind: "invalid-clip-geometry",
+        severity: "blocking",
+        message:
+          error instanceof Error
+            ? error.message
+            : `shot "${shot.id}": could not verify fullBleed clip geometry`,
       });
     }
   }
@@ -358,7 +392,11 @@ export async function resolveSelectorFindings(
  * see both classes in one pass rather than one render at a time.
  */
 export async function runPreflight(manifest: Manifest, config: DemoConfig): Promise<PreflightFinding[]> {
-  return [...structuralFindings(manifest, config), ...(await resolveSelectorFindings(manifest, config))];
+  return [
+    ...structuralFindings(manifest, config),
+    ...(await clipGeometryFindings(manifest, config)),
+    ...(await resolveSelectorFindings(manifest, config)),
+  ];
 }
 
 /** Render findings as operator-readable lines, severity first so a scan sorts itself. */

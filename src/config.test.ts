@@ -85,6 +85,56 @@ describe("loadConfig", () => {
     const cfg = loadConfig(path);
     expect(cfg.capture.auth).toBeUndefined();
   });
+
+  it("lets an artifact-first video suppress only the opening brand card", () => {
+    const dir = mkdtempSync(join(tmpdir(), "cfg-"));
+    const path = join(dir, "demo.config.json");
+    writeFileSync(path, JSON.stringify({
+      script: "DEMO.md",
+      dashboardBaseUrl: "http://x",
+      brand: {
+        title: "Produced by AI, directed and reviewed by Dan Mercede",
+        cards: true,
+        titleCard: false,
+        endCard: true,
+      },
+    }));
+
+    const cfg = loadConfig(path);
+
+    expect(cfg.brand?.titleCard).toBe(false);
+    expect(cfg.brand?.endCard).toBe(true);
+  });
+
+  it("keeps the legacy brand.cards switch as the default for both cards", () => {
+    const dir = mkdtempSync(join(tmpdir(), "cfg-"));
+    const enabledPath = join(dir, "enabled.config.json");
+    const disabledPath = join(dir, "disabled.config.json");
+    const base = { script: "DEMO.md", dashboardBaseUrl: "http://x" };
+    writeFileSync(enabledPath, JSON.stringify({ ...base, brand: { title: "Demo" } }));
+    writeFileSync(disabledPath, JSON.stringify({ ...base, brand: { title: "Demo", cards: false } }));
+
+    expect(loadConfig(enabledPath).brand).toMatchObject({ titleCard: true, endCard: true });
+    expect(loadConfig(disabledPath).brand).toMatchObject({ titleCard: false, endCard: false });
+  });
+
+  it("resolves each partial brand-card override independently", () => {
+    const dir = mkdtempSync(join(tmpdir(), "cfg-"));
+    const titleOffPath = join(dir, "title-off.config.json");
+    const endOnPath = join(dir, "end-on.config.json");
+    const base = { script: "DEMO.md", dashboardBaseUrl: "http://x" };
+    writeFileSync(titleOffPath, JSON.stringify({
+      ...base,
+      brand: { title: "Demo", cards: true, titleCard: false },
+    }));
+    writeFileSync(endOnPath, JSON.stringify({
+      ...base,
+      brand: { title: "Demo", cards: false, endCard: true },
+    }));
+
+    expect(loadConfig(titleOffPath).brand).toMatchObject({ titleCard: false, endCard: true });
+    expect(loadConfig(endOnPath).brand).toMatchObject({ titleCard: false, endCard: true });
+  });
 });
 
 describe("relative dashboardBaseUrl", () => {

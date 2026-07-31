@@ -219,10 +219,19 @@ export const DemoConfigSchema = z.object({
     subtitle: z.string().optional(),
     url: z.string().optional(),
     accent: hexColor().default("#3fb950"),
+    // Backward-compatible shared switch. titleCard/endCard, when declared,
+    // override only their own side so an artifact-first piece can cold-open on
+    // proof while retaining the generated disclosure/end-screen card.
     cards: z.boolean().default(true),
+    titleCard: z.boolean().optional(),
+    endCard: z.boolean().optional(),
     titleSec: z.number().min(0.5).default(2.2),
     endSec: z.number().min(0.5).default(3.0),
-  }).strict().optional(),
+  }).strict().transform((b) => ({
+    ...b,
+    titleCard: b.titleCard ?? b.cards,
+    endCard: b.endCard ?? b.cards,
+  })).optional(),
   // Optional CSS injected into every captured page before interaction. Use to
   // stabilise capture of dashboards taller than the output frame — e.g. bound a
   // growing list's height so the document never overflows the viewport (which
@@ -250,6 +259,8 @@ export type PreflightFindingKind =
   | "missing-selector"
   /** A prebaked shot's clip is absent at its resolved path. */
   | "missing-clip"
+  /** A finished full-bleed clip cannot fill the declared output canvas without bars. */
+  | "invalid-clip-geometry"
   /** The page a shot opens could not be loaded, or returned a non-OK status. */
   | "unreachable"
   /** Prebaked shot declares selector actions, which capture short-circuits and never runs. */

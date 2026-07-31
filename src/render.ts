@@ -1,5 +1,5 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
 import type { DemoConfig, TtsResult } from "./types";
 import {
   ffmpeg,
@@ -18,7 +18,13 @@ import {
 import { toSrt, toWordAss, captionStyle } from "./captions";
 import { buildTimeline, reconcileSegmentDuration } from "./timeline";
 import { verifyParity } from "./verify";
-import { maskGenArgs, shadowGenArgs, frameArgs, assertFramedContentAspect } from "./framing";
+import {
+  maskGenArgs,
+  shadowGenArgs,
+  frameArgs,
+  assertFramedContentAspect,
+  assertFullBleedCanvasAspect,
+} from "./framing";
 import { ambientBedArgs, tickWavArgs, sweepWavArgs, soundscapeArgs } from "./sound";
 
 /** The render-affecting subset of the demo config (no capture/tts/auth fields). */
@@ -118,6 +124,14 @@ export async function renderVideo(inputs: RenderInputs): Promise<RenderResult> {
     // Cards bake their own fades in cardArgs, so they are excluded here —
     // stacking the transition fade would double-fade the end card's open.
     const isCard = inputs.segmentKinds?.[i] === "card";
+    const rawSize = isCard || contentDecoupled ? await probeSizePx(rawSegments[i]!) : undefined;
+    if (isCard) {
+      assertFullBleedCanvasAspect(
+        config.resolution,
+        rawSize!,
+        tts[i]?.shotId ?? `segment ${i}`,
+      );
+    }
     const fadeInSec = i > 0 && !isCard && config.theme.fadeInMs > 0 ? config.theme.fadeInMs / 1000 : undefined;
     if (frame.enabled && maskPng && !isCard) {
       // Framed-aspect guard: with the window decoupled from the canvas
@@ -126,7 +140,7 @@ export async function renderVideo(inputs: RenderInputs): Promise<RenderResult> {
       // skipped entirely for canvas-aspect renders (assert is a no-op there),
       // so landscape stays argument-identical.
       if (contentDecoupled) {
-        assertFramedContentAspect(frameOpts, await probeSizePx(rawSegments[i]!), tts[i]?.shotId ?? `segment ${i}`);
+        assertFramedContentAspect(frameOpts, rawSize!, tts[i]?.shotId ?? `segment ${i}`);
       }
       const rawSec = await probeDurationSec(rawSegments[i]!);
       await ffmpeg(
@@ -209,13 +223,21 @@ export async function renderVideo(inputs: RenderInputs): Promise<RenderResult> {
 
   // 9. Concat video segments
   const videoListPath = join(segDir, "list.txt");
-  await writeFile(videoListPath, concatListContent(segMp4s), "utf8");
+  await writeFile(
+    videoListPath,
+    concatListContent(segMp4s.map((path) => basename(path))),
+    "utf8",
+  );
   const concatVideoPath = join(out, "video.mp4");
   await ffmpeg(concatArgs(videoListPath, concatVideoPath));
 
   // 10. Concat audio segments
   const audioListPath = join(audioDir, "list.txt");
-  await writeFile(audioListPath, concatListContent(paddedAudioPaths), "utf8");
+  await writeFile(
+    audioListPath,
+    concatListContent(paddedAudioPaths.map((path) => basename(path))),
+    "utf8",
+  );
   const concatAudioPath = join(out, "audio.mp3");
   await ffmpeg(concatAudioArgs(audioListPath, concatAudioPath));
 

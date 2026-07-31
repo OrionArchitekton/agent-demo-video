@@ -4,6 +4,53 @@
 
 ### Added
 
+- Independent `brand.titleCard` and `brand.endCard` overrides. The existing
+  `brand.cards` switch remains the default for both, so current configs render
+  unchanged while artifact-first pieces can omit only the opening card.
+- A production pack for Factory AI at Work Gate 1: one pinned landscape master,
+  three 9:16 cuts, a real-capture contract, publishing copy, contract tests, and
+  an operator runbook. Its reviewed-pack promoter now binds an exact,
+  single-filesystem renderer topology before sealing, writes locale-independent
+  manifests, requires exact relative concat selections, and probes those same
+  archived segments against the reported shot timeline. Privileged,
+  environment-scrubbed receipt validation rejects placeholder review evidence;
+  phase-aware cleanup restores an interrupted writable attempt or reports the
+  retained sealed path, and a failed post-commit status write cannot misreport
+  an already verified promotion as a retryable failure. Production receipts
+  bind one clean source-build attestation and archived claim ledger. The pack
+  deliberately leaves served-state observation and the three-episode promotion
+  counter to the ratified channel operator authority. Captured and rendered
+  media remain ignored.
+- Full SHA-256 render provenance for the resolved config, narration script, and
+  ordered prebaked clip bytes. Clips are rechecked after capture and before
+  rendering; the existing short config and script hashes remain for
+  compatibility. The committed source-snapshot launcher additionally binds a
+  local render to a private detached worktree of the tracked runner, commit,
+  scoped Git tree, package manifest, and dependency lock before application
+  modules load. The streamed launcher rejects caller startup files, functions,
+  command paths, working-directory config, Git environment, global or system
+  Git config, repository hooks and filesystem monitors, and implicit Node or
+  package-manager selection. Frozen dependency installation runs without
+  Doppler secrets, lifecycle scripts, pnpm hook files, or caller npm/pnpm
+  configuration. A module-local capability prevents another pipeline graph
+  from reusing the admitted session, and source drift during rendering blocks
+  the receipt. Direct mutable-checkout use of `--attest-source-build` is
+  refused, and an otherwise successful render fails if its detached snapshot
+  cannot be removed.
+- A per-run `--out <new-directory>` override for immutable production attempts.
+  The target is claimed exclusively and an existing path is refused before
+  inputs are read or artifacts are changed. On a Linux filesystem under Linux
+  or WSL, subsequent writes stay bound to a private staging-directory handle.
+  Publication moves the authenticated claim into the output as
+  `.agent-demo-video-output-claim` and uses a no-clobber rename without
+  pathname-based cleanup. The guarantee covers existing targets and
+  accidental or cooperating collisions, not a malicious same-UID process.
+  `--clips-dir` and `--script` can select attempt-owned prebaked and narration
+  inputs without editing a config; configs without the flags retain their
+  reusable behavior.
+- Full-bleed source geometry gates in both preflight and rendering. A finished
+  composition whose display aspect differs from its output canvas now fails
+  instead of being silently padded into a valid-size letterboxed file.
 - `platform` distribution preset. `"shorts"` renders a 9:16 `1080x1920` canvas for
   Shorts/TikTok/Reels cuts while still capturing web apps at a 16:9 desktop viewport;
   the framed scene keeps the capture's aspect for the floating window, so nothing is
@@ -102,6 +149,12 @@
 
 ### Fixed
 
+- CLI parsing now rejects unknown options, surplus config paths, duplicate
+  singleton flags, and pipeline-only flags on `login`, so a mistyped production
+  `--out` cannot silently fall back to a reusable configured output.
+- Source-attested production renders now fail if their required
+  `render-report.json` cannot be built or written. Ordinary renders retain the
+  historical best-effort provenance behavior.
 - Every config schema object now rejects unrecognised keys, so a typo in a
   setting fails loudly instead of silently applying the default it was written
   to override.

@@ -1,0 +1,61 @@
+{
+  "script": "demos/factory-ai-at-work/gate-01/master/DEMO_SCRIPT.md",
+  "dashboardBaseUrl": "https://claude.ai",
+  "out": "out/factory-ai-at-work/gate-01/master",
+  "platform": "landscape",
+  "fps": 30,
+  "maxDurationSec": 600,
+  "preflight": true,
+  "clipsDir": "../clips/master",
+  "voice": {
+    "voiceId": "AwstCxsCY8YE2KYw66By",
+    "modelId": "eleven_multilingual_v2",
+    "seed": 42,
+    "stability": 0.5,
+    "similarity": 0.75
+  },
+  "theme": {
+    "captionFont": "Liberation Sans",
+    "captionSize": 45,
+    "cursor": false,
+    "captionBox": true,
+    "captionMarginV": 64,
+    "fadeInMs": 250,
+    "captions": "wordpop",
+    "captionAccent": "#E68249",
+    "frame": {
+      "enabled": false,
+      "scale": 0.86,
+      "radius": 24,
+      "backdropTop": "#020B29",
+      "backdropBottom": "#020B29",
+      "shadow": false
+    },
+    "annotations": {
+      "enabled": false,
+      "durationMs": 500,
+      "fontSize": 24,
+      "position": "top-right"
+    }
+  },
+  "audio": {
+    "soundDesign": true,
+    "bedDb": -30,
+    "ticks": false,
+    "sweeps": true
+  },
+  "motion": {
+    "zoomOnAction": false,
+    "livingCamera": false
+  },
+  "brand": {
+    "title": "Produced by AI, directed and reviewed by Dan Mercede",
+    "url": "youtube.com/@DanMercedeAI",
+    "accent": "#E68249",
+    "cards": true,
+    "titleCard": false,
+    "endCard": true,
+    "titleSec": 2.2,
+    "endSec": 15
+  }
+}

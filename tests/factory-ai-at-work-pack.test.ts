@@ -1812,6 +1812,13 @@ describe("Factory AI at Work Gate 1 production pack", () => {
     expect(runbook).toContain(".agent-demo-video-output-claim");
     expect(runbook).toContain("malicious process with the same Unix identity");
     expect(runbook).toContain("YOUTUBE_CHAPTERS.txt");
+    expect(runbook).toContain(
+      '> "$FACTORY_ATTEMPT_ROOT/YOUTUBE_CHAPTERS.txt.tmp"',
+    );
+    expect(runbook).toContain(
+      'mv -- "$FACTORY_ATTEMPT_ROOT/YOUTUBE_CHAPTERS.txt.tmp" \\\n' +
+        '  "$FACTORY_ATTEMPT_ROOT/YOUTUBE_CHAPTERS.txt"',
+    );
     expect(runbook).toContain("shorter than 10 seconds");
     expect(runbook).toContain("does not");
     expect(runbook).toContain("maintain the three-video counter");

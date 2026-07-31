@@ -370,8 +370,10 @@ NODE
 Generate and persist the measured YouTube chapter block:
 
 ```bash
+set -euo pipefail
+
 "$FACTORY_NODE_BIN" --input-type=module - "$FACTORY_ATTEMPT_ROOT" \
-  > "$FACTORY_ATTEMPT_ROOT/YOUTUBE_CHAPTERS.txt" <<'NODE'
+  > "$FACTORY_ATTEMPT_ROOT/YOUTUBE_CHAPTERS.txt.tmp" <<'NODE'
 import { readFileSync } from "node:fs";
 const root = process.argv[2];
 const { timeline } = JSON.parse(
@@ -413,7 +415,9 @@ for (const [index, entry] of chapterEntries.entries()) {
 }
 process.stdout.write(`${lines.join("\n")}\n`);
 NODE
-test -s "$FACTORY_ATTEMPT_ROOT/YOUTUBE_CHAPTERS.txt"
+test -s "$FACTORY_ATTEMPT_ROOT/YOUTUBE_CHAPTERS.txt.tmp"
+mv -- "$FACTORY_ATTEMPT_ROOT/YOUTUBE_CHAPTERS.txt.tmp" \
+  "$FACTORY_ATTEMPT_ROOT/YOUTUBE_CHAPTERS.txt"
 ```
 
 After all four outputs pass, use the closed-world promoter:

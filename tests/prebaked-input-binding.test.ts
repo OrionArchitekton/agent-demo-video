@@ -11,6 +11,7 @@ import { DemoConfigSchema } from "../src/types";
 const PRIVATE_INPUT_ROOT_MARKER_NAME = ".agent-demo-video-private-input-root";
 const PRIVATE_INPUT_ROOT_MARKER_CONTENT = "agent-demo-video-private-input-root-v1\n";
 const DEAD_RECOVERY_PID = 99_999_999;
+const itOnLinux = process.platform === "linux" ? it : it.skip;
 
 async function markPrivateInputRoot(root: string): Promise<void> {
   const marker = join(root, PRIVATE_INPUT_ROOT_MARKER_NAME);
@@ -785,7 +786,7 @@ describe("prebaked render-input binding", () => {
     30_000,
   );
 
-  it("recovers only one explicitly named owned stale render-input root", async () => {
+  itOnLinux("recovers only one explicitly named owned stale render-input root", async () => {
     const staleRoot = await mkdtemp(
       join(
         tmpdir(),
@@ -820,7 +821,7 @@ describe("prebaked render-input binding", () => {
     await expect(stat(staleRoot)).rejects.toMatchObject({ code: "ENOENT" });
   });
 
-  it("refuses a trailing-slash symlink without deleting through it", async () => {
+  itOnLinux("refuses a trailing-slash symlink without deleting through it", async () => {
     const selectedTmpRoot = await mkdtemp(join(tmpdir(), "prebaked-recovery-parent-"));
     const outsideRoot = await mkdtemp(join(tmpdir(), "prebaked-recovery-outside-"));
     const marker = join(outsideRoot, "must-survive.txt");
@@ -870,7 +871,7 @@ describe("prebaked render-input binding", () => {
     }
   });
 
-  it("requires privileged Bash startup for stale-root recovery", async () => {
+  itOnLinux("requires privileged Bash startup for stale-root recovery", async () => {
     const recoveryScript = join(
       process.cwd(),
       "scripts/cleanup-stale-render-input-root.sh",
@@ -926,7 +927,7 @@ describe("prebaked render-input binding", () => {
     }
   });
 
-  it("rejects every unexpected character in a recovery target suffix", async () => {
+  itOnLinux("rejects every unexpected character in a recovery target suffix", async () => {
     const selectedTmpRoot = await mkdtemp(join(tmpdir(), "prebaked-recovery-name-"));
     const unexpectedRoot = join(
       selectedTmpRoot,
@@ -971,7 +972,7 @@ describe("prebaked render-input binding", () => {
     }
   });
 
-  it("refuses recovery beneath a writable non-sticky temporary root", async () => {
+  itOnLinux("refuses recovery beneath a writable non-sticky temporary root", async () => {
     const selectedTmpRoot = await mkdtemp(join(tmpdir(), "prebaked-recovery-unsafe-"));
     const staleRoot = await mkdtemp(
       join(
@@ -1019,7 +1020,7 @@ describe("prebaked render-input binding", () => {
     }
   });
 
-  it("refuses a private temporary root beneath an unsafe ancestor", async () => {
+  itOnLinux("refuses a private temporary root beneath an unsafe ancestor", async () => {
     const unsafeAncestor = await mkdtemp(join(tmpdir(), "prebaked-recovery-ancestor-"));
     const selectedTmpRoot = join(unsafeAncestor, "private-tmp");
     await mkdir(selectedTmpRoot, { mode: 0o700 });
@@ -1069,7 +1070,7 @@ describe("prebaked render-input binding", () => {
     }
   });
 
-  it("refuses an unmarked directory that only imitates a stale render-input root", async () => {
+  itOnLinux("refuses an unmarked directory that only imitates a stale render-input root", async () => {
     const selectedTmpRoot = await mkdtemp(join(tmpdir(), "prebaked-recovery-unmarked-"));
     const imitationRoot = await mkdtemp(
       join(
@@ -1114,7 +1115,7 @@ describe("prebaked render-input binding", () => {
     }
   });
 
-  it("refuses recovery while the root's owning process is still live", async () => {
+  itOnLinux("refuses recovery while the root's owning process is still live", async () => {
     const selectedTmpRoot = await mkdtemp(join(tmpdir(), "prebaked-recovery-live-"));
     const liveRoot = await mkdtemp(
       join(
@@ -1160,7 +1161,7 @@ describe("prebaked render-input binding", () => {
     }
   });
 
-  it("reports committed stale-root deletion as success even when stdout is full", async () => {
+  itOnLinux("reports committed stale-root deletion as success even when stdout is full", async () => {
     const selectedTmpRoot = await mkdtemp(join(tmpdir(), "prebaked-recovery-output-"));
     const staleRoot = await mkdtemp(
       join(

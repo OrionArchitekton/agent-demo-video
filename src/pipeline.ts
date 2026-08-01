@@ -468,13 +468,12 @@ async function bindPrebakedInputs(
       let sourceHandle: FileHandle | undefined;
       let boundHandle: FileHandle | undefined;
       try {
-        let openedSource;
         if (strictRootHandle && strictComponents) {
           sourceHandle = await openStrictClipSource(
             strictRootHandle,
             strictComponents,
           );
-          openedSource = await sourceHandle.stat();
+          const openedSource = await sourceHandle.stat();
           if (!openedSource.isFile()) {
             throw new Error("prebaked source must be a regular, non-symbolic-link file");
           }
@@ -487,7 +486,7 @@ async function bindPrebakedInputs(
             sourcePath,
             constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
           );
-          openedSource = await sourceHandle.stat();
+          const openedSource = await sourceHandle.stat();
           if (
             !openedSource.isFile() ||
             openedSource.dev !== namedSource.dev ||

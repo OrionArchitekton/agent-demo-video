@@ -70,6 +70,7 @@ describe("parseCommand (CLI dispatch)", () => {
     const clipsRoot = join(root, "clips");
     const configPath = join(root, "demo.config.json");
     await mkdir(clipsRoot);
+    await writeFile(join(root, "DEMO_SCRIPT.md"), "# Demo\n", "utf8");
     await writeFile(
       configPath,
       JSON.stringify({

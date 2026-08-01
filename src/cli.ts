@@ -223,6 +223,7 @@ export async function main(argv: string[]): Promise<void> {
   const r = await runPipeline(config, {
     ...(render ? { render } : {}),
     ...(out ? { requireFreshOut: true } : {}),
+    ...(clipsDir ? { strictClipsRoot: clipsDir } : {}),
     ...(sourceBuild ? { sourceBuild } : {}),
   });
   if (renderHost) console.log("  (render offloaded to " + renderHost + ")");

@@ -1,4 +1,25 @@
-import { describe, it, expect } from "vitest";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { describe, it, expect, vi } from "vitest";
+
+const pipelineProbe = vi.hoisted(() => ({
+  opts: undefined as Record<string, unknown> | undefined,
+}));
+
+vi.mock("./pipeline", () => ({
+  runPipeline: vi.fn(async (
+    config: { out: string },
+    opts: Record<string, unknown>,
+  ) => {
+    pipelineProbe.opts = opts;
+    return {
+      outPath: config.out,
+      report: { totalSec: 0, segments: 0 },
+    };
+  }),
+}));
+
 import { main, parseCommand } from "./cli";
 
 describe("parseCommand (CLI dispatch)", () => {
@@ -43,6 +64,36 @@ describe("parseCommand (CLI dispatch)", () => {
       cfgPath: "my.json",
       clipsDir: "/attempt/evidence/clips",
     });
+  });
+  it("activates strict clip-root binding only when --clips-dir is supplied", async () => {
+    const root = await mkdtemp(join(tmpdir(), "agent-demo-video-cli-clips-"));
+    const clipsRoot = join(root, "clips");
+    const configPath = join(root, "demo.config.json");
+    await mkdir(clipsRoot);
+    await writeFile(
+      configPath,
+      JSON.stringify({
+        script: join(root, "DEMO_SCRIPT.md"),
+        dashboardBaseUrl: "http://localhost:3000",
+        out: join(root, "out"),
+      }),
+      "utf8",
+    );
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      pipelineProbe.opts = undefined;
+      await main([configPath]);
+      expect(pipelineProbe.opts).not.toHaveProperty("strictClipsRoot");
+
+      pipelineProbe.opts = undefined;
+      await main([configPath, "--clips-dir", clipsRoot]);
+      expect(pipelineProbe.opts).toMatchObject({
+        strictClipsRoot: clipsRoot,
+      });
+    } finally {
+      log.mockRestore();
+      await rm(root, { recursive: true, force: true });
+    }
   });
   it("rejects invalid --clips-dir values and login use", () => {
     expect(() => parseCommand(["my.json", "--clips-dir"])).toThrow(/--clips-dir/);

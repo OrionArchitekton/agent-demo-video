@@ -23,7 +23,10 @@ export function normalizeArgs(
 ): string[] {
   const fade = o.fadeInSec && o.fadeInSec > 0 ? `,fade=t=in:st=0:d=${o.fadeInSec}` : "";
   const vf = `scale=${o.width}:${o.height}:force_original_aspect_ratio=decrease,pad=${o.width}:${o.height}:(ow-iw)/2:(oh-ih)/2,fps=${o.fps}${fade},format=yuv420p`;
-  return [...BASE, "-i", input, "-vf", vf, ...x264Args(X264.crfComposite), "-an", output];
+  // probeSizePx validates v:0. Pin normalization to the same stream so a
+  // multi-video container cannot pass geometry on one stream while ffmpeg's
+  // automatic selection renders a larger, different-aspect stream.
+  return [...BASE, "-i", input, "-map", "0:v:0", "-vf", vf, ...x264Args(X264.crfComposite), "-an", output];
 }
 
 export function concatArgs(listFile: string, output: string): string[] {
@@ -128,14 +131,24 @@ export function run(bin: string, args: string[]): Promise<void> {
 
 export const ffmpeg = (args: string[]) => run("ffmpeg", args);
 
-/** First video stream's DISPLAY WxH, feeding the framed-aspect guard: coded
- *  size with any 90/270 display rotation applied (matrix side data or legacy
- *  rotate tag), matching what ffmpeg's autorotation feeds the filter graph.
+/** First video stream's square-pixel DISPLAY WxH, feeding the framed-aspect
+ *  guard: coded size with any 90/270 display rotation (matrix side data or
+ *  legacy rotate tag), matching what ffmpeg's autorotation feeds the filter
+ *  graph. Anamorphic input is rejected because the current normalize and frame
+ *  filter chains operate on coded geometry; accepting display-equivalent SAR
+ *  would let the guard approve a composition that later renders stretched or
+ *  padded.
  *  Phone footage is routinely landscape-coded portrait. Unparseable output
  *  rejects (fail closed) rather than defaulting to a geometry. */
 export async function probeSizePx(file: string): Promise<{ width: number; height: number }> {
   return new Promise((res, rej) => {
-    const p = spawn("ffprobe", ["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height:stream_tags=rotate:stream_side_data=rotation", "-of", "json", file]);
+    const p = spawn("ffprobe", [
+      "-v", "error",
+      "-select_streams", "v:0",
+      "-show_entries", "stream=width,height,sample_aspect_ratio:stream_tags=rotate:stream_side_data=rotation",
+      "-of", "json",
+      file,
+    ]);
     let out = "";
     p.stdout.on("data", (d) => (out += d));
     // A missing or non-executable ffprobe emits 'error', never 'close': unlistened
@@ -147,6 +160,16 @@ export async function probeSizePx(file: string): Promise<{ width: number; height
         if (c !== 0) throw new Error(`exited ${c}`);
         const st = JSON.parse(out).streams?.[0];
         if (!st || typeof st.width !== "number" || typeof st.height !== "number") throw new Error("no video stream geometry");
+        const sar = /^(\d+):(\d+)$/.exec(st.sample_aspect_ratio ?? "");
+        if (!sar) throw new Error("missing or invalid sample aspect ratio");
+        const sarNumerator = Number.parseInt(sar[1]!, 10);
+        const sarDenominator = Number.parseInt(sar[2]!, 10);
+        if (sarNumerator <= 0 || sarDenominator <= 0 || sarNumerator !== sarDenominator) {
+          throw new Error(
+            `non-square sample aspect ratio ${st.sample_aspect_ratio}; ` +
+            "finished compositions must use square pixels",
+          );
+        }
         let rot = 0;
         for (const sd of st.side_data_list ?? []) if (typeof sd.rotation === "number") rot = sd.rotation;
         const tag = Number.parseInt(st.tags?.rotate ?? "", 10);

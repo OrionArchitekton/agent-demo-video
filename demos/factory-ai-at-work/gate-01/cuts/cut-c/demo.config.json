@@ -1,0 +1,56 @@
+{
+  "script": "demos/factory-ai-at-work/gate-01/cuts/cut-c/DEMO_SCRIPT.md",
+  "dashboardBaseUrl": "https://claude.ai",
+  "out": "out/factory-ai-at-work/gate-01/cut-c",
+  "platform": "shorts",
+  "fps": 30,
+  "maxDurationSec": 60,
+  "preflight": true,
+  "clipsDir": "../../clips/cut-c",
+  "voice": {
+    "voiceId": "AwstCxsCY8YE2KYw66By",
+    "modelId": "eleven_multilingual_v2",
+    "seed": 42,
+    "stability": 0.5,
+    "similarity": 0.75
+  },
+  "theme": {
+    "captionFont": "Liberation Sans",
+    "captionSize": 81,
+    "cursor": false,
+    "captionBox": true,
+    "captionMarginV": 300,
+    "fadeInMs": 0,
+    "captions": "wordpop",
+    "captionAccent": "#E68249",
+    "frame": {
+      "enabled": false,
+      "scale": 0.86,
+      "radius": 24,
+      "backdropTop": "#020B29",
+      "backdropBottom": "#020B29",
+      "shadow": false
+    },
+    "annotations": {
+      "enabled": false,
+      "durationMs": 500,
+      "fontSize": 24,
+      "position": "top-right"
+    }
+  },
+  "audio": {
+    "soundDesign": true,
+    "bedDb": -30,
+    "ticks": false,
+    "sweeps": false
+  },
+  "motion": {
+    "zoomOnAction": false,
+    "livingCamera": false
+  },
+  "brand": {
+    "title": "Dan Mercede | AI at Work",
+    "accent": "#E68249",
+    "cards": false
+  }
+}

@@ -1,5 +1,13 @@
 import { describe, it, expect } from "vitest";
-import { scaledSize, windowSize, maskGenArgs, shadowGenArgs, frameArgs, assertFramedContentAspect } from "./framing";
+import {
+  scaledSize,
+  windowSize,
+  maskGenArgs,
+  shadowGenArgs,
+  frameArgs,
+  assertFramedContentAspect,
+  assertFullBleedCanvasAspect,
+} from "./framing";
 
 const O = {
   width: 1920,
@@ -51,6 +59,29 @@ describe("assertFramedContentAspect", () => {
   it("never throws when content matches the canvas aspect or is absent (landscape compat)", () => {
     expect(() => assertFramedContentAspect({ ...O, content: { width: 1920, height: 1080 } }, { width: 1080, height: 1920 }, "a")).not.toThrow();
     expect(() => assertFramedContentAspect(O, { width: 1080, height: 1920 }, "a")).not.toThrow();
+  });
+});
+
+describe("assertFullBleedCanvasAspect", () => {
+  it("rejects footage whose display aspect would be padded on the canvas", () => {
+    expect(() => assertFullBleedCanvasAspect(
+      { width: 1080, height: 1920 },
+      { width: 1920, height: 1080 },
+      "portrait-proof",
+    )).toThrow(/portrait-proof.*1920x1080.*1080x1920/s);
+  });
+
+  it("accepts same-aspect resizes and encoder rounding slack", () => {
+    expect(() => assertFullBleedCanvasAspect(
+      { width: 1080, height: 1920 },
+      { width: 540, height: 960 },
+      "a",
+    )).not.toThrow();
+    expect(() => assertFullBleedCanvasAspect(
+      { width: 1920, height: 1080 },
+      { width: 1918, height: 1080 },
+      "b",
+    )).not.toThrow();
   });
 });
 

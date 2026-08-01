@@ -19,8 +19,10 @@ describe("parseCommand --render-host", () => {
       renderHost: "build-host",
     });
   });
-  it("still parses the login verb (render host irrelevant)", () => {
-    expect(parseCommand(["login", "cfg.json"])).toEqual({ cmd: "login", cfgPath: "cfg.json", renderHost: undefined });
+  it("rejects a render host for login instead of silently ignoring it", () => {
+    expect(() =>
+      parseCommand(["login", "cfg.json", "--render-host", "build-host"]),
+    ).toThrow(/--render-host.*pipeline run/);
   });
   it("fails loudly on a missing or option-like --render-host value (no fallback, no ssh option injection)", () => {
     expect(() => parseCommand(["cfg.json", "--render-host"])).toThrow(/render-host/);

@@ -54,6 +54,17 @@ export function windowSize(o: FrameOpts): { width: number; height: number } {
  *  a 1920x1080 viewport lands within 1px), not a real aspect difference. */
 const MAX_WINDOW_PAD_PX = 2;
 
+/** Padding normalize/frame would add when fitting one aspect into another. */
+function fitPaddingPx(
+  target: { width: number; height: number },
+  probed: { width: number; height: number },
+): number {
+  const f = Math.min(target.width / probed.width, target.height / probed.height);
+  const padW = target.width - Math.round(probed.width * f);
+  const padH = target.height - Math.round(probed.height * f);
+  return Math.max(padW, padH);
+}
+
 /**
  * Fail-closed guard for framed segments when the window aspect is decoupled
  * from the canvas (a platform preset like shorts). frameArgs pads a
@@ -75,15 +86,30 @@ export function assertFramedContentAspect(
   // viewport fits exactly), and rounding slack stays a pixel bound instead of
   // a ratio that widens with resolution.
   const s = windowSize(o);
-  const f = Math.min(s.width / probed.width, s.height / probed.height);
-  const padW = s.width - Math.round(probed.width * f);
-  const padH = s.height - Math.round(probed.height * f);
-  if (Math.max(padW, padH) <= MAX_WINDOW_PAD_PX) return;
+  if (fitPaddingPx(s, probed) <= MAX_WINDOW_PAD_PX) return;
   throw new Error(
     `[agent-demo-video] shot "${shotId}": framed clip is ${probed.width}x${probed.height} but the capture viewport is ` +
       `${c.width}x${c.height}; the aspect mismatch would be padded with bars inside the window. Mark the shot ` +
       `"fullBleed: true" to composite it directly onto the ${o.width}x${o.height} canvas, or supply a clip matching ` +
       `the capture viewport aspect.`,
+  );
+}
+
+/**
+ * A full-bleed segment owns the entire output composition. Normalization still
+ * preserves aspect and pads, so reject any clip that would create visible bars
+ * instead of silently turning a wrong-aspect source into a valid-size file.
+ */
+export function assertFullBleedCanvasAspect(
+  canvas: { width: number; height: number },
+  probed: { width: number; height: number },
+  shotId: string,
+): void {
+  if (fitPaddingPx(canvas, probed) <= MAX_WINDOW_PAD_PX) return;
+  throw new Error(
+    `[agent-demo-video] shot "${shotId}": fullBleed clip is ${probed.width}x${probed.height} but the output canvas is ` +
+      `${canvas.width}x${canvas.height}; normalization would pad the supposedly finished composition with visible bars. ` +
+      "Supply a fullBleed clip matching the output canvas aspect.",
   );
 }
 

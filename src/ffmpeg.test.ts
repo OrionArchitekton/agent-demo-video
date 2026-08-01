@@ -19,6 +19,7 @@ describe("ffmpeg arg builders", () => {
     expect(a.join(" ")).toContain("scale=1920:1080:force_original_aspect_ratio=decrease");
     expect(a.join(" ")).toContain("pad=1920:1080");
     expect(a.join(" ")).toContain("fps=30");
+    expect(a.slice(a.indexOf("-map"), a.indexOf("-map") + 2)).toEqual(["-map", "0:v:0"]);
     expect(a).toContain("libx264");
     expect(a[a.length - 1]).toBe("out.mp4");
   });

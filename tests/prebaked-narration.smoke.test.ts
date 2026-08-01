@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -7,6 +7,7 @@ import { runPipeline } from "../src/pipeline";
 import { probeDurationSec } from "../src/ffmpeg";
 import { estimateDurationSec } from "../src/fake-tts";
 import { DemoConfigSchema } from "../src/types";
+import { digestFile, digestFull, stableConfigJson } from "../src/provenance";
 
 function sh(bin: string, args: string[]): Promise<void> {
   return new Promise((res, rej) => {
@@ -71,6 +72,14 @@ describe("runPipeline (prebaked clip shorter than its narration)", () => {
     // video long would pass the duration-only check above but fail here.
     const audioSec = await probeDurationSec(join(dir, "out", "audio.mp3"));
     expect(audioSec).toBeGreaterThanOrEqual(expectedSec - 0.2);
+    const report = JSON.parse(
+      await readFile(join(dir, "out", "render-report.json"), "utf8"),
+    );
+    expect(report.inputs.configSha256).toBe(digestFull(stableConfigJson(cfg)));
+    expect(report.inputs.scriptSha256).toBe(digestFull(md));
+    expect(report.inputs.clips).toEqual([
+      { shotId: "one", sha256: await digestFile(clip) },
+    ]);
   }, 120_000);
 
   it("does not truncate when the clip is only slightly shorter than the narration (sub-tolerance band)", async () => {

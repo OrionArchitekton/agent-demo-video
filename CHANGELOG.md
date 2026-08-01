@@ -67,6 +67,17 @@
 
 ### Breaking
 
+- `--clips-dir` now binds every prebaked `clip:` strictly beneath the given
+  directory for that run: each `clip:` must be a clean relative path (no
+  absolute paths, no `.` or `..` components), a path carrying its own
+  directory resolves beneath the override directory instead of the config
+  directory, and sources are opened through symlink-refusing directory handles
+  (Linux only; the run fails closed elsewhere). Previously a `clip:` carrying
+  a directory ignored `--clips-dir` and kept reading from the config
+  directory, so the flag silently did not pin those clips to the attempt-owned
+  copies it exists to pin. A `--clips-dir` layout must now mirror each
+  `clip:`'s relative path beneath the override directory. Runs without
+  `--clips-dir` are unchanged. (#19)
 - A prebaked `clip:` that does not exist at its resolved path now fails immediately,
   naming the path that was tried. Previously the declared path was returned verbatim and
   the run failed later, inside ffmpeg, against a path nobody had resolved. (#14)

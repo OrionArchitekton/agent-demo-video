@@ -13,7 +13,11 @@ import { fileURLToPath } from "node:url";
  * - `--out <new-dir>`           → override config.out, atomically reserve a
  *                                 fresh name, and bind writes to private staging.
  * - `--clips-dir <absolute-dir>` → override clipsDir for this run so production
- *                                 can render attempt-owned evidence copies.
+ *                                 can render attempt-owned evidence copies. Also
+ *                                 binds every prebaked clip strictly beneath that
+ *                                 directory: each clip must be a clean relative
+ *                                 path (config-relative resolution does not apply)
+ *                                 opened via symlink-refusing handles, Linux only.
  * - `--script <absolute-file>`   → override the narration manifest for this run
  *                                 so production can render an owned script copy.
  * - `--attest-source-build`     → reserved for the committed detached-snapshot

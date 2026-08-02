@@ -204,7 +204,16 @@ handles.
 Omitting the flag preserves the legacy reusable `config.out` behavior. Use
 distinct fresh directories for rehearsal and real narration.
 `--clips-dir <absolute-directory>` can pin a run to attempt-owned copies of
-prebaked inputs without changing the config file. `--script <absolute-file>`
+prebaked inputs without changing the config file. Passing it also binds every
+prebaked `clip:` strictly beneath that directory for the run: each `clip:`
+must be a clean relative path (no absolute paths, no `.` or `..` components),
+a path carrying its own directory resolves beneath the override directory
+rather than the config directory, and each source is opened through
+symlink-refusing directory handles (Linux only; the run fails closed
+elsewhere). The config-relative resolution table under
+[Third-party tabs](#third-party-tabs) does not apply to a
+`--clips-dir` run, so the attempt-owned layout must mirror each `clip:`'s
+relative path beneath the override directory. `--script <absolute-file>`
 does the same for a copied narration manifest. Both overrides require absolute
 paths so their meaning never changes with the launch or config directory.
 
@@ -315,7 +324,7 @@ Key fields in `demo.config.json` (full schema in `src/types.ts`):
 | `audio.soundDesign` | `true` | Synthesized ambient bed ducked under narration, click ticks, segment sweeps |
 | `motion.livingCamera` | `true` | Continuous camera path with drift; `motion.zoomOnAction: false` disables all camera motion |
 | `brand` | (off) | `{ title, subtitle, url, accent, cards }` adds branded title and end cards. `titleCard` / `endCard` may override either side independently while `cards` remains the shared default |
-| `clipsDir` | `"clips/prebaked"` | Where a **bare** prebaked clip filename resolves. Resolved against the config file's directory unless absolute; `--clips-dir <absolute-directory>` overrides it for one run |
+| `clipsDir` | `"clips/prebaked"` | Where a **bare** prebaked clip filename resolves. Resolved against the config file's directory unless absolute; `--clips-dir <absolute-directory>` overrides it for one run and additionally binds every relative `clip:` strictly beneath that directory |
 | `preflight` | `true` | Fail-closed pre-flight selector gate; see [Pre-flight selector gate](#pre-flight-selector-gate). `false` (or `--no-preflight`) declines it |
 | `maxDurationSec` | `300` | Hard ceiling for the finished video. The render fails if the result exceeds it. Set it to the length limit you are shipping against. |
 | `capture.settleMs` | `500` | Budget for the post-navigation readiness wait (fonts ready, visible images decoded). `0` disables the probe. Exceeding the budget warns and records anyway. Under the default `screencast` engine the wait happens BEFORE recording starts, so unsettled frames are excluded; the legacy `recordvideo` engine binds capture at context creation, so there the wait shifts those frames later rather than excluding them. |
@@ -350,6 +359,11 @@ Place the clip in `clipsDir` and reference it by bare filename, or give a path r
 your config file. Either way the pipeline passes it through normalize/mux/caption without
 launching a browser. A clip that is not present at the resolved path fails immediately,
 naming the path that was tried.
+
+This table describes a run without `--clips-dir`. When `--clips-dir` is passed,
+every `clip:` must be a clean relative path and resolves strictly beneath the
+override directory instead; absolute clip paths and `.` or `..` components are
+rejected, and symlinked ancestors or entries refuse to bind.
 
 Add `- fullBleed: true` to a shot whose clip is ALREADY a finished composition, such as a
 motion-graphic title card rendered by another tool. The pipeline then skips the window framing and

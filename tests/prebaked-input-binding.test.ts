@@ -355,7 +355,226 @@ describe("prebaked render-input binding", () => {
     await expect(runPipeline(config)).rejects.toThrow(
       /prebaked source must be a regular, non-symbolic-link file/,
     );
+    if (process.platform === "linux") {
+      await expect(
+        runPipeline(config, { strictClipsRoot: root }),
+      ).rejects.toThrow(/could not bind prebaked input.*clip\.mp4/);
+    }
     expect(await readFile(outsidePath, "utf8")).toBe("must not be copied");
+  });
+
+  itOnLinux("rejects parent traversal before reading a clip outside a strict CLI root", async () => {
+    const attemptRoot = await mkdtemp(join(tmpdir(), "prebaked-strict-parent-"));
+    const clipsRoot = join(attemptRoot, "clips");
+    const outsidePath = join(attemptRoot, "outside.mp4");
+    const scriptPath = join(attemptRoot, "DEMO_SCRIPT.md");
+    await mkdir(clipsRoot);
+    await writeFile(outsidePath, "must stay outside the strict root", "utf8");
+    await writeFile(
+      scriptPath,
+      "# Demo\n### SHOT one\n- target: prebaked\n- clip: ../outside.mp4\n- narration: Reject parent traversal.\n",
+      "utf8",
+    );
+    const config = DemoConfigSchema.parse({
+      script: scriptPath,
+      clipsDir: clipsRoot,
+      configDir: clipsRoot,
+      dashboardBaseUrl: "http://localhost:3000",
+      out: join(attemptRoot, "out"),
+      preflight: false,
+    });
+    renderProbe.sourcePath = outsidePath;
+
+    await expect(
+      runPipeline(config, { strictClipsRoot: clipsRoot }),
+    ).rejects.toThrow(/strict clips root.*\.\./);
+    expect(await readFile(outsidePath, "utf8")).toBe(
+      "must stay outside the strict root",
+    );
+  });
+
+  itOnLinux("rejects a symlinked ancestor before reading its out-of-root clip", async () => {
+    const attemptRoot = await mkdtemp(join(tmpdir(), "prebaked-strict-ancestor-"));
+    const clipsRoot = join(attemptRoot, "clips");
+    const outsideRoot = join(attemptRoot, "outside");
+    const outsidePath = join(outsideRoot, "clip.mp4");
+    const scriptPath = join(attemptRoot, "DEMO_SCRIPT.md");
+    await mkdir(clipsRoot);
+    await mkdir(outsideRoot);
+    await writeFile(outsidePath, "must stay behind the symlink", "utf8");
+    await symlink(outsideRoot, join(clipsRoot, "linked"));
+    await writeFile(
+      scriptPath,
+      "# Demo\n### SHOT one\n- target: prebaked\n- clip: linked/clip.mp4\n- narration: Reject ancestor symlink.\n",
+      "utf8",
+    );
+    const config = DemoConfigSchema.parse({
+      script: scriptPath,
+      clipsDir: clipsRoot,
+      dashboardBaseUrl: "http://localhost:3000",
+      out: join(attemptRoot, "out"),
+      preflight: false,
+    });
+    renderProbe.sourcePath = outsidePath;
+
+    await expect(
+      runPipeline(config, { strictClipsRoot: clipsRoot }),
+    ).rejects.toThrow(/could not bind prebaked input.*linked\/clip\.mp4/);
+    expect(await readFile(outsidePath, "utf8")).toBe(
+      "must stay behind the symlink",
+    );
+  });
+
+  itOnLinux("rejects a symlinked strict root even when its pathname has a trailing slash", async () => {
+    const attemptRoot = await mkdtemp(join(tmpdir(), "prebaked-strict-root-link-"));
+    const realRoot = join(attemptRoot, "real-clips");
+    const linkedRoot = join(attemptRoot, "linked-clips");
+    const sourcePath = join(realRoot, "clip.mp4");
+    const scriptPath = join(attemptRoot, "DEMO_SCRIPT.md");
+    await mkdir(realRoot);
+    await writeFile(sourcePath, "must stay behind the root symlink", "utf8");
+    await symlink(realRoot, linkedRoot);
+    await writeFile(
+      scriptPath,
+      "# Demo\n### SHOT one\n- target: prebaked\n- clip: clip.mp4\n- narration: Reject root symlink.\n",
+      "utf8",
+    );
+    const config = DemoConfigSchema.parse({
+      script: scriptPath,
+      clipsDir: `${linkedRoot}/`,
+      dashboardBaseUrl: "http://localhost:3000",
+      out: join(attemptRoot, "out"),
+      preflight: false,
+    });
+    renderProbe.sourcePath = sourcePath;
+
+    await expect(
+      runPipeline(config, { strictClipsRoot: `${linkedRoot}/` }),
+    ).rejects.toThrow(/strict clips root.*non-symbolic-link directory/);
+    expect(await readFile(sourcePath, "utf8")).toBe(
+      "must stay behind the root symlink",
+    );
+  });
+
+  itOnLinux("rejects invalid clip path components under a strict CLI root", async () => {
+    const attemptRoot = await mkdtemp(join(tmpdir(), "prebaked-strict-components-"));
+    const clipsRoot = join(attemptRoot, "clips");
+    const nestedRoot = join(clipsRoot, "nested");
+    const sourcePath = join(nestedRoot, "clip.mp4");
+    await mkdir(nestedRoot, { recursive: true });
+    await writeFile(sourcePath, "strict component fixture", "utf8");
+
+    for (const [label, clip, expected] of [
+      ["absolute", sourcePath, /strict clips root rejects absolute clip path/],
+      ["dot", "nested/./clip.mp4", /strict clips root.*'\.'/],
+      ["empty", "nested//clip.mp4", /strict clips root rejects empty/],
+      ["dotdot", "nested/../clip.mp4", /strict clips root.*'\.\.'/],
+    ] as const) {
+      const scriptPath = join(attemptRoot, `${label}.md`);
+      await writeFile(
+        scriptPath,
+        `# Demo\n### SHOT one\n- target: prebaked\n- clip: ${clip}\n- narration: Reject ${label} component.\n`,
+        "utf8",
+      );
+      const config = DemoConfigSchema.parse({
+        script: scriptPath,
+        clipsDir: clipsRoot,
+        dashboardBaseUrl: "http://localhost:3000",
+        out: join(attemptRoot, `out-${label}`),
+        preflight: false,
+      });
+
+      await expect(
+        runPipeline(config, { strictClipsRoot: clipsRoot }),
+      ).rejects.toThrow(expected);
+    }
+    expect(await readFile(sourcePath, "utf8")).toBe("strict component fixture");
+  });
+
+  itOnLinux("binds a valid nested clip through the strict root descriptor", async () => {
+    const attemptRoot = await mkdtemp(join(tmpdir(), "prebaked-strict-nested-"));
+    const clipsRoot = join(attemptRoot, "clips");
+    const sourcePath = join(clipsRoot, "nested", "clip.mp4");
+    const scriptPath = join(attemptRoot, "DEMO_SCRIPT.md");
+    const originalBytes = "valid nested clip bytes";
+    await mkdir(dirname(sourcePath), { recursive: true });
+    await writeFile(sourcePath, originalBytes, "utf8");
+    await writeFile(
+      scriptPath,
+      "# Demo\n### SHOT one\n- target: prebaked\n- clip: nested/clip.mp4\n- narration: Bind nested clip.\n",
+      "utf8",
+    );
+    const config = DemoConfigSchema.parse({
+      script: scriptPath,
+      clipsDir: clipsRoot,
+      dashboardBaseUrl: "http://localhost:3000",
+      out: join(attemptRoot, "out"),
+      preflight: false,
+    });
+    renderProbe.sourcePath = sourcePath;
+
+    await expect(
+      runPipeline(config, { strictClipsRoot: clipsRoot }),
+    ).resolves.toMatchObject({ outPath: join(attemptRoot, "out", "final.mp4") });
+    expect(renderProbe.rawBytes).toBe(originalBytes);
+  });
+
+  itOnLinux("binds a direct clip through the strict root descriptor", async () => {
+    const attemptRoot = await mkdtemp(join(tmpdir(), "prebaked-strict-direct-"));
+    const clipsRoot = join(attemptRoot, "clips");
+    const sourcePath = join(clipsRoot, "clip.mp4");
+    const scriptPath = join(attemptRoot, "DEMO_SCRIPT.md");
+    const originalBytes = "valid direct clip bytes";
+    await mkdir(clipsRoot);
+    await writeFile(sourcePath, originalBytes, "utf8");
+    await writeFile(
+      scriptPath,
+      "# Demo\n### SHOT one\n- target: prebaked\n- clip: clip.mp4\n- narration: Bind direct clip.\n",
+      "utf8",
+    );
+    const config = DemoConfigSchema.parse({
+      script: scriptPath,
+      clipsDir: clipsRoot,
+      dashboardBaseUrl: "http://localhost:3000",
+      out: join(attemptRoot, "out"),
+      preflight: false,
+    });
+    renderProbe.sourcePath = sourcePath;
+
+    await expect(
+      runPipeline(config, { strictClipsRoot: clipsRoot }),
+    ).resolves.toMatchObject({ outPath: join(attemptRoot, "out", "final.mp4") });
+    expect(renderProbe.rawBytes).toBe(originalBytes);
+  });
+
+  it("preserves config-relative clip resolution when no strict CLI root is active", async () => {
+    const attemptRoot = await mkdtemp(join(tmpdir(), "prebaked-legacy-resolution-"));
+    const clipsRoot = join(attemptRoot, "configured-clips");
+    const sourcePath = join(attemptRoot, "external", "clip.mp4");
+    const scriptPath = join(attemptRoot, "DEMO_SCRIPT.md");
+    const originalBytes = "legacy config-relative clip bytes";
+    await mkdir(clipsRoot);
+    await mkdir(dirname(sourcePath));
+    await writeFile(sourcePath, originalBytes, "utf8");
+    await writeFile(
+      scriptPath,
+      "# Demo\n### SHOT one\n- target: prebaked\n- clip: external/clip.mp4\n- narration: Preserve legacy resolution.\n",
+      "utf8",
+    );
+    const config = DemoConfigSchema.parse({
+      script: scriptPath,
+      clipsDir: clipsRoot,
+      configDir: attemptRoot,
+      dashboardBaseUrl: "http://localhost:3000",
+      out: join(attemptRoot, "out"),
+      preflight: false,
+    });
+    renderProbe.sourcePath = sourcePath;
+
+    await expect(runPipeline(config)).resolves.toMatchObject({
+      outPath: join(attemptRoot, "out", "final.mp4"),
+    });
+    expect(renderProbe.rawBytes).toBe(originalBytes);
   });
 
   it("does not require a private input temporary root for a dashboard-only render", async () => {

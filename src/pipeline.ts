@@ -11,7 +11,7 @@ import {
 import { randomUUID } from "node:crypto";
 import { chmod, lstat, mkdir, mkdtemp, open, readFile, readdir, realpath, rm, writeFile, type FileHandle } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, dirname, extname, join, resolve } from "node:path";
+import { basename, dirname, extname, isAbsolute, join, resolve, win32 } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { DemoConfig, Shot, TtsResult } from "./types";
 import { parseScript, deriveSegmentKinds } from "./parse-script";
@@ -50,6 +50,8 @@ interface RunPipelineOpts {
   requireFreshOut?: boolean;
   /** Source-run admission created by the CLI before any output claim. */
   sourceBuild?: SourceBuildSession;
+  /** Constrain every prebaked clip to this CLI-selected root capability. */
+  strictClipsRoot?: string;
 }
 
 interface FreshOutputClaim {
@@ -306,6 +308,53 @@ function combinePrimaryAndPublicationErrors(
   );
 }
 
+function strictClipComponents(clip: string): string[] {
+  if (isAbsolute(clip) || win32.isAbsolute(clip)) {
+    throw new Error(
+      `[agent-demo-video] strict clips root rejects absolute clip path: ${clip}`,
+    );
+  }
+  const components = clip.split(/[\\/]/);
+  const invalidComponent = components.find(
+    (component) => !component || component === "." || component === "..",
+  );
+  if (invalidComponent !== undefined) {
+    throw new Error(
+      `[agent-demo-video] strict clips root rejects empty, '.', and '..' path components: ${clip}`,
+    );
+  }
+  return components;
+}
+
+async function openStrictClipSource(
+  rootHandle: FileHandle,
+  components: string[],
+): Promise<FileHandle> {
+  let parentHandle = rootHandle;
+  let ownedParentHandle: FileHandle | undefined;
+  try {
+    for (const component of components.slice(0, -1)) {
+      const nextParent = await open(
+        join(`/proc/${process.pid}/fd/${parentHandle.fd}`, component),
+        constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW,
+      );
+      const previousParent = ownedParentHandle;
+      ownedParentHandle = nextParent;
+      parentHandle = nextParent;
+      await previousParent?.close().catch(() => {});
+    }
+    return await open(
+      join(
+        `/proc/${process.pid}/fd/${parentHandle.fd}`,
+        components.at(-1)!,
+      ),
+      constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
+    );
+  } finally {
+    await ownedParentHandle?.close().catch(() => {});
+  }
+}
+
 /**
  * Snapshot every operator-owned prebaked source into one private directory,
  * seal each snapshot read-only, and hash the bytes the renderer will consume.
@@ -321,6 +370,7 @@ async function bindPrebakedInputs(
   shots: Shot[],
   config: DemoConfig,
   retainedOutputPath?: string,
+  strictClipsRoot?: string,
 ): Promise<BoundPrebakedInputs> {
   if (!shots.some((shot) => shot.target === "prebaked")) {
     return { inputs: [], pathByShotId: new Map() };
@@ -331,6 +381,8 @@ async function bindPrebakedInputs(
   );
   const rootStat = lstatSync(root);
   registerPrivateInputRoot(root, `${rootStat.dev}:${rootStat.ino}`);
+  let strictRootHandle: FileHandle | undefined;
+  let strictRootPath: string | undefined;
   try {
     if (
       !rootStat.isDirectory() ||
@@ -358,6 +410,36 @@ async function bindPrebakedInputs(
       throw new Error("private render-input directory marker did not bind as an owned 0400 file");
     }
 
+    if (strictClipsRoot) {
+      if (process.platform !== "linux") {
+        throw new Error(
+          "[agent-demo-video] strict clips root requires Linux /proc directory handles",
+        );
+      }
+      if (!isAbsolute(strictClipsRoot)) {
+        throw new Error(
+          `[agent-demo-video] strict clips root must be absolute: ${strictClipsRoot}`,
+        );
+      }
+      strictRootPath = resolve(strictClipsRoot);
+      try {
+        strictRootHandle = await open(
+          strictRootPath,
+          constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW,
+        );
+      } catch (error) {
+        throw new Error(
+          `[agent-demo-video] strict clips root must be a real non-symbolic-link directory: ${strictRootPath}`,
+          { cause: error },
+        );
+      }
+      if (!(await strictRootHandle.stat()).isDirectory()) {
+        throw new Error(
+          `[agent-demo-video] strict clips root must be a real non-symbolic-link directory: ${strictRootPath}`,
+        );
+      }
+    }
+
     const inputs: BoundClipInputDigest[] = [];
     const pathByShotId = new Map<string, string>();
     for (const shot of shots) {
@@ -365,11 +447,16 @@ async function bindPrebakedInputs(
       if (!shot.clip) {
         throw new Error(`[agent-demo-video] prebaked shot ${shot.id} has no clip path to bind`);
       }
-      const sourcePath = resolveClipPath(
-        shot.clip,
-        config.clipsDir,
-        config.configDir ?? process.cwd(),
-      );
+      const strictComponents = strictRootPath
+        ? strictClipComponents(shot.clip)
+        : undefined;
+      const sourcePath = strictRootPath && strictComponents
+        ? join(strictRootPath, ...strictComponents)
+        : resolveClipPath(
+            shot.clip,
+            config.clipsDir,
+            config.configDir ?? process.cwd(),
+          );
       const sourceExtension = extname(sourcePath);
       const safeExtension = /^\.[A-Za-z0-9]{1,10}$/.test(sourceExtension)
         ? sourceExtension
@@ -381,21 +468,32 @@ async function bindPrebakedInputs(
       let sourceHandle: FileHandle | undefined;
       let boundHandle: FileHandle | undefined;
       try {
-        const namedSource = await lstat(sourcePath);
-        if (!namedSource.isFile() || namedSource.isSymbolicLink()) {
-          throw new Error("prebaked source must be a regular, non-symbolic-link file");
-        }
-        sourceHandle = await open(
-          sourcePath,
-          constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
-        );
-        const openedSource = await sourceHandle.stat();
-        if (
-          !openedSource.isFile() ||
-          openedSource.dev !== namedSource.dev ||
-          openedSource.ino !== namedSource.ino
-        ) {
-          throw new Error("prebaked source changed while its regular-file identity was bound");
+        if (strictRootHandle && strictComponents) {
+          sourceHandle = await openStrictClipSource(
+            strictRootHandle,
+            strictComponents,
+          );
+          const openedSource = await sourceHandle.stat();
+          if (!openedSource.isFile()) {
+            throw new Error("prebaked source must be a regular, non-symbolic-link file");
+          }
+        } else {
+          const namedSource = await lstat(sourcePath);
+          if (!namedSource.isFile() || namedSource.isSymbolicLink()) {
+            throw new Error("prebaked source must be a regular, non-symbolic-link file");
+          }
+          sourceHandle = await open(
+            sourcePath,
+            constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK,
+          );
+          const openedSource = await sourceHandle.stat();
+          if (
+            !openedSource.isFile() ||
+            openedSource.dev !== namedSource.dev ||
+            openedSource.ino !== namedSource.ino
+          ) {
+            throw new Error("prebaked source changed while its regular-file identity was bound");
+          }
         }
         boundHandle = await open(
           boundPath,
@@ -476,6 +574,8 @@ async function bindPrebakedInputs(
       );
     }
     throw error;
+  } finally {
+    await strictRootHandle?.close().catch(() => {});
   }
 }
 
@@ -916,6 +1016,7 @@ export async function runPipeline(config: DemoConfig, opts: RunPipelineOpts = {}
     shots,
     config,
     freshClaim?.recoveryPath,
+    opts.strictClipsRoot,
   );
   boundPrebakedRoot = boundPrebaked.root;
   const clipInputs = boundPrebaked.inputs;

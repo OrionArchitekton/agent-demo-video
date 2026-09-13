@@ -2,7 +2,28 @@
 
 ## Unreleased
 
+### Fixed
+
+- The final mux no longer drops trailing video frames. Muxing a stream-copied B-frame
+  video with `-shortest` against audio even a few ms short ended the video early (2 to
+  4 frames measured, up to about 170ms of the closing shot); the audio is now padded
+  so the video always ends the file.
+
 ### Added
+
+- Deliverable verification after every local or remote render: the delivered
+  `final.mp4` is probed against a final-format contract (one H.264 yuv420p video
+  stream at the configured size and constant fps with square pixels and no display
+  rotation, one AAC audio
+  stream, frame-exact video track, audio track within its AAC framing, container within
+  one video or audio frame of the measured timeline), and any mismatch fails the run
+  before the report is written. The renderer's measured timeline (reported by the host
+  on remote renders) must first name exactly the rendered shots, in order and
+  contiguous. The Factory AI at Work promoter admits the new sheet and stills into
+  each artifact's exact topology. A `contact-sheet.png` with one still per
+  shot at its midpoint is rebuilt beside the video on every run (stale sheets from a
+  reused `out` are removed up front), and both results are recorded in
+  `render-report.json` (`specs/deliverable-verification-spec.md`).
 
 - Independent `brand.titleCard` and `brand.endCard` overrides. The existing
   `brand.cards` switch remains the default for both, so current configs render

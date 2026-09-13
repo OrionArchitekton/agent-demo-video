@@ -239,7 +239,9 @@ factory_validate_artifact_topology() {
     audio.mp3 \
     muxed.mp4 \
     final.mp4 \
-    render-report.json
+    render-report.json \
+    contact-sheet.png \
+    contact-sheet
   factory_require_named_regular_files \
     "$root" \
     "$artifact renderer output" \
@@ -250,11 +252,16 @@ factory_validate_artifact_topology() {
     audio.mp3 \
     muxed.mp4 \
     final.mp4 \
-    render-report.json
+    render-report.json \
+    contact-sheet.png
   test -f "$root/.agent-demo-video-output-claim"
   test ! -s "$root/.agent-demo-video-output-claim"
   test -d "$root/audio"
   test -d "$root/seg"
+  if [ -L "$root/contact-sheet" ] || [ ! -d "$root/contact-sheet" ]; then
+    echo "$artifact contact sheet stills must be a directory: $root/contact-sheet" >&2
+    return 1
+  fi
 
   local -a shot_ids
   local segment_last
@@ -332,6 +339,21 @@ factory_validate_artifact_topology() {
   for required_segment in "${required_segments[@]}"; do
     test -f "$root/seg/$required_segment"
   done
+
+  # Deliverable verification writes exactly one still per timeline entry
+  # (one per segment) beside the contact sheet; nothing else may appear there.
+  local -a contact_stills=()
+  for (( index = 0; index <= segment_last; index++ )); do
+    contact_stills+=("$(printf 'still_%03d.png' "$index")")
+  done
+  factory_require_exact_entries \
+    "$root/contact-sheet" \
+    "$artifact contact sheet artifacts" \
+    "${contact_stills[@]}"
+  factory_require_named_regular_files \
+    "$root/contact-sheet" \
+    "$artifact contact sheet still" \
+    "${contact_stills[@]}"
 }
 
 factory_validate_topology() {

@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import type { DeliverableProbe } from "./verify";
 
 const BASE = ["-y", "-hide_banner", "-loglevel", "error"];
 
@@ -71,8 +72,14 @@ export function concatAudioArgs(listFile: string, output: string): string[] {
   return [...BASE, "-f", "concat", "-safe", "0", "-i", listFile, "-c:a", "libmp3lame", output];
 }
 
+/**
+ * The audio is padded (`apad`) so the video is always the shortest stream and
+ * `-shortest` ends the file with it. Without the pad, an audio track even a few ms
+ * short made ffmpeg end a stream-copied B-frame video early, dropping up to a
+ * B-frame group of trailing frames (specs/deliverable-verification-spec.md).
+ */
 export function muxArgs(video: string, audio: string, output: string): string[] {
-  return [...BASE, "-i", video, "-i", audio, "-c:v", "copy", "-c:a", "aac", "-shortest", output];
+  return [...BASE, "-i", video, "-i", audio, "-c:v", "copy", "-af", "apad", "-c:a", "aac", "-shortest", output];
 }
 
 export function burnSubsArgs(video: string, subPath: string, output: string, style?: string): string[] {
@@ -178,6 +185,75 @@ export async function probeSizePx(file: string): Promise<{ width: number; height
         res(swap ? { width: st.height, height: st.width } : { width: st.width, height: st.height });
       } catch (e) {
         rej(new Error(`ffprobe size ${file}: ${(e as Error).message}`));
+      }
+    });
+  });
+}
+
+/**
+ * Map ffprobe `-show_streams -show_format -of json` output to the contract fields.
+ * Durations and rates are accepted as strings or numbers, since ffprobe writers
+ * differ; an absent or unparseable value is null, never a guess.
+ */
+export function parseDeliverableProbe(json: unknown): DeliverableProbe {
+  const j = json as { streams?: Array<Record<string, unknown>>; format?: Record<string, unknown> };
+  if (!j || !Array.isArray(j.streams)) throw new Error("no stream list");
+  const video = j.streams.filter((s) => s.codec_type === "video");
+  const audio = j.streams.filter((s) => s.codec_type === "audio");
+  const str = (v: unknown) => (typeof v === "string" ? v : null);
+  const int = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : null);
+  const decimal = (v: unknown) => {
+    const n = typeof v === "number" ? v : typeof v === "string" ? Number.parseFloat(v) : NaN;
+    return Number.isFinite(n) ? n : null;
+  };
+  return {
+    videoStreams: video.length,
+    audioStreams: audio.length,
+    videoCodec: str(video[0]?.codec_name),
+    pixFmt: str(video[0]?.pix_fmt),
+    width: int(video[0]?.width),
+    height: int(video[0]?.height),
+    frameRate: str(video[0]?.r_frame_rate),
+    avgFrameRate: str(video[0]?.avg_frame_rate),
+    sampleAspectRatio: str(video[0]?.sample_aspect_ratio),
+    audioCodec: str(audio[0]?.codec_name),
+    durationSec: decimal(j.format?.duration),
+    videoDurationSec: decimal(video[0]?.duration),
+    audioDurationSec: decimal(audio[0]?.duration),
+    audioSampleRate: decimal(audio[0]?.sample_rate),
+    rotationDeg: rotationOf(video[0]),
+  };
+}
+
+/** Same sources probeSizePx honors: display-matrix side data, then the legacy tag. */
+function rotationOf(stream: Record<string, unknown> | undefined): number | null {
+  if (!stream) return null;
+  let rotation = 0;
+  const sideData = stream.side_data_list;
+  if (Array.isArray(sideData)) {
+    for (const sd of sideData as Array<Record<string, unknown>>) {
+      if (typeof sd.rotation === "number") rotation = sd.rotation;
+    }
+  }
+  const tag = Number.parseInt(String((stream.tags as Record<string, unknown> | undefined)?.rotate ?? ""), 10);
+  return Number.isNaN(tag) ? rotation : tag;
+}
+
+/** Every property the deliverable contract compares, read from the encoded file
+ *  (specs/deliverable-verification-spec.md). Unparseable output or a failed
+ *  ffprobe rejects: a contract that could not be read is never reported as met. */
+export async function probeDeliverable(file: string): Promise<DeliverableProbe> {
+  return new Promise((res, rej) => {
+    const p = spawn("ffprobe", ["-v", "error", "-show_streams", "-show_format", "-of", "json", file]);
+    let out = "";
+    p.stdout.on("data", (d) => (out += d));
+    p.on("error", (e) => rej(new Error(`ffprobe deliverable ${file}: ${e.message}`)));
+    p.on("close", (c) => {
+      try {
+        if (c !== 0) throw new Error(`exited ${c}`);
+        res(parseDeliverableProbe(JSON.parse(out)));
+      } catch (e) {
+        rej(new Error(`ffprobe deliverable ${file}: ${(e as Error).message}`));
       }
     });
   });

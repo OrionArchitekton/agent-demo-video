@@ -94,6 +94,50 @@ vi.mock("../src/render", () => ({
   }),
 }));
 
+// The render above is simulated and writes no video, so the post-render
+// deliverable stage (probe, contract, contact sheet) is simulated alongside it.
+// That stage is exercised against real renders in pipeline.smoke and
+// pipeline-remote; these tests isolate render-input binding only.
+vi.mock("../src/ffmpeg", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/ffmpeg")>();
+  return {
+    ...actual,
+    probeDeliverable: vi.fn(async () => ({
+      videoStreams: 1,
+      audioStreams: 1,
+      videoCodec: "h264",
+      pixFmt: "yuv420p",
+      width: 1920,
+      height: 1080,
+      frameRate: "30/1",
+      avgFrameRate: "30/1",
+      sampleAspectRatio: "1:1",
+      audioCodec: "aac",
+      durationSec: 0,
+      videoDurationSec: 0,
+      audioDurationSec: 0,
+      audioSampleRate: 44100,
+      rotationDeg: 0,
+    })),
+  };
+});
+
+vi.mock("../src/verify", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/verify")>();
+  return {
+    ...actual,
+    checkDeliverable: vi.fn((probed: unknown) => ({ ok: true, problems: [], probed })),
+  };
+});
+
+vi.mock("../src/contact-sheet", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/contact-sheet")>();
+  return {
+    ...actual,
+    buildContactSheet: vi.fn(async (_video: string, _outDir: string, plan: unknown) => plan),
+  };
+});
+
 vi.mock("../src/capture", () => ({
   captureShot: vi.fn(async (
     shot: { id: string },

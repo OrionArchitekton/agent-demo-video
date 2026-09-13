@@ -7,6 +7,8 @@ import { promisify } from "node:util";
 import type { DemoConfig, TimelineEntry } from "./types";
 import type { TtsMode } from "./tts";
 import type { SourceBuildAttestation } from "./source-build";
+import type { DeliverableCheck } from "./verify";
+import type { ContactSheetPlan } from "./contact-sheet";
 
 const exec = promisify(execFile);
 
@@ -51,6 +53,11 @@ export type RenderReport = {
   tools: ToolVersions;
   timeline: { entries: TimelineEntry[]; totalSec: number };
   render: { totalSec: number; segments: number; ticks: number; parity: { ok: boolean; problems: string[] } };
+  /** The final-format contract as read from the delivered file (absent in reports
+   *  written before specs/deliverable-verification-spec.md). */
+  deliverable?: DeliverableCheck;
+  /** One still per shot tiled beside the deliverable; paths are relative to the out dir. */
+  contactSheet?: ContactSheetPlan;
   limits: { maxDurationSec: number };
   preflight: PreflightRecord;
   sourceBuildAttestation?: SourceBuildAttestation;
@@ -98,6 +105,8 @@ export function buildRenderReport(o: {
   maxDurationSec: number;
   renderedOn: "local" | "remote";
   preflight: PreflightRecord;
+  deliverable?: DeliverableCheck;
+  contactSheet?: ContactSheetPlan;
   sourceBuildAttestation?: SourceBuildAttestation;
 }): RenderReport {
   return {
@@ -114,6 +123,8 @@ export function buildRenderReport(o: {
     tools: o.tools,
     timeline: o.timeline,
     render: o.render,
+    ...(o.deliverable ? { deliverable: o.deliverable } : {}),
+    ...(o.contactSheet ? { contactSheet: o.contactSheet } : {}),
     limits: { maxDurationSec: o.maxDurationSec },
     preflight: o.preflight,
     ...(o.sourceBuildAttestation ? { sourceBuildAttestation: o.sourceBuildAttestation } : {}),

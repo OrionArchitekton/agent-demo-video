@@ -41,7 +41,36 @@ DEMO_SCRIPT.md
 8. concat + mux      — concat video, concat audio, mux together
 9. burn captions     — subtitles filter burned into final.mp4
 10. parity verify    — shotCount / videoSegments / audioSec / videoSec / maxSec
+11. deliverable check: ffprobe the delivered final.mp4: one H.264 yuv420p video
+                       stream at the configured size and fps, square pixels,
+                       one AAC audio stream, frame-exact video track
+12. contact sheet:    one still per shot at its midpoint, tiled into
+                       contact-sheet.png beside final.mp4
 ```
+
+### Deliverable verification
+
+After every successful render, local or remote, the pipeline checks the video the
+operator actually receives. The deliverable contract is read from `final.mp4` with
+ffprobe, never from the config or a render host's own report: exactly one H.264
+`yuv420p` video stream at the configured width, height, and fps with square pixels,
+exactly one AAC audio stream, a constant frame rate (the average rate must match too),
+a frame-exact video track, an audio track that ends within an audio frame or two of the
+measured timeline (AAC encodes whole frames), and a container within one video or audio
+frame of it. Any mismatch fails the run with every mismatched property named, before
+`render-report.json` is written. The final mux pads the audio so it never drops trailing
+video frames.
+
+The pipeline then writes `out/contact-sheet.png`: one still per shot, taken at the
+midpoint of its measured timeline entry (clamped to a frame inside the shot), tiled in
+timeline order, four across for landscape and six across for portrait. The individual
+stills stay in `out/contact-sheet/`; both are rebuilt from scratch on every run, and a
+rerun into the same `out` removes the previous sheet up front, so a failed attempt never
+leaves another render's sheet behind. A still that yields no frame fails the run.
+`render-report.json` records `deliverable` (the
+probed values, `ok`, and any problems) and `contactSheet` (the sheet path and grid, and
+each still's shot id, time, and path). The sheet makes a whole render reviewable at a
+glance; it does not judge whether the render is good.
 
 ### Production polish
 
@@ -99,7 +128,7 @@ FAKE_TTS=1 pnpm demo demo.config.sample.json
 doppler run -p claude-code-use -c prd -- pnpm demo <your-config.json>
 ```
 
-Output lands in the directory set by `out` (default `out/`): `final.mp4`, `captions.srt`, plus intermediate `audio/`, `seg/`, `video.mp4`, `muxed.mp4`.
+Output lands in the directory set by `out` (default `out/`): `final.mp4`, `captions.srt`, `contact-sheet.png`, `render-report.json`, plus intermediate `audio/`, `seg/`, `contact-sheet/`, `video.mp4`, `muxed.mp4`.
 
 ## DEMO_SCRIPT format
 

@@ -20,7 +20,9 @@ import { synthShot } from "./tts";
 import { captureShot } from "./capture";
 import { resolveClipPath } from "./clips";
 import { titleCardArgs, endCardArgs } from "./cards";
-import { ffmpeg, run as runProcess, silentMp3Args } from "./ffmpeg";
+import { ffmpeg, probeDeliverable, run as runProcess, silentMp3Args } from "./ffmpeg";
+import { checkDeliverable } from "./verify";
+import { buildContactSheet, planContactSheet } from "./contact-sheet";
 import { renderVideo, type RenderResult } from "./render";
 import { renderRemote } from "./remote-render";
 import type { Transport } from "./transport";
@@ -989,6 +991,10 @@ export async function runPipeline(config: DemoConfig, opts: RunPipelineOpts = {}
       // report beside stale media and make file presence look like proof of
       // the latest attempt.
       await rm(join(out, "render-report.json"), { force: true });
+      // The contact sheet is evidence about one render too: a failed attempt
+      // must not leave the previous run's sheet picturing different media.
+      await rm(join(out, "contact-sheet.png"), { force: true });
+      await rm(join(out, "contact-sheet"), { recursive: true, force: true });
     }
 
   // musicPath is an operator-LOCAL file; the remote render never stages it.
@@ -1199,6 +1205,24 @@ export async function runPipeline(config: DemoConfig, opts: RunPipelineOpts = {}
     result = await renderVideo(inputs);
   }
 
+  // Deliverable contract (specs/deliverable-verification-spec.md): read from the
+  // file the operator receives, local or retrieved from a render host, never
+  // from the config or the host's own report.
+  const deliverable = checkDeliverable(await probeDeliverable(result.outPath), {
+    width: config.resolution.width,
+    height: config.resolution.height,
+    fps: config.fps,
+    totalSec: result.report.timeline.totalSec,
+  });
+  if (!deliverable.ok) {
+    throw new Error(`[agent-demo-video] deliverable contract failed for ${join(requestedOut, "final.mp4")}: ${deliverable.problems.join("; ")}`);
+  }
+  const contactSheet = await buildContactSheet(
+    result.outPath,
+    dirname(result.outPath),
+    planContactSheet(result.report.timeline.entries, config.fps, config.resolution),
+  );
+
   // This is a render gate, not best-effort provenance. If any scoped source
   // changed while the artifact was being made, fail the run before a report
   // can certify the completed bytes.
@@ -1224,6 +1248,8 @@ export async function runPipeline(config: DemoConfig, opts: RunPipelineOpts = {}
       maxDurationSec: config.maxDurationSec,
       renderedOn: opts.render ? "remote" : "local",
       preflight: preflightRecord,
+      deliverable,
+      contactSheet,
       ...(opts.sourceBuild
         ? { sourceBuildAttestation: opts.sourceBuild.attestation }
         : {}),

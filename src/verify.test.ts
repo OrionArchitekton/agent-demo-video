@@ -1,5 +1,36 @@
 import { describe, it, expect } from "vitest";
-import { checkDeliverable, verifyParity, type DeliverableProbe } from "./verify";
+import { checkDeliverable, checkTimelineBinding, verifyParity, type DeliverableProbe } from "./verify";
+
+describe("checkTimelineBinding", () => {
+  const timeline = {
+    entries: [
+      { shotId: "one", startSec: 0, durationSec: 3.466667 },
+      { shotId: "two", startSec: 3.466667, durationSec: 2.3 },
+    ],
+    totalSec: 5.766667,
+  };
+
+  it("accepts the renderer's measured timeline for exactly the rendered shots", () => {
+    expect(checkTimelineBinding(timeline, ["one", "two"])).toEqual([]);
+  });
+
+  it("rejects a timeline that omits, adds, or reorders shots", () => {
+    expect(checkTimelineBinding({ entries: [timeline.entries[0]!], totalSec: 3.466667 }, ["one", "two"])).toEqual([
+      expect.stringMatching(/^timeline shots: expected one, two; got one$/),
+    ]);
+    expect(checkTimelineBinding(timeline, ["two", "one"])[0]).toMatch(/^timeline shots: /);
+  });
+
+  it("rejects gaps, overlaps, non-positive durations, and a total that is not the last shot's end", () => {
+    const shifted = { ...timeline, entries: [timeline.entries[0]!, { ...timeline.entries[1]!, startSec: 4 }] };
+    expect(checkTimelineBinding(shifted, ["one", "two"])[0]).toMatch(/^timeline start of two: /);
+    const zero = { ...timeline, entries: [timeline.entries[0]!, { ...timeline.entries[1]!, durationSec: 0 }] };
+    expect(checkTimelineBinding(zero, ["one", "two"])).toContainEqual(expect.stringMatching(/^timeline duration of two: /));
+    expect(checkTimelineBinding({ ...timeline, totalSec: 9 }, ["one", "two"])).toEqual([
+      expect.stringMatching(/^timeline total: /),
+    ]);
+  });
+});
 
 const GOOD: DeliverableProbe = {
   videoStreams: 1,

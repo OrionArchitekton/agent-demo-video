@@ -51,7 +51,9 @@ DEMO_SCRIPT.md
 ### Deliverable verification
 
 After every successful render, local or remote, the pipeline checks the video the
-operator actually receives. The deliverable contract is read from `final.mp4` with
+operator actually receives. It first binds the renderer's measured timeline to the shots
+this run rendered (same shots, same order, contiguous, total equal to the last shot's end),
+since a remote host reports that timeline. The deliverable contract is read from `final.mp4` with
 ffprobe, never from the config or a render host's own report: exactly one H.264
 `yuv420p` video stream at the configured width, height, and fps with square pixels,
 exactly one AAC audio stream, a constant frame rate (the average rate must match too),

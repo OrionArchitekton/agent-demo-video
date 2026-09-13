@@ -55,15 +55,21 @@ receives, after either a local or a remote render:
    is built only from this run's stills: a reused output directory's earlier sheet and
    stills are removed first, so no image from another render can appear in it.
 4. **Remote renders verify the retrieved file.** For a remote render both checks run
-   locally against the video that was pulled back, not against anything the render host
-   reports about itself.
+   locally against the video that was pulled back. The host's report supplies the
+   measured timeline, which only the renderer can measure; before it becomes the
+   expectation for the file and the contact-sheet beats, it must name exactly the shots
+   this run rendered, in order, contiguously, with a total equal to the last shot's end.
+   A report that omits, adds, reorders, or shifts shots fails the run before any report
+   is written. Per-shot durations remain the renderer's measurements.
 5. **Portrait deliverables.** A shorts render (1080x1920) passes the same contract with
    its own geometry, and its contact sheet tiles portrait stills.
 
 ## Constraints
 
 - The contract is read with ffprobe from the deliverable. It must never be satisfied by
-  the config, the encode arguments, or the render host's own report.
+  the config, the encode arguments, or the render host's own report. The host's measured
+  timeline is used as the expectation only after it is bound to the locally known shot
+  list (Scenario 4).
 - The duration bounds are two-sided, never a floor or a ceiling alone, and their audio
   frame length comes from the probed sample rate.
 - The mux never drops video: the audio is padded so the video always ends the file.
@@ -107,6 +113,10 @@ receives, after either a local or a remote render:
   behind an intact container, and the two-sided windows) and for beat selection
   (clamping inside short shots).
 - AC6: muxing a B-frame video with audio a few ms short keeps every video frame.
+- AC7: a render whose reported timeline omits, reorders, or shifts a rendered shot fails
+  before the deliverable is checked and before any report is written.
+- AC8: production-pack promotion accepts the contact sheet and exactly one still per
+  segment in each artifact, and rejects an extra still or a non-file sheet.
 
 ## Test seams
 

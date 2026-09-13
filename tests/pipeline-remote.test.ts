@@ -95,6 +95,34 @@ describe("runPipeline remote offload (FAKE_TTS)", () => {
     await expect(stat(join(cfg.out, "render-report.json"))).rejects.toThrow(/ENOENT/);
   }, 120_000);
 
+  it("rejects a host report whose timeline omits a rendered shot, before trusting it", async () => {
+    // The host's measured timeline becomes the expectation for the delivered file and
+    // the contact-sheet beats, so it must name exactly the shots this run rendered.
+    class ForgedTimelineTransport extends LocalTransport {
+      override async exec(cwd: string, cmd: string[]): Promise<string> {
+        const stdout = await super.exec(cwd, cmd);
+        return stdout
+          .split("\n")
+          .map((line) => {
+            try {
+              const parsed = JSON.parse(line) as { report?: { timeline: { entries: unknown[]; totalSec: number } } };
+              if (!parsed.report) return line;
+              parsed.report.timeline.entries = parsed.report.timeline.entries.slice(0, -1);
+              return JSON.stringify(parsed);
+            } catch {
+              return line;
+            }
+          })
+          .join("\n");
+      }
+    }
+    const cfg = await fixtureConfig("pipe-remote-forged-timeline-");
+    await expect(runPipeline(cfg, { render: { transport: new ForgedTimelineTransport() } })).rejects.toThrow(
+      /render timeline does not match the rendered shots: timeline shots: expected one, two; got one/,
+    );
+    await expect(stat(join(cfg.out, "render-report.json"))).rejects.toThrow(/ENOENT/);
+  }, 120_000);
+
   it("fails loudly when the render host is unreachable (no silent local fallback)", async () => {
     const cfg = await fixtureConfig("pipe-remote-fail-");
     await expect(

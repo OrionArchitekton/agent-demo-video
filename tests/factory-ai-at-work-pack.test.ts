@@ -387,6 +387,16 @@ async function writeProductionArtifacts(root: string): Promise<ArtifactHashes> {
     }
     await writeFile(join(artifactRoot, "final.mp4"), finalBytes);
     await writeFile(join(artifactRoot, "render-report.json"), reportBytes);
+    // Deliverable verification writes a contact sheet and one still per timeline
+    // entry beside every render (specs/deliverable-verification-spec.md).
+    await writeFile(join(artifactRoot, "contact-sheet.png"), `fixture ${definition.name} contact sheet\n`);
+    await mkdir(join(artifactRoot, "contact-sheet"));
+    for (const [index] of timelineIds.entries()) {
+      await writeFile(
+        join(artifactRoot, "contact-sheet", `still_${String(index).padStart(3, "0")}.png`),
+        `fixture ${definition.name} still ${index}\n`,
+      );
+    }
     hashes[definition.name] = {
       final: sha256Text(finalBytes),
       report: sha256Text(reportBytes),
@@ -1091,6 +1101,21 @@ describe("Factory AI at Work Gate 1 production pack", () => {
     expect(existsSync(join(unexpected.attempt, "PRODUCTION_RECEIPT.sha256"))).toBe(false);
     await writeFile(unexpectedFile, "still writable");
     expect(await readFile(unexpectedFile, "utf8")).toBe("still writable");
+
+    const extraStill = await makeAttempt("extra-still");
+    await writeFile(join(extraStill.attempt, "master", "contact-sheet", "still_999.png"), "not planned");
+    const extraStillRun = run(extraStill.attempt, extraStill.reviewed);
+    expect(extraStillRun.status).not.toBe(0);
+    expect(extraStillRun.stderr).toContain("master contact sheet artifacts does not contain the exact required entry count");
+    expect(existsSync(join(extraStill.attempt, "PRODUCTION_RECEIPT.sha256"))).toBe(false);
+
+    const directorySheet = await makeAttempt("directory-sheet");
+    const sheetFile = join(directorySheet.attempt, "cut-a", "contact-sheet.png");
+    await rename(sheetFile, join(dir, "displaced-contact-sheet.png"));
+    await mkdir(sheetFile);
+    const directorySheetRun = run(directorySheet.attempt, directorySheet.reviewed);
+    expect(directorySheetRun.status).not.toBe(0);
+    expect(directorySheetRun.stderr).toContain("must be a regular file");
 
     const directoryAudio = await makeAttempt("directory-audio");
     const expectedAudioFile = join(

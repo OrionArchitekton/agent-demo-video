@@ -16,7 +16,10 @@
   stream at the configured size and constant fps with square pixels, one AAC audio
   stream, frame-exact video track, audio track within its AAC framing, container within
   one video or audio frame of the measured timeline), and any mismatch fails the run
-  before the report is written. A `contact-sheet.png` with one still per
+  before the report is written. The renderer's measured timeline (reported by the host
+  on remote renders) must first name exactly the rendered shots, in order and
+  contiguous. The Factory AI at Work promoter admits the new sheet and stills into
+  each artifact's exact topology. A `contact-sheet.png` with one still per
   shot at its midpoint is rebuilt beside the video on every run (stale sheets from a
   reused `out` are removed up front), and both results are recorded in
   `render-report.json` (`specs/deliverable-verification-spec.md`).

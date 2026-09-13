@@ -21,7 +21,7 @@ import { captureShot } from "./capture";
 import { resolveClipPath } from "./clips";
 import { titleCardArgs, endCardArgs } from "./cards";
 import { ffmpeg, probeDeliverable, run as runProcess, silentMp3Args } from "./ffmpeg";
-import { checkDeliverable } from "./verify";
+import { checkDeliverable, checkTimelineBinding } from "./verify";
 import { buildContactSheet, planContactSheet } from "./contact-sheet";
 import { renderVideo, type RenderResult } from "./render";
 import { renderRemote } from "./remote-render";
@@ -1203,6 +1203,16 @@ export async function runPipeline(config: DemoConfig, opts: RunPipelineOpts = {}
     result = await renderRemote(inputs, { transport: opts.render.transport, bundlePath, workDir, outPath: join(out, "final.mp4") });
   } else {
     result = await renderVideo(inputs);
+  }
+
+  // The measured timeline is the expectation for the delivered file and the contact
+  // sheet. A remote host reports it, so bind it to the shots this run rendered first.
+  const timelineProblems = checkTimelineBinding(
+    result.report.timeline,
+    ttsResults.map((t) => t.shotId),
+  );
+  if (timelineProblems.length > 0) {
+    throw new Error(`[agent-demo-video] render timeline does not match the rendered shots: ${timelineProblems.join("; ")}`);
   }
 
   // Deliverable contract (specs/deliverable-verification-spec.md): read from the

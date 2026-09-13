@@ -23,6 +23,43 @@ export function verifyParity(opts: {
   return { ok: problems.length === 0, problems };
 }
 
+/** Timeline values are rounded to microseconds when built; allow that rounding. */
+const TIMELINE_EPSILON_SEC = 1e-5;
+
+/**
+ * Bind the renderer's measured timeline to the shots this run actually rendered
+ * (specs/deliverable-verification-spec.md). For a remote render the timeline comes
+ * back in the host's report, so before it becomes the expectation for the delivered
+ * file and the contact-sheet beats it must list exactly the local shots, in order,
+ * contiguously, with a total equal to the last shot's end. Per-shot durations remain
+ * the renderer's measurements.
+ */
+export function checkTimelineBinding(
+  timeline: { entries: { shotId: string; startSec: number; durationSec: number }[]; totalSec: number },
+  shotIds: string[],
+): string[] {
+  const problems: string[] = [];
+  const got = timeline.entries.map((e) => e.shotId);
+  if (got.length !== shotIds.length || got.some((id, i) => id !== shotIds[i])) {
+    problems.push(`timeline shots: expected ${shotIds.join(", ")}; got ${got.join(", ")}`);
+    return problems;
+  }
+  let end = 0;
+  for (const entry of timeline.entries) {
+    if (!Number.isFinite(entry.durationSec) || entry.durationSec <= 0) {
+      problems.push(`timeline duration of ${entry.shotId}: expected a positive duration, got ${String(entry.durationSec)}`);
+    }
+    if (!Number.isFinite(entry.startSec) || Math.abs(entry.startSec - end) > TIMELINE_EPSILON_SEC) {
+      problems.push(`timeline start of ${entry.shotId}: expected ${end}s, got ${String(entry.startSec)}`);
+    }
+    end = entry.startSec + entry.durationSec;
+  }
+  if (!Number.isFinite(timeline.totalSec) || Math.abs(timeline.totalSec - end) > TIMELINE_EPSILON_SEC) {
+    problems.push(`timeline total: expected ${end}s, got ${String(timeline.totalSec)}`);
+  }
+  return problems;
+}
+
 /** What the encoded deliverable actually is, read from the file with ffprobe. */
 export type DeliverableProbe = {
   videoStreams: number;

@@ -221,7 +221,22 @@ export function parseDeliverableProbe(json: unknown): DeliverableProbe {
     videoDurationSec: decimal(video[0]?.duration),
     audioDurationSec: decimal(audio[0]?.duration),
     audioSampleRate: decimal(audio[0]?.sample_rate),
+    rotationDeg: rotationOf(video[0]),
   };
+}
+
+/** Same sources probeSizePx honors: display-matrix side data, then the legacy tag. */
+function rotationOf(stream: Record<string, unknown> | undefined): number | null {
+  if (!stream) return null;
+  let rotation = 0;
+  const sideData = stream.side_data_list;
+  if (Array.isArray(sideData)) {
+    for (const sd of sideData as Array<Record<string, unknown>>) {
+      if (typeof sd.rotation === "number") rotation = sd.rotation;
+    }
+  }
+  const tag = Number.parseInt(String((stream.tags as Record<string, unknown> | undefined)?.rotate ?? ""), 10);
+  return Number.isNaN(tag) ? rotation : tag;
 }
 
 /** Every property the deliverable contract compares, read from the encoded file

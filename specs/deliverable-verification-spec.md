@@ -32,7 +32,8 @@ receives, after either a local or a remote render:
 
 1. **Contract holds on a normal render.** A successful local render's deliverable has
    exactly one video stream and one audio stream; the video is H.264, yuv420p, square
-   pixels, exactly the configured width and height, at a constant frame rate equal to
+   pixels, no display rotation (players honor it, so a matching coded size alone could
+   still show sideways), exactly the configured width and height, at a constant frame rate equal to
    the configured fps (both the declared rate and the measured average rate); the audio
    is AAC. The video track is frame-exact: its duration is within one frame of the
    measured timeline's total, either way. The audio track may end up to two audio frames
@@ -105,8 +106,8 @@ receives, after either a local or a remote render:
 - AC1: every successful pipeline render (local and remote, landscape and shorts) whose
   report is written records
   `deliverable.ok: true` with the probed codec, pixel format, geometry, declared and
-  average frame rate, sample aspect ratio, audio codec, container duration, video
-  track duration, audio track duration, and audio sample rate.
+  average frame rate, sample aspect ratio, display rotation, audio codec, container
+  duration, video track duration, audio track duration, and audio sample rate.
 - AC2: a deliverable with a wrong pixel format or frame rate rejects the run, the error
   names each mismatched property with expected and actual values, and
   `render-report.json` is not written.

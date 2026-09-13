@@ -116,6 +116,14 @@ describe("parseDeliverableProbe (review finding: numeric ffprobe JSON fields)", 
     expect(asNumbers).toMatchObject({ audioSampleRate: 44100, durationSec: 5.716667, videoDurationSec: 5.716667, audioDurationSec: 5.716667 });
   });
 
+  it("reads display rotation from side data or the legacy rotate tag, 0 when neither is present", () => {
+    const withVideo = (extra: Record<string, unknown>) =>
+      parseDeliverableProbe({ streams: [{ codec_type: "video", ...extra }], format: {} });
+    expect(withVideo({}).rotationDeg).toBe(0);
+    expect(withVideo({ side_data_list: [{ side_data_type: "Display Matrix", rotation: -90 }] }).rotationDeg).toBe(-90);
+    expect(withVideo({ tags: { rotate: "90" } }).rotationDeg).toBe(90);
+  });
+
   it("records absent or unparseable values as null, never a guess", () => {
     const r = parseDeliverableProbe(streams("n/a", undefined));
     expect(r).toMatchObject({ audioSampleRate: null, durationSec: null, videoDurationSec: null });

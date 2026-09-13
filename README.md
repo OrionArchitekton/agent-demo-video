@@ -55,7 +55,8 @@ operator actually receives. It first binds the renderer's measured timeline to t
 this run rendered (same shots, same order, contiguous, total equal to the last shot's end),
 since a remote host reports that timeline. The deliverable contract is read from `final.mp4` with
 ffprobe, never from the config or a render host's own report: exactly one H.264
-`yuv420p` video stream at the configured width, height, and fps with square pixels,
+`yuv420p` video stream at the configured width, height, and fps with square pixels and
+no display rotation,
 exactly one AAC audio stream, a constant frame rate (the average rate must match too),
 a frame-exact video track, an audio track that ends within an audio frame or two of the
 measured timeline (AAC encodes whole frames), and a container within one video or audio

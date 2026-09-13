@@ -47,6 +47,7 @@ const GOOD: DeliverableProbe = {
   videoDurationSec: 5.766667,
   audioDurationSec: 5.758005,
   audioSampleRate: 44100,
+  rotationDeg: 0,
 };
 const EXPECTED = { width: 1280, height: 720, fps: 30, totalSec: 5.766667 };
 
@@ -74,6 +75,10 @@ describe("checkDeliverable", () => {
     ["video duration", { videoDurationSec: 3.2 }],
     ["video duration", { videoDurationSec: null }],
     ["audio duration", { audioDurationSec: 4.2 }],
+    // Coded size can match while a display matrix makes players show it sideways.
+    ["display rotation", { rotationDeg: 90 }],
+    ["display rotation", { rotationDeg: -270 }],
+    ["display rotation", { rotationDeg: null }],
   ] as const)("names %s when it does not match", (name, patch) => {
     const r = checkDeliverable({ ...GOOD, ...patch }, EXPECTED);
     expect(r.ok).toBe(false);

@@ -13,7 +13,8 @@
 
 - Deliverable verification after every local or remote render: the delivered
   `final.mp4` is probed against a final-format contract (one H.264 yuv420p video
-  stream at the configured size and constant fps with square pixels, one AAC audio
+  stream at the configured size and constant fps with square pixels and no display
+  rotation, one AAC audio
   stream, frame-exact video track, audio track within its AAC framing, container within
   one video or audio frame of the measured timeline), and any mismatch fails the run
   before the report is written. The renderer's measured timeline (reported by the host

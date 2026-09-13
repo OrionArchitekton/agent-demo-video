@@ -117,6 +117,7 @@ vi.mock("../src/ffmpeg", async (importOriginal) => {
       videoDurationSec: 0,
       audioDurationSec: 0,
       audioSampleRate: 44100,
+      rotationDeg: 0,
     })),
   };
 });

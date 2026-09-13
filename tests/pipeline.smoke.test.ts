@@ -70,7 +70,11 @@ describe("runPipeline (smoke, FAKE_TTS)", () => {
       videoDurationSec: Number(v.duration),
       audioDurationSec: Number(a.duration),
       audioSampleRate: Number(a.sample_rate),
+      // No display matrix or rotate tag on the delivered stream.
+      rotationDeg: 0,
     });
+    expect(v.side_data_list).toBeUndefined();
+    expect((v.tags as unknown as Record<string, string> | undefined)?.rotate).toBeUndefined();
     // The audio track ends before the container, so a probe reading the wrong
     // duration field cannot pass the equality above.
     expect(Number(a.duration)).toBeLessThan(Number(independent.format.duration));

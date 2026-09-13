@@ -83,6 +83,9 @@ export type DeliverableProbe = {
   audioDurationSec: number | null;
   /** Audio sample rate in Hz; an AAC frame is 1024 samples at this rate. */
   audioSampleRate: number | null;
+  /** Display rotation in degrees from side data or the legacy rotate tag (0 when
+   *  absent). Players honor it, so matching coded width and height is not enough. */
+  rotationDeg: number | null;
 };
 
 /** Samples per AAC frame; the audio track's duration is quantized to it. */
@@ -125,6 +128,11 @@ export function checkDeliverable(
   want("height", probed.height, expected.height);
   want("sample aspect ratio", probed.sampleAspectRatio, "1:1");
   want("audio codec", probed.audioCodec, "aac");
+  want(
+    "display rotation",
+    probed.rotationDeg === null || !Number.isFinite(probed.rotationDeg) ? null : ((probed.rotationDeg % 360) + 360) % 360,
+    0,
+  );
 
   const rateMatches = (name: string, raw: string | null) => {
     const rate = frameRateValue(raw);

@@ -59,8 +59,11 @@ receives, after either a local or a remote render:
    measured timeline, which only the renderer can measure; before it becomes the
    expectation for the file and the contact-sheet beats, it must name exactly the shots
    this run rendered, in order, contiguously, with a total equal to the last shot's end.
-   A report that omits, adds, reorders, or shifts shots fails the run before any report
-   is written. Per-shot durations remain the renderer's measurements.
+   A report that omits, adds, or reorders shots, or places one out of sequence (a gap,
+   an overlap, or a total that is not the last shot's end), fails the run before any
+   report is written. Per-shot durations remain the renderer's measurements: the render
+   host is trusted to measure its own clips, so a host that consistently re-times shots
+   and returns a matching file is outside what this check can detect.
 5. **Portrait deliverables.** A shorts render (1080x1920) passes the same contract with
    its own geometry, and its contact sheet tiles portrait stills.
 
@@ -92,10 +95,15 @@ receives, after either a local or a remote render:
   start of the attempt, alongside the previous render report, so a failed attempt never
   leaves another render's evidence behind.
 - Existing report fields keep their names and meaning; the new fields are additive.
+- Report persistence is unchanged: `render-report.json` is required for source-attested
+  production renders and best-effort otherwise (a write failure is warned, not fatal), so
+  the recorded `deliverable` and `contactSheet` fields exist wherever the report does.
+  The checks themselves always run and always fail the run on a mismatch.
 
 ## Acceptance criteria
 
-- AC1: every successful pipeline render (local and remote, landscape and shorts) records
+- AC1: every successful pipeline render (local and remote, landscape and shorts) whose
+  report is written records
   `deliverable.ok: true` with the probed codec, pixel format, geometry, declared and
   average frame rate, sample aspect ratio, audio codec, container duration, video
   track duration, audio track duration, and audio sample rate.
@@ -103,8 +111,8 @@ receives, after either a local or a remote render:
   names each mismatched property with expected and actual values, and
   `render-report.json` is not written.
 - AC3: every successful render writes `contact-sheet.png` beside `final.mp4` with one
-  still per timeline entry, and the report's `contactSheet` lists each still's shot id,
-  time, and path in timeline order.
+  still per timeline entry, and a written report's `contactSheet` lists each still's shot
+  id, time, and path in timeline order.
 - AC4: the recorded contact-sheet geometry equals the geometry of the written PNG; a
   reused output directory's leftover stills never appear in the sheet, and a still that
   yields no frame rejects the build.
@@ -113,8 +121,8 @@ receives, after either a local or a remote render:
   behind an intact container, and the two-sided windows) and for beat selection
   (clamping inside short shots).
 - AC6: muxing a B-frame video with audio a few ms short keeps every video frame.
-- AC7: a render whose reported timeline omits, reorders, or shifts a rendered shot fails
-  before the deliverable is checked and before any report is written.
+- AC7: a render whose reported timeline omits, reorders, or misplaces a rendered shot
+  fails before the deliverable is checked and before any report is written.
 - AC8: production-pack promotion accepts the contact sheet and exactly one still per
   segment in each artifact, and rejects an extra still or a non-file sheet.
 

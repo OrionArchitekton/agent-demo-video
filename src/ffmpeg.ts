@@ -190,6 +190,40 @@ export async function probeSizePx(file: string): Promise<{ width: number; height
   });
 }
 
+/**
+ * Map ffprobe `-show_streams -show_format -of json` output to the contract fields.
+ * Durations and rates are accepted as strings or numbers, since ffprobe writers
+ * differ; an absent or unparseable value is null, never a guess.
+ */
+export function parseDeliverableProbe(json: unknown): DeliverableProbe {
+  const j = json as { streams?: Array<Record<string, unknown>>; format?: Record<string, unknown> };
+  if (!j || !Array.isArray(j.streams)) throw new Error("no stream list");
+  const video = j.streams.filter((s) => s.codec_type === "video");
+  const audio = j.streams.filter((s) => s.codec_type === "audio");
+  const str = (v: unknown) => (typeof v === "string" ? v : null);
+  const int = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : null);
+  const decimal = (v: unknown) => {
+    const n = typeof v === "number" ? v : typeof v === "string" ? Number.parseFloat(v) : NaN;
+    return Number.isFinite(n) ? n : null;
+  };
+  return {
+    videoStreams: video.length,
+    audioStreams: audio.length,
+    videoCodec: str(video[0]?.codec_name),
+    pixFmt: str(video[0]?.pix_fmt),
+    width: int(video[0]?.width),
+    height: int(video[0]?.height),
+    frameRate: str(video[0]?.r_frame_rate),
+    avgFrameRate: str(video[0]?.avg_frame_rate),
+    sampleAspectRatio: str(video[0]?.sample_aspect_ratio),
+    audioCodec: str(audio[0]?.codec_name),
+    durationSec: decimal(j.format?.duration),
+    videoDurationSec: decimal(video[0]?.duration),
+    audioDurationSec: decimal(audio[0]?.duration),
+    audioSampleRate: decimal(audio[0]?.sample_rate),
+  };
+}
+
 /** Every property the deliverable contract compares, read from the encoded file
  *  (specs/deliverable-verification-spec.md). Unparseable output or a failed
  *  ffprobe rejects: a contract that could not be read is never reported as met. */
@@ -202,35 +236,7 @@ export async function probeDeliverable(file: string): Promise<DeliverableProbe> 
     p.on("close", (c) => {
       try {
         if (c !== 0) throw new Error(`exited ${c}`);
-        const j = JSON.parse(out) as {
-          streams?: Array<Record<string, unknown>>;
-          format?: { duration?: string };
-        };
-        if (!Array.isArray(j.streams)) throw new Error("no stream list");
-        const video = j.streams.filter((s) => s.codec_type === "video");
-        const audio = j.streams.filter((s) => s.codec_type === "audio");
-        const str = (v: unknown) => (typeof v === "string" ? v : null);
-        const num = (v: unknown) => (typeof v === "number" ? v : null);
-        const seconds = (v: unknown) => {
-          const n = Number.parseFloat(typeof v === "string" ? v : "");
-          return Number.isFinite(n) ? n : null;
-        };
-        res({
-          videoStreams: video.length,
-          audioStreams: audio.length,
-          videoCodec: str(video[0]?.codec_name),
-          pixFmt: str(video[0]?.pix_fmt),
-          width: num(video[0]?.width),
-          height: num(video[0]?.height),
-          frameRate: str(video[0]?.r_frame_rate),
-          avgFrameRate: str(video[0]?.avg_frame_rate),
-          sampleAspectRatio: str(video[0]?.sample_aspect_ratio),
-          audioCodec: str(audio[0]?.codec_name),
-          durationSec: seconds(j.format?.duration),
-          videoDurationSec: seconds(video[0]?.duration),
-          audioDurationSec: seconds(audio[0]?.duration),
-          audioSampleRate: seconds(audio[0]?.sample_rate),
-        });
+        res(parseDeliverableProbe(JSON.parse(out)));
       } catch (e) {
         rej(new Error(`ffprobe deliverable ${file}: ${(e as Error).message}`));
       }

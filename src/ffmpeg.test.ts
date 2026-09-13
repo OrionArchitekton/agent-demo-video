@@ -10,6 +10,7 @@ import {
   padAudioArgs,
   extendVideoArgs,
   probeSizePx,
+  parseDeliverableProbe,
 } from "./ffmpeg";
 
 describe("ffmpeg arg builders", () => {
@@ -96,5 +97,28 @@ describe("probeSizePx spawn failure (review finding)", () => {
   it("rejects with ffprobe context when the binary cannot be spawned", async () => {
     vi.stubEnv("PATH", "/nonexistent-agent-demo-video-test-bin");
     await expect(probeSizePx("clip.mp4")).rejects.toThrow(/^ffprobe size clip\.mp4: spawn ffprobe\b/);
+  });
+});
+
+describe("parseDeliverableProbe (review finding: numeric ffprobe JSON fields)", () => {
+  const streams = (sampleRate: unknown, duration: unknown) => ({
+    streams: [
+      { codec_type: "video", codec_name: "h264", pix_fmt: "yuv420p", width: 1280, height: 720, r_frame_rate: "60/1", avg_frame_rate: "60/1", sample_aspect_ratio: "1:1", duration },
+      { codec_type: "audio", codec_name: "aac", sample_rate: sampleRate, duration },
+    ],
+    format: { duration },
+  });
+
+  it("reads durations and sample rate whether ffprobe writes them as strings or numbers", () => {
+    const asStrings = parseDeliverableProbe(streams("44100", "5.716667"));
+    const asNumbers = parseDeliverableProbe(streams(44100, 5.716667));
+    expect(asNumbers).toEqual(asStrings);
+    expect(asNumbers).toMatchObject({ audioSampleRate: 44100, durationSec: 5.716667, videoDurationSec: 5.716667, audioDurationSec: 5.716667 });
+  });
+
+  it("records absent or unparseable values as null, never a guess", () => {
+    const r = parseDeliverableProbe(streams("n/a", undefined));
+    expect(r).toMatchObject({ audioSampleRate: null, durationSec: null, videoDurationSec: null });
+    expect(() => parseDeliverableProbe({})).toThrow(/no stream list/);
   });
 });

@@ -104,6 +104,16 @@ describe("synthShot with a command voice", () => {
       aligner: [fx("align-wrong.sh"), "{audio}", "{text}", "{out}"],
     })).rejects.toThrowError(/aligner \(shot s1\): word timings match only \d+% of the script's words/);
   });
+  it("stops when the voice command's word timings run past the audio", async () => {
+    await expect(run({ command: [fx("tone-words-long.sh"), "--text-file", "{text}", "--out", "{out}"] }))
+      .rejects.toThrowError(/^voice command \(shot s1\): word timings run to 30s but the audio is 1\.\d+s/);
+  });
+  it("stops when the aligner's word timings run past the audio", async () => {
+    await expect(run({
+      command: [fx("tone.sh"), "--text-file", "{text}", "--out", "{out}"],
+      aligner: [fx("align-long.sh"), "{audio}", "{text}", "{out}"],
+    })).rejects.toThrowError(/^aligner \(shot s1\): word timings run to 30s but the audio is 1\.\d+s/);
+  });
   it("labels unreadable audio with its shot", async () => {
     await expect(run({ command: [fx("empty.sh"), "--text-file", "{text}", "--out", "{out}"] }))
       .rejects.toThrowError(/voice command \(shot s1\): cannot read audio/);

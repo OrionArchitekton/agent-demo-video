@@ -9,6 +9,13 @@ import { runCommand, readWordsFile } from "./command-voice";
 import { alignScriptWords, MIN_COVERAGE } from "./word-timing";
 
 const MIN_AUDIO_SEC = 0.3;
+/** Slack for a recognizer that stretches the last word slightly past the probed audio. */
+const TIMING_SLACK_SEC = 0.5;
+
+function assertWithinAudio(source: string, words: { end: number }[], durationSec: number): void {
+  const max = words.reduce((m, w) => Math.max(m, w.end), 0);
+  if (max > durationSec + TIMING_SLACK_SEC) throw new Error(`${source}: word timings run to ${max}s but the audio is ${durationSec}s`);
+}
 
 async function synthCommandShot(shot: Shot, config: DemoConfig, outDir: string): Promise<TtsResult> {
   const v = config.voice;
@@ -31,6 +38,7 @@ async function synthCommandShot(shot: Shot, config: DemoConfig, outDir: string):
   let words = await readWordsFile(`${audioPath}.words.json`, label);
   // An empty list is "no timings": fall through to the aligner or the estimate.
   if (words && words.length === 0) words = null;
+  if (words) assertWithinAudio(label, words, durationSec);
   let timing: TimingSource = "provider";
   let source = label;
   if (!words && v.aligner) {
@@ -40,6 +48,7 @@ async function synthCommandShot(shot: Shot, config: DemoConfig, outDir: string):
     await runCommand(source, v.aligner, { audio: audioPath, text: textPath, out: wordsPath }, v.timeoutSec ?? DEFAULT_VOICE_TIMEOUT_SEC);
     words = await readWordsFile(wordsPath, source);
     if (!words) throw new Error(`${source}: wrote no word timings at ${wordsPath}`);
+    assertWithinAudio(source, words, durationSec);
     timing = "aligned";
   }
   if (!words) {

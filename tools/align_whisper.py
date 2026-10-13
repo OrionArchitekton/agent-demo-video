@@ -23,6 +23,7 @@ model = WhisperModel(os.environ.get("ALIGN_MODEL", "small.en"), device="cpu", co
                      cpu_threads=int(os.environ.get("ALIGN_THREADS", "4")))
 segments, _ = model.transcribe(audio, word_timestamps=True, initial_prompt=prompt)
 words = [{"word": w.word.strip(), "start": round(w.start, 3), "end": round(w.end, 3)}
-         for s in segments for w in (s.words or []) if w.word.strip()]
+         for s in segments for w in (s.words or [])
+         if w.word.strip() and w.start is not None and w.end is not None]
 with open(out, "w", encoding="utf-8") as f:
     json.dump(words, f)

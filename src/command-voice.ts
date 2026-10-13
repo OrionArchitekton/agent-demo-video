@@ -94,6 +94,9 @@ export async function runCommand(label: string, template: string[], vars: Record
 }
 
 /** Read [{word,start,end}] timings; null when the file is absent, an error when it is malformed. */
+/** Most word timings one shot may carry; a longer list is a runaway or hostile command. */
+export const MAX_WORD_TIMINGS = 20000;
+
 export async function readWordsFile(path: string, label: string): Promise<TimedWord[] | null> {
   let raw: string;
   try {
@@ -107,6 +110,9 @@ export async function readWordsFile(path: string, label: string): Promise<TimedW
   }
   let data: unknown;
   try { data = JSON.parse(raw); } catch { throw new Error(`${label}: malformed word timings in ${path} (not JSON)`); }
+  if (Array.isArray(data) && data.length > MAX_WORD_TIMINGS) {
+    throw new Error(`${label}: too many word timings (${data.length}, max ${MAX_WORD_TIMINGS})`);
+  }
   const ok = Array.isArray(data) && data.every((w) =>
     w && typeof w.word === "string" && Number.isFinite(w.start) && Number.isFinite(w.end) && w.start >= 0 && w.end >= w.start);
   if (!ok) throw new Error(`${label}: malformed word timings in ${path} (need [{word, start, end}] with 0 <= start <= end)`);

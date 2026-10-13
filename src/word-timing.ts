@@ -6,6 +6,9 @@ export interface TimedWord { word: string; start: number; end: number; }
 /** Below this share of script words matched, the take is treated as wrong or truncated. */
 export const MIN_COVERAGE = 0.6;
 
+/** Upper bound on the alignment table, (script words + 1) * (timed words + 1); ~16 MB of Int32. */
+const MAX_ALIGN_CELLS = 4_000_000;
+
 const key = (w: string) => w.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
 const MAX_JOIN = 4;
 const MIN_STEP = 0.05;
@@ -26,6 +29,9 @@ export function alignScriptWords(text: string, timed: TimedWord[], durationSec: 
   const cand = tokens.map((t, i) => ({ i, k: key(t.word) })).filter((c) => c.k);
   const tkeys = timed.map((t) => key(t.word));
   const n = cand.length, m = timed.length, W = m + 1;
+  if ((n + 1) * (m + 1) > MAX_ALIGN_CELLS) {
+    throw new Error(`word timings are too large to align (${n} script words x ${m} timed words, max ${MAX_ALIGN_CELLS} table cells)`);
+  }
   const joinLen = (ci: number, j: number): number => {
     let acc = "";
     for (let len = 1; len <= MAX_JOIN && j + len <= m; len++) {

@@ -91,6 +91,18 @@ describe("readWordsFile", () => {
   it("returns null when the file is absent", async () => {
     expect(await readWordsFile("/no/such/words.json", "x")).toBeNull();
   });
+  it("rejects more than 20000 word timings", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "words-"));
+    const p = join(dir, "w.json");
+    await writeFile(p, JSON.stringify(Array.from({ length: 20001 }, (_, i) => ({ word: "a", start: i, end: i + 1 }))));
+    await expect(readWordsFile(p, "aligner (shot s1)")).rejects.toThrowError(/^aligner \(shot s1\): too many word timings \(20001, max 20000\)/);
+  });
+  it("accepts exactly 20000 word timings", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "words-"));
+    const p = join(dir, "w.json");
+    await writeFile(p, JSON.stringify(Array.from({ length: 20000 }, (_, i) => ({ word: "a", start: i, end: i + 1 }))));
+    expect(await readWordsFile(p, "x")).toHaveLength(20000);
+  });
   it("rejects malformed timings", async () => {
     const dir = await mkdtemp(join(tmpdir(), "words-"));
     const p = join(dir, "w.json");

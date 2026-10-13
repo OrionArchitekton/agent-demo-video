@@ -104,3 +104,11 @@ describe("alignScriptWords", () => {
     expect(coverage).toBe(1);
   });
 });
+
+describe("alignScriptWords cost bound", () => {
+  it("refuses an alignment whose table would be too large, before allocating it", () => {
+    const text = Array.from({ length: 3000 }, (_, i) => `w${i}`).join(" ");
+    const timed = Array.from({ length: 3000 }, (_, i) => ({ word: `w${i}`, start: i, end: i + 0.5 }));
+    expect(() => alignScriptWords(text, timed, 4000)).toThrowError(/too large to align \(3000 script words x 3000 timed words/);
+  });
+});

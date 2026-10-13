@@ -5,6 +5,7 @@ import { writeFile } from "node:fs/promises";
 import { basename, isAbsolute, relative, sep } from "node:path";
 import { promisify } from "node:util";
 import type { DemoConfig, TimelineEntry, TimingSource } from "./types";
+import { DEFAULT_VOICE_TIMEOUT_SEC } from "./types";
 import type { TtsMode } from "./tts";
 import type { SourceBuildAttestation } from "./source-build";
 import type { DeliverableCheck } from "./verify";
@@ -44,7 +45,7 @@ export type CommandVoiceRecord = {
   provider: "command";
   command: string;
   aligner?: string;
-  timeoutSec?: number;
+  timeoutSec: number;
 };
 
 /** The report's voice block: a hosted-provider voice exactly as configured, or a command voice record. */
@@ -56,9 +57,13 @@ export type ReportVoice = DemoConfig["voice"] | CommandVoiceRecord;
  */
 export function reportVoice(voice: DemoConfig["voice"]): ReportVoice {
   if (voice.provider !== "command") return voice;
-  const record: CommandVoiceRecord = { provider: "command", command: basename(voice.command?.[0] ?? "") };
+  // timeoutSec is the effective limit, not the configured one: 600 s still applies when the config omits it.
+  const record: CommandVoiceRecord = {
+    provider: "command",
+    command: basename(voice.command?.[0] ?? ""),
+    timeoutSec: voice.timeoutSec ?? DEFAULT_VOICE_TIMEOUT_SEC,
+  };
   if (voice.aligner?.[0]) record.aligner = basename(voice.aligner[0]);
-  if (voice.timeoutSec !== undefined) record.timeoutSec = voice.timeoutSec;
   return record;
 }
 

@@ -65,11 +65,11 @@ describe("buildRenderReport", () => {
     expect(json).not.toContain("--api-key");
   });
 
-  it("omits an absent aligner and timeout from a command voice record", () => {
+  it("omits an absent aligner but records the effective 600 s timeout when the config omits it", () => {
     const voice = { ...base.voice, provider: "command" as const, command: ["/opt/bin/tts", "{text}", "{out}"] };
     const recorded = buildRenderReport({ ...base, voice }).voice;
-    expect(recorded).toEqual({ provider: "command", command: "tts" });
-    expect(Object.keys(recorded)).toEqual(["provider", "command"]);
+    expect(recorded).toEqual({ provider: "command", command: "tts", timeoutSec: 600 });
+    expect(Object.keys(recorded)).toEqual(["provider", "command", "timeoutSec"]);
   });
 
   it("records the caption timing source per shot (specs/command-tts-provider-spec.md)", () => {

@@ -84,9 +84,9 @@ describe("runCommand edge cases", () => {
 });
 
 describe("readWordsFile", () => {
-  it("labels non-ENOENT errors", async () => {
+  it("rejects a path that is not a regular file", async () => {
     const dir = await mkdtemp(join(tmpdir(), "words-"));
-    await expect(readWordsFile(dir, "x")).rejects.toThrowError(/^x: cannot read word timings/);
+    await expect(readWordsFile(dir, "x")).rejects.toThrowError(new RegExp(`^x: word timings path ${dir} is not a regular file`));
   });
   it("returns null when the file is absent", async () => {
     expect(await readWordsFile("/no/such/words.json", "x")).toBeNull();

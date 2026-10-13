@@ -101,11 +101,12 @@ export async function readWordsFile(path: string, label: string): Promise<TimedW
   let raw: string;
   try {
     const st = await stat(path);
+    if (!st.isFile()) throw new Error(`${label}: word timings path ${path} is not a regular file`);
     if (st.size > 5 * 1024 * 1024) throw new Error(`${label}: word timings file ${path} is too large`);
     raw = await readFile(path, "utf8");
   } catch (e) {
     if ((e as NodeJS.ErrnoException).code === "ENOENT") return null;
-    if ((e as Error).message.startsWith(`${label}: word timings file`)) throw e;
+    if ((e as Error).message.startsWith(`${label}: word timings `)) throw e;
     throw new Error(`${label}: cannot read word timings at ${path}: ${(e as Error).message}`);
   }
   let data: unknown;

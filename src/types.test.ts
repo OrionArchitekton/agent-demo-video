@@ -73,3 +73,45 @@ describe("filtergraph boundary validation (review fix)", () => {
     expect(() => DemoConfigSchema.parse({ script: "x", dashboardBaseUrl: "http://x", motion: { baseZoom: 1.0, driftAmp: 0.05 } })).toThrow();
   });
 });
+
+describe("voice provider config (specs/command-tts-provider-spec.md)", () => {
+  const base = { script: "x", dashboardBaseUrl: "http://x" };
+  it("defaults to the hosted provider with no command", () => {
+    const c = DemoConfigSchema.parse(base);
+    expect(c.voice.provider).toBeUndefined();
+    expect(c.voice.command).toBeUndefined();
+    expect(c.voice.timeoutSec).toBeUndefined();
+    const keys = Object.keys(JSON.parse(JSON.stringify(DemoConfigSchema.parse(base).voice)));
+    expect(keys).not.toContain("provider");
+    expect(keys).not.toContain("timeoutSec");
+  });
+  it("requires voice.command for the command provider", () => {
+    expect(() => DemoConfigSchema.parse({ ...base, voice: { provider: "command" } })).toThrowError(/voice\.command/);
+  });
+  it("requires {text} and {out} placeholders in the command", () => {
+    expect(() => DemoConfigSchema.parse({ ...base, voice: { provider: "command", command: ["tts", "{text}"] } }))
+      .toThrowError(/\{out\}/);
+  });
+  it("requires {audio}, {text} and {out} placeholders in the aligner", () => {
+    expect(() => DemoConfigSchema.parse({ ...base, voice: { provider: "command", command: ["tts", "{text}", "{out}"], aligner: ["al", "{audio}", "{out}"] } }))
+      .toThrowError(/\{text\}/);
+  });
+  it("rejects voice.command without the command provider", () => {
+    expect(() => DemoConfigSchema.parse({ ...base, voice: { command: ["tts", "{text}", "{out}"] } }))
+      .toThrowError(/only used with voice\.provider \\+"command/);
+  });
+  it("rejects voice.aligner without the command provider", () => {
+    expect(() => DemoConfigSchema.parse({ ...base, voice: { aligner: ["al", "{audio}", "{text}", "{out}"] } }))
+      .toThrowError(/only used with voice\.provider \\+"command/);
+  });
+  it("caps voice.timeoutSec at the Node timer limit", () => {
+    const voice = (timeoutSec: number) => ({ ...base, voice: { provider: "command", command: ["tts", "{text}", "{out}"], timeoutSec } });
+    expect(DemoConfigSchema.parse(voice(2147483)).voice.timeoutSec).toBe(2147483);
+    expect(() => DemoConfigSchema.parse(voice(2147484))).toThrowError(/timeoutSec/);
+  });
+  it("accepts a command voice with an aligner", () => {
+    const c = DemoConfigSchema.parse({ ...base, voice: { provider: "command", command: ["tts", "--text-file", "{text}", "--out", "{out}"], aligner: ["python3", "tools/align_whisper.py", "{audio}", "{text}", "{out}"], timeoutSec: 120 } });
+    expect(c.voice.command).toEqual(["tts", "--text-file", "{text}", "--out", "{out}"]);
+    expect(c.voice.timeoutSec).toBe(120);
+  });
+});

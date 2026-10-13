@@ -53,6 +53,8 @@ export const ManifestSchema = z
   });
 export type Manifest = z.infer<typeof ManifestSchema>;
 
+export const DEFAULT_VOICE_TIMEOUT_SEC = 600;
+
 export const DemoConfigSchema = z.object({
   script: z.string(),
   dashboardBaseUrl: z.string(),
@@ -67,6 +69,19 @@ export const DemoConfigSchema = z.object({
   resolution: z.object({ width: evenDim(), height: evenDim() }).strict().optional(),
   fps: z.number().default(30),
   voice: z.object({
+    // specs/command-tts-provider-spec.md: "elevenlabs" (hosted, default) or
+    // "command" (an operator-supplied program run once per shot, no shell).
+    // Absent = hosted provider / 600 s (DEFAULT_VOICE_TIMEOUT_SEC); kept out of
+    // the parsed object so archived render reports still match their configs.
+    provider: z.enum(["elevenlabs", "command"]).optional(),
+    // argv template; {text} = path of a file holding the shot's narration,
+    // {out} = audio path the program must write.
+    command: z.array(z.string().min(1)).min(1).optional(),
+    // argv template; {audio} = finished narration, {text} = narration file,
+    // {out} = JSON path for [{word,start,end}] the program must write.
+    aligner: z.array(z.string().min(1)).min(1).optional(),
+    // Per call; capped so timeoutSec * 1000 stays within Node's 2^31 - 1 ms timer limit.
+    timeoutSec: z.number().positive().max(2147483, "voice.timeoutSec must be at most 2147483 (the Node timer limit)").optional(),
     voiceId: z.string().default("21m00Tcm4TlvDq8ikWAM"),
     // Quality tier by default (production-polish S6): flash is the latency
     // tier and audibly flatter for narration. Explicit config still wins.
@@ -74,7 +89,22 @@ export const DemoConfigSchema = z.object({
     seed: z.number().default(42),
     stability: z.number().default(0.5),
     similarity: z.number().default(0.75),
-  }).strict().default({}),
+  }).strict().superRefine((v, ctx) => {
+    const need = (field: "command" | "aligner", argv: string[] | undefined, holders: string[]) => {
+      if (!argv) return;
+      for (const h of holders) {
+        if (!argv.some((a) => a.includes(h))) {
+          ctx.addIssue({ code: z.ZodIssueCode.custom, path: [field], message: `voice.${field} must contain the ${h} placeholder` });
+        }
+      }
+    };
+    if (v.provider === "command" && !v.command) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["command"], message: 'voice.provider "command" needs voice.command (an argument list using {text} and {out})' });
+    }
+    if (v.provider !== "command") for (const f of ["command", "aligner"] as const) if (v[f]) ctx.addIssue({ code: z.ZodIssueCode.custom, path: [f], message: `voice.${f} is only used with voice.provider "command"` });
+    need("command", v.command, ["{text}", "{out}"]);
+    need("aligner", v.aligner, ["{audio}", "{text}", "{out}"]);
+  }).default({}),
   theme: z.object({
     captionFont: fontName().default("Arial"),
     captionSize: z.number().default(24),
@@ -286,5 +316,6 @@ export interface PreflightFinding {
 }
 
 export interface Alignment { chars: string[]; startSec: number[]; endSec: number[]; }
-export interface TtsResult { shotId: string; audioPath: string; durationSec: number; alignment: Alignment; }
+export type TimingSource = "provider" | "aligned" | "estimated";
+export interface TtsResult { shotId: string; audioPath: string; durationSec: number; alignment: Alignment; timing?: TimingSource; }
 export interface TimelineEntry { shotId: string; startSec: number; durationSec: number; }

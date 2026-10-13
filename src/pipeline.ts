@@ -1081,12 +1081,19 @@ export async function runPipeline(config: DemoConfig, opts: RunPipelineOpts = {}
   // Re-deriving it after the render would report what the environment says now
   // rather than what produced the artifact, and could throw on a card-only run
   // that legitimately never needed a key.
-  const ttsMode = resolveTtsMode();
+  const ttsMode = resolveTtsMode(process.env, config.voice.provider);
 
   // 3. TTS — sequential to respect ElevenLabs concurrency limits
   const ttsResults: TtsResult[] = [];
   for (const shot of shots) {
     ttsResults.push(await synthShot(shot, config, audioDir));
+  }
+  const estimated = ttsResults.filter((t) => t.timing === "estimated").map((t) => t.shotId);
+  if (config.voice.provider === "command" && ttsMode === "real" && estimated.length) {
+    console.warn(
+      `[agent-demo-video] estimated caption timing for ${estimated.length} shot(s) (${estimated.join(", ")}): ` +
+        "the voice command wrote no word timings and no voice.aligner is configured",
+    );
   }
 
   // 4. Capture — one per shot; startSec unused by capture driver
@@ -1255,6 +1262,7 @@ export async function runPipeline(config: DemoConfig, opts: RunPipelineOpts = {}
       tools: await toolVersions(),
       timeline: result.report.timeline,
       render: result.report,
+      narration: ttsResults.filter((t) => t.timing).map((t) => ({ shotId: t.shotId, timing: t.timing! })),
       maxDurationSec: config.maxDurationSec,
       renderedOn: opts.render ? "remote" : "local",
       preflight: preflightRecord,

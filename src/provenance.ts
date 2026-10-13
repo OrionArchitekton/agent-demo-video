@@ -2,9 +2,9 @@ import { createHash } from "node:crypto";
 import { execFile } from "node:child_process";
 import { createReadStream } from "node:fs";
 import { writeFile } from "node:fs/promises";
-import { isAbsolute, relative, sep } from "node:path";
+import { basename, isAbsolute, relative, sep } from "node:path";
 import { promisify } from "node:util";
-import type { DemoConfig, TimelineEntry } from "./types";
+import type { DemoConfig, TimelineEntry, TimingSource } from "./types";
 import type { TtsMode } from "./tts";
 import type { SourceBuildAttestation } from "./source-build";
 import type { DeliverableCheck } from "./verify";
@@ -35,8 +35,35 @@ export type ClipInputDigest = {
   sha256: string;
 };
 
+/**
+ * What a report records about a command voice. Program names and the timeout
+ * identify the voice without storing full argument lists or paths, which can
+ * carry API keys and machine-local locations.
+ */
+export type CommandVoiceRecord = {
+  provider: "command";
+  command: string;
+  aligner?: string;
+  timeoutSec?: number;
+};
+
+/** The report's voice block: a hosted-provider voice exactly as configured, or a command voice record. */
+export type ReportVoice = DemoConfig["voice"] | CommandVoiceRecord;
+
+/**
+ * Reduce a command voice to its record; every other provider is returned
+ * unchanged so archived reports keep matching their configs.
+ */
+export function reportVoice(voice: DemoConfig["voice"]): ReportVoice {
+  if (voice.provider !== "command") return voice;
+  const record: CommandVoiceRecord = { provider: "command", command: basename(voice.command?.[0] ?? "") };
+  if (voice.aligner?.[0]) record.aligner = basename(voice.aligner[0]);
+  if (voice.timeoutSec !== undefined) record.timeoutSec = voice.timeoutSec;
+  return record;
+}
+
 export type RenderReport = {
-  voice: DemoConfig["voice"];
+  voice: ReportVoice;
   ttsMode: TtsMode;
   inputs: {
     configHash: string;
@@ -61,6 +88,8 @@ export type RenderReport = {
   limits: { maxDurationSec: number };
   preflight: PreflightRecord;
   sourceBuildAttestation?: SourceBuildAttestation;
+  /** Per-shot caption timing source (specs/command-tts-provider-spec.md). */
+  narration?: { shotId: string; timing: TimingSource }[];
 };
 
 /** Short stable content digest retained for report compatibility and scanning. */
@@ -108,9 +137,11 @@ export function buildRenderReport(o: {
   deliverable?: DeliverableCheck;
   contactSheet?: ContactSheetPlan;
   sourceBuildAttestation?: SourceBuildAttestation;
+  /** Per-shot caption timing source (specs/command-tts-provider-spec.md). */
+  narration?: { shotId: string; timing: TimingSource }[];
 }): RenderReport {
   return {
-    voice: o.voice,
+    voice: reportVoice(o.voice),
     ttsMode: o.ttsMode,
     inputs: {
       configHash: o.configHash,
@@ -128,6 +159,7 @@ export function buildRenderReport(o: {
     limits: { maxDurationSec: o.maxDurationSec },
     preflight: o.preflight,
     ...(o.sourceBuildAttestation ? { sourceBuildAttestation: o.sourceBuildAttestation } : {}),
+    ...(o.narration && o.narration.length ? { narration: o.narration } : {}),
   };
 }
 

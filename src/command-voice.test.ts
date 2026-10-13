@@ -78,6 +78,21 @@ describe("runCommand edge cases", () => {
       if (helper) try { process.kill(helper, "SIGKILL"); } catch { /* gone */ }
     }
   });
+  it("leaves no timers or pipes of its own referenced once the command has exited, even if a helper holds the pipes", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "bg-"));
+    const pidFile = join(dir, "pid");
+    const count = (kind: string) => process.getActiveResourcesInfo().filter((r) => r === kind).length;
+    const before = { timeout: count("Timeout"), pipe: count("PipeWrap") };
+    try {
+      await runCommand("v", [fx("bg-helper.sh"), pidFile], {}, 30);
+      for (let i = 0; i < 20 && count("PipeWrap") > before.pipe; i++) await new Promise((r) => setTimeout(r, 10));
+      expect(count("Timeout")).toBeLessThanOrEqual(before.timeout);
+      expect(count("PipeWrap")).toBeLessThanOrEqual(before.pipe);
+    } finally {
+      const helper = await readPid(pidFile).catch(() => 0);
+      if (helper) try { process.kill(helper, "SIGKILL"); } catch { /* gone */ }
+    }
+  });
   it("rejects an empty command", async () => {
     await expect(runCommand("v", [], {}, 5)).rejects.toThrowError(/v: empty command/);
   });

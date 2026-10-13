@@ -74,6 +74,7 @@ export async function runCommand(label: string, template: string[], vars: Record
       try { process.kill(-child.pid!, "SIGKILL"); } catch { /* already gone */ }
       done(() => reject(new Error(`${label}: timed out after ${timeoutSec}s`)));
     }, timeoutSec * 1000);
+    timer.unref();
     child.on("error", (e: NodeJS.ErrnoException) => {
       done(() => reject(new Error(e.code === "ENOENT" ? `${label}: program not found: ${prog}` : `${label}: could not start ${prog}: ${e.message}`)));
     });
@@ -89,6 +90,7 @@ export async function runCommand(label: string, template: string[], vars: Record
       });
       child.once("close", finish);
       drain = setTimeout(finish, STDIO_DRAIN_MS);
+      drain.unref();
     });
   });
 }

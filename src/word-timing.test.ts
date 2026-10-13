@@ -72,10 +72,21 @@ describe("alignScriptWords", () => {
     monotone(alignment.endSec);
     for (const w of ["a", "b", "c", "d"]) { const s = tokenSpan(text, alignment, w); expect(s.end).toBeGreaterThan(s.start); }
   });
-  it("trailing words past the audio still get positive width", () => {
+  it("trailing words past the audio collapse onto the audio end, never beyond it", () => {
     const text = "one two three";
     const { alignment } = alignScriptWords(text, [{ word: "one", start: 0, end: 1.6 }], 1.5);
-    for (const w of ["one", "two", "three"]) { const s = tokenSpan(text, alignment, w); expect(s.end).toBeGreaterThan(s.start); }
+    expect(Math.max(...alignment.startSec, ...alignment.endSec)).toBeLessThanOrEqual(1.5);
+    monotone(alignment.startSec);
+    monotone(alignment.endSec);
+  });
+  it("keeps every time within a 1.5 s take when only the first 3 of 5 words were timed", () => {
+    const text = "one two three four five";
+    const timed = [
+      { word: "one", start: 0, end: 0.5 }, { word: "two", start: 0.5, end: 1 }, { word: "three", start: 1, end: 1.5 },
+    ];
+    const { alignment } = alignScriptWords(text, timed, 1.5);
+    expect(Math.max(...alignment.endSec)).toBeLessThanOrEqual(1.5);
+    expect(Math.max(...alignment.startSec)).toBeLessThanOrEqual(1.5);
     monotone(alignment.startSec);
     monotone(alignment.endSec);
   });

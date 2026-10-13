@@ -109,6 +109,11 @@ export function alignScriptWords(text: string, timed: TimedWord[], durationSec: 
     t!.end = Math.max(t!.end, t!.start + MIN_WIDTH);
     prevEnd = t!.end;
   }
+  // Words the take never reached collapse onto the audio end instead of running past it.
+  for (const t of times) {
+    t!.start = Math.min(t!.start, durationSec);
+    t!.end = Math.min(t!.end, durationSec);
+  }
 
   // UTF-16 units, so indices from matchAll line up with the arrays (astral chars stay two units).
   const chars = text.split("");

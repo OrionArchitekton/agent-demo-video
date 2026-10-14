@@ -16,7 +16,8 @@ Check these before the first render and tell the user what is missing:
 - Node 18 or newer (`node --version`). Motion cards need Node 22.12 or newer.
 - ffmpeg 5.1 or newer and ffprobe on `PATH` (`ffmpeg -version`).
 - The capture browser, installed once with the Playwright build this CLI uses:
-  `npx -y -p agent-demo-video@0.3.0 playwright install chromium`.
+  `npx -y -p agent-demo-video@0.3.0 playwright install chromium`. If a render later says the
+  browser executable is missing (for example after the npx cache was cleared), run it again.
 - The app to record is running and reachable, or is a local folder of HTML files.
 
 Run the CLI pinned to this plugin's version, from the directory that holds the config:
@@ -52,10 +53,13 @@ Follow this order. Each step is cheap compared with the one after it.
    and dispatch the `agent-demo-video:render-reviewer` agent from this plugin with
    `<out>/contact-sheet.png`, `<out>/frame0.png`, `<out>/render-report.json` (it maps contact-sheet
    tiles to shots), the script and a one-line brief. Fix every BLOCKING flag and repeat the silent
-   pass before going on.
-5. **Narrated render.** Change `out` in the config to a new directory (for example `out-final`),
-   then run again without `FAKE_TTS`, with the voice the user chose (below). A separate directory
-   means a failed narrated run can never leave the silent pass's `final.mp4` looking finished.
+   pass before going on. If the reviewer lists the first frame under UNCHECKED, extract it and
+   review again; do not go on without it.
+5. **Narrated render.** Copy the config to `demo.final.json` and set its `out` to a directory that
+   does not exist yet (for example `out-final-1`, a new name for each narrated run). Run
+   `npx -y agent-demo-video@0.3.0 demo.final.json` without `FAKE_TTS`, with the voice the user
+   chose (below). Keep `demo.config.json` for silent passes, so a silent pass never writes over a
+   narrated video and a failed narrated run never leaves a silent `final.mp4` looking finished.
 6. **Read the report.** Open `<out>/render-report.json` from the narrated run. Check
    `transcriptCheck` (always present; when it ran, it lists the phrases the narration did not say,
    and `ran: false` carries a reason when no aligner ran), `hook`, and that `ttsMode` is `real`,

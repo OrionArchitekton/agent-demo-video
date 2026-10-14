@@ -130,6 +130,7 @@ describe("public files carry nothing private and no long dashes", () => {
       "secret-manager invocation",
     );
     expect(findPrivateStrings("see /home/someone/src/thing")).toContain("Linux home directory path");
+    expect(findPrivateStrings("cd /home/Someone/src")).toContain("Linux home directory path");
     expect(findPrivateStrings("host box.tail1234.ts.net")).toContain("tailnet host name");
     expect(findPrivateStrings("at 100.80.1.2")).toContain("tailnet address");
     expect(findPrivateStrings("mail someone@gmail.com")).toContain("personal mail address");

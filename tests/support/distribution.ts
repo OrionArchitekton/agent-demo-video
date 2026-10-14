@@ -26,7 +26,7 @@ export const PRIVATE_PATTERNS: [string, RegExp][] = [
   ["secret-manager invocation", /\bdoppler\s+run\b/i],
   // Only http(s) URLs are exempt, and only up to a quote or bracket, so file:// and ssh:// paths
   // and minified JSON (`"https://a.example","/home/x"`) are still caught.
-  ["Linux home directory path", /(?<!https?:\/\/[^\s"'<>`]*)\/home\/[a-z_][a-z0-9_-]*/],
+  ["Linux home directory path", /(?<!https?:\/\/[^\s"'<>`]*)\/home\/[A-Za-z_][A-Za-z0-9._-]*/],
   ["macOS home directory path", /(?<!https?:\/\/[^\s"'<>`]*)\/Users\/[A-Za-z][A-Za-z0-9._-]*/],
   ["Windows home directory path", /[A-Za-z]:\\{1,2}Users\\{1,2}/],
   ["tailnet host name", /\.ts\.net\b/i],

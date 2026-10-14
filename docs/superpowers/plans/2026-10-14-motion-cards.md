@@ -12,7 +12,7 @@
 
 **Run tests with:** `pnpm vitest run <file>`; full suite `pnpm test`; typecheck `pnpm typecheck`. Judge by exit code, never through a pipe.
 
-**Known-good render command (estate-proven on 0.8.36):** `hyperframes render <projectDir> -o <out.mp4> --no-best-effort --no-browser-gpu -w 2 -q standard`. Composition root: `<div id="root" data-composition-id="main" data-start="0" data-duration="<sec>" data-fps="<fps>" data-width="<w>" data-height="<h>">` containing one clip `<div class="clip" data-start="0" data-duration="<sec>" data-track-index="1">`. GSAP compositions register `window.__timelines`; this plan uses plain CSS keyframes, which the runtime seeks through `document.getAnimations()` (to be proven in Task 1).
+**Known-good render command (estate-proven on 0.8.36):** `hyperframes render <projectDir> -o <out.mp4> --no-best-effort --no-browser-gpu -w 2 -q standard`. Composition root: `<div id="root" data-no-timeline data-composition-id="main" data-start="0" data-duration="<sec>" data-fps="<fps>" data-width="<w>" data-height="<h>">` containing one clip `<div class="clip" data-start="0" data-duration="<sec>" data-track-index="1">`. GSAP compositions register `window.__timelines`; this plan uses plain CSS keyframes, which the runtime seeks through `document.getAnimations()` (proven in Task 1: luma ramps 19.0 -> 29.7 over the animation). A CSS-only composition MUST carry `data-no-timeline` on the root (verified on 0.8.155: without it the renderer waits 45 s for `window.__timelines["main"]` and fails with `sub_timeline_readiness_timeout`).
 
 ---
 
@@ -46,7 +46,7 @@ html, body { width: 640px; height: 360px; margin: 0; overflow: hidden; backgroun
 #t { position: absolute; top: 140px; width: 100%; text-align: center; font: 600 64px Arial, sans-serif; color: #fff; opacity: 0; animation: rev 1s linear 0s 1 forwards; }
 @keyframes rev { from { opacity: 0; } to { opacity: 1; } }
 </style></head><body>
-<div id="root" data-composition-id="main" data-start="0" data-duration="2" data-fps="30" data-width="640" data-height="360">
+<div id="root" data-no-timeline data-composition-id="main" data-start="0" data-duration="2" data-fps="30" data-width="640" data-height="360">
   <div class="clip" data-start="0" data-duration="2" data-track-index="1"><div id="t">Spike</div></div>
 </div></body></html>
 ```

@@ -18,8 +18,8 @@ Three gaps showed up while rendering real narrated demos:
 
 - **transcript check**: after a render, the finished video's speech is recognized and compared
   with the script's narration; script phrases the recognizer did not hear are listed.
-- **dropped phrase**: a narration phrase (a sentence or clause) whose characters mostly do not
-  appear, in order, in the recognized speech.
+- **dropped phrase**: a narration phrase (a sentence or clause) most of whose
+  three-letter sequences do not occur in the recognized speech.
 - **headless capture**: any browser the pipeline launches without a window (all shot capture and
   preflight). The interactive login flow is not headless and is unaffected.
 - **hook line**: a short line of text, set by the author, shown large on the first frame.
@@ -30,9 +30,9 @@ Three gaps showed up while rendering real narrated demos:
 1. **The render is checked against its script.** When an aligner is configured (the word
    aligner from the command voice provider), after the deliverable is verified the aligner is run
    once over the finished video's audio with the whole narration as its text. Recognized words
-   are compared with the narration phrase by phrase, on letters and digits only (so "A.I." matches
-   "AI"), ignoring coincidental matches shorter than three characters. Phrases with under 70% of
-   their characters heard are reported as dropped. The render report records the result
+   are compared with the narration phrase by phrase on letters and digits only (so "A.I." matches
+   "AI"): a phrase counts as heard when at least 70% of its three-letter sequences occur in the
+   recognized speech; others are reported as dropped. The render report records the result
    (`transcriptCheck: { ran, droppedPhrases }`); dropped phrases also print a warning. The check is
    advisory: it never fails a render. With no aligner configured it records `ran: false` with the
    reason, and nothing else changes. If the aligner itself fails during the check, the render still

@@ -173,6 +173,7 @@ describe("public files carry nothing private and no long dashes", () => {
       expect(files.some((f) => f.startsWith(`${dir}/`)), `${dir} contributes no scanned file`).toBe(true);
     }
     expect(files).toContain("README.md");
+    expect(files).toContain("docs/runbooks/release.md");
     for (const f of files) {
       const body = read(f);
       expect(findPrivateStrings(body), f).toEqual([]);
@@ -266,5 +267,38 @@ describe("README leads with adoption", () => {
     const links = relativeLinks(md);
     for (const page of GUIDE_PAGES) expect(links, page).toContain(page);
     for (const href of links) expect(existsSync(resolve(root, href)), href).toBe(true);
+  });
+});
+
+describe("release preparation", () => {
+  it("ships everything unreleased as the package version", () => {
+    const cl = read("CHANGELOG.md");
+    expect(cl).not.toMatch(/^## Unreleased/m);
+    const versions = [...cl.matchAll(/^## (\S+)/gm)].map((m) => m[1]);
+    expect(versions[0]).toBe(pkg.version);
+    expect(versions.filter((v) => v === pkg.version)).toHaveLength(1);
+    const start = cl.indexOf(`## ${pkg.version}`);
+    const next = cl.indexOf("\n## ", start + 1);
+    const section = cl.slice(start, next === -1 ? undefined : next);
+    for (const h of ["### Breaking", "### Added", "### Fixed"]) {
+      expect(section.split(`\n${h}\n`).length - 1, h).toBe(1);
+    }
+    expect(section).toContain("Claude Code plugin");
+  });
+
+  it("gives the maintainer the four release steps with exact commands", () => {
+    const rb = read("docs/runbooks/release.md");
+    expect(frontmatter(rb).verified).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    for (const s of [
+      "npm login",
+      "npm publish --dry-run",
+      "npm publish",
+      `npm view agent-demo-video version`,
+      `gh release create v${pkg.version}`,
+      "gh repo edit OrionArchitekton/agent-demo-video",
+      "Publish to npm before you announce the plugin",
+    ]) {
+      expect(rb, s).toContain(s);
+    }
   });
 });

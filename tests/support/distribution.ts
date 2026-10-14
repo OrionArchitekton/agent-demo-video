@@ -91,6 +91,7 @@ export const EXPECTED_GUIDE_PAGES = [
 /** Files shipped to the public as documentation or plugin content. Grows as pages are added. */
 export function publicFiles(): string[] {
   return [
+    "README.md",
     ...filesUnder(".claude-plugin"),
     ...filesUnder("skills"),
     ...filesUnder("agents"),

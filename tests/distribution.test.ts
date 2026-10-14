@@ -172,6 +172,7 @@ describe("public files carry nothing private and no long dashes", () => {
     for (const dir of [".claude-plugin", "skills", "agents", "docs/guide"]) {
       expect(files.some((f) => f.startsWith(`${dir}/`)), `${dir} contributes no scanned file`).toBe(true);
     }
+    expect(files).toContain("README.md");
     for (const f of files) {
       const body = read(f);
       expect(findPrivateStrings(body), f).toEqual([]);
@@ -230,5 +231,40 @@ describe("guide pages", () => {
       for (const path of links) expect(existsSync(resolve(root, path)), `${f} -> ${path}`).toBe(true);
     }
     expect(skillLinks).toBeGreaterThan(0);
+  });
+});
+
+describe("README leads with adoption", () => {
+  const md = read("README.md");
+
+  it("stays short", () => {
+    expect(md.split("\n").length).toBeLessThanOrEqual(220);
+  });
+
+  it("opens with what it is, then install, then quickstart", () => {
+    const install = md.indexOf("\n## Install");
+    const quick = md.indexOf("\n## Quickstart");
+    const features = md.indexOf("\n## Features");
+    expect(install).toBeGreaterThan(md.indexOf("\n\n", md.indexOf("# agent-demo-video")));
+    expect(quick).toBeGreaterThan(install);
+    expect(features).toBeGreaterThan(quick);
+  });
+
+  it("gives three ways to install", () => {
+    const section = md.slice(md.indexOf("\n## Install"), md.indexOf("\n## Quickstart"));
+    expect(section).toContain("/plugin marketplace add OrionArchitekton/agent-demo-video");
+    expect(section).toContain("/plugin install agent-demo-video@agent-demo-video");
+    expect(section).toContain(`npx -y agent-demo-video@${pkg.version} `);
+    expect(section).toContain("git clone https://github.com/OrionArchitekton/agent-demo-video.git");
+  });
+
+  it("has a keyless quickstart on the bundled smoke demo", () => {
+    expect(md).toContain("FAKE_TTS=1 pnpm demo demos/smoke/demo.config.json");
+  });
+
+  it("links every guide page and every relative link resolves", () => {
+    const links = relativeLinks(md);
+    for (const page of GUIDE_PAGES) expect(links, page).toContain(page);
+    for (const href of links) expect(existsSync(resolve(root, href)), href).toBe(true);
   });
 });

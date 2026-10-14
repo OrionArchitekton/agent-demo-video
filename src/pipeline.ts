@@ -1143,6 +1143,9 @@ export async function runPipeline(config: DemoConfig, opts: RunPipelineOpts = {}
   //     legacy shared default while allowing artifact-first cold opens.
   let segmentKinds: ("shot" | "card")[] = deriveSegmentKinds(shots);
   let hookStatus: "set" | "missing" | undefined;
+  if (config.brand?.hook && !config.brand.titleCard) {
+    console.warn("[agent-demo-video] brand.hook is set but the title card is disabled; the hook is not shown");
+  }
   if (config.brand && (config.brand.titleCard || config.brand.endCard)) {
     const b = config.brand;
     const cardBase = {

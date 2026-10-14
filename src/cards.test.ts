@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { titleCardArgs, endCardArgs, wrapHook, hookLayout } from "./cards";
+import { titleCardArgs, endCardArgs, wrapHook, hookLayout, estimateTextWidth } from "./cards";
 
 const O = {
   width: 1920, height: 1080, fps: 30, durationSec: 2.2, font: "Arial",
@@ -73,6 +73,22 @@ describe("hookLayout", () => {
     const l = hookLayout(1080, 1920, "Stop pasting client secrets into AI chats");
     expect(l.fontSize).toBeGreaterThan(Math.round(1920 * 0.034));
     expect(Math.max(...l.lines.map((s) => s.length)) * l.fontSize * 0.55).toBeLessThanOrEqual(1080 * 0.9);
+  });
+});
+describe("hookLayout fit guarantee", () => {
+  const base = Math.round(1920 * 0.075);
+  it("fits an all-caps hook inside 90% of the width", () => {
+    const l = hookLayout(1080, 1920, "STOP PASTING SECRETS INTO AI NOW");
+    for (const line of l.lines) expect(estimateTextWidth(line, l.fontSize)).toBeLessThanOrEqual(0.9 * 1080);
+  });
+  it("shrinks for an over-long word, down to at most the floor", () => {
+    const l = hookLayout(1080, 1920, "Supercalifragilisticexpialidocious AI");
+    expect(l.fontSize).toBeLessThan(base);
+    const w = estimateTextWidth("Supercalifragilisticexpialidocious", l.fontSize);
+    expect(w <= 0.9 * 1080 || l.fontSize === Math.round(1920 * 0.035)).toBe(true);
+  });
+  it("keeps the base size for ordinary mixed-case text", () => {
+    expect(hookLayout(1080, 1920, "Stop pasting client secrets into AI chats").fontSize).toBe(base);
   });
 });
 describe("titleCardArgs with a hook", () => {

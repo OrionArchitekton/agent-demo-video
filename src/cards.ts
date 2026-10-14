@@ -80,11 +80,41 @@ export function wrapHook(text: string, maxChars: number): string[] {
   return lines;
 }
 
-/** Hook font size and lines: large (7.5% of height on portrait, 8.5% on landscape), wrapped to 90% of width. */
+/** Estimated rendered width: uppercase letters and digits 0.68 em, everything else 0.55 em. */
+export function estimateTextWidth(text: string, fontSize: number): number {
+  let em = 0;
+  for (const ch of text) em += /[A-Z0-9]/.test(ch) ? 0.68 : 0.55;
+  return em * fontSize;
+}
+
+function wrapByWidth(text: string, fontSize: number, maxWidth: number): string[] {
+  const lines: string[] = [];
+  let cur = "";
+  for (const w of text.trim().split(/\s+/)) {
+    if (!cur) cur = w;
+    else if (estimateTextWidth(cur + " " + w, fontSize) <= maxWidth) cur += " " + w;
+    else { lines.push(cur); cur = w; }
+  }
+  if (cur) lines.push(cur);
+  return lines;
+}
+
+/**
+ * Hook font size and lines. Starts large (7.5% of height on portrait, 8.5% on
+ * landscape) and shrinks 5% at a time (floor 3.5% of height) until every
+ * wrapped line is estimated to fit 90% of the width. At the floor the result
+ * is accepted: a single giant word may still overflow (documented limit).
+ */
 export function hookLayout(width: number, height: number, hook: string): { fontSize: number; lines: string[] } {
-  const fontSize = Math.round(height * (height > width ? 0.075 : 0.085));
-  const maxChars = Math.max(6, Math.floor((width * 0.9) / (fontSize * 0.55)));
-  return { fontSize, lines: wrapHook(hook, maxChars) };
+  const maxWidth = width * 0.9;
+  const floor = Math.round(height * 0.035);
+  let fontSize = Math.round(height * (height > width ? 0.075 : 0.085));
+  for (;;) {
+    const lines = wrapByWidth(hook, fontSize, maxWidth);
+    const widest = Math.max(...lines.map((l) => estimateTextWidth(l, fontSize)));
+    if (widest <= maxWidth || fontSize <= floor) return { fontSize, lines };
+    fontSize = Math.max(floor, Math.round(fontSize * 0.95));
+  }
 }
 
 /** Cold-open title card: product name, optional subtitle, accent underline. */

@@ -43,4 +43,13 @@ describe("shorts hook card (smoke)", { timeout: 180_000 }, () => {
     const { report } = await render({ brand: { title: "Demo Fixture" } });
     expect("hook" in report).toBe(false);
   });
+
+  it("warns and records nothing when a hook is set but the title card is off", async () => {
+    const warn = vi.spyOn(console, "warn");
+    try {
+      const { report } = await render({ platform: "shorts", brand: { title: "Demo Fixture", hook: "Stop pasting secrets", titleCard: false, endCard: true } });
+      expect("hook" in report).toBe(false);
+      expect(warn.mock.calls.some((c) => /hook is set but the title card is disabled/.test(String(c[0])))).toBe(true);
+    } finally { warn.mockRestore(); }
+  });
 });

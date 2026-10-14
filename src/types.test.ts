@@ -121,6 +121,9 @@ describe("brand.hook", () => {
   it("accepts a hook up to 60 characters", () => {
     expect(DemoConfigSchema.parse({ ...base, brand: { title: "T", hook: "Stop pasting secrets into AI" } }).brand?.hook).toBe("Stop pasting secrets into AI");
   });
+  it("rejects a whitespace-only hook", () => {
+    expect(() => DemoConfigSchema.parse({ ...base, brand: { title: "T", hook: "   " } })).toThrow();
+  });
   it("rejects a hook over 60 characters", () => {
     expect(() => DemoConfigSchema.parse({ ...base, brand: { title: "T", hook: "x".repeat(61) } })).toThrowError(/60/);
   });

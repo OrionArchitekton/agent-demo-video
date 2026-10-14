@@ -355,7 +355,7 @@ Key fields in `demo.config.json` (full schema in `src/types.ts`):
 | `theme.frame.enabled` | `true` | Scene framing: the capture floats as a rounded, shadowed window on a gradient backdrop |
 | `audio.soundDesign` | `true` | Synthesized ambient bed ducked under narration, click ticks, segment sweeps |
 | `motion.livingCamera` | `true` | Continuous camera path with drift; `motion.zoomOnAction: false` disables all camera motion |
-| `brand` | (off) | `{ title, subtitle, url, accent, hook, cards }` adds branded title and end cards. `hook` (1 to 60 characters) is large text on the title card's first frame; see [Quality checks](#quality-checks). `titleCard` / `endCard` may override either side independently while `cards` remains the shared default |
+| `brand` | (off) | `{ title, subtitle, url, accent, hook, cards, motion }` adds branded title and end cards. `hook` (1 to 60 characters) is large text on the title card's first frame; see [Quality checks](#quality-checks). `titleCard` / `endCard` may override either side independently while `cards` remains the shared default. `motion: true` renders the cards as animated HTML; see [Motion cards](#motion-cards) |
 | `clipsDir` | `"clips/prebaked"` | Where a **bare** prebaked clip filename resolves. Resolved against the config file's directory unless absolute; `--clips-dir <absolute-directory>` overrides it for one run and additionally binds every relative `clip:` strictly beneath that directory |
 | `preflight` | `true` | Fail-closed pre-flight selector gate; see [Pre-flight selector gate](#pre-flight-selector-gate). `false` (or `--no-preflight`) declines it |
 | `maxDurationSec` | `300` | Hard ceiling for the finished video. The render fails if the result exceeds it. Set it to the length limit you are shipping against. |
@@ -512,6 +512,34 @@ still overflow at the minimum size.
 A Shorts render (`platform: "shorts"`) with a title card but no hook prints a warning and records
 `hook: "missing"` in the report (`"set"` when a hook is present). A hook with the title card
 disabled is not shown and prints a warning.
+
+## Motion cards
+
+Set `brand.motion: true` to render the title and end cards as short animated HTML clips with
+[HyperFrames](https://github.com/heygen-com/hyperframes) instead of static ffmpeg text. It is opt-in: static cards stay the default, and a config
+without `motion` behaves exactly as before.
+
+```json
+"brand": { "title": "WorkCue", "hook": "Your standup, written for you", "url": "workcue.app", "motion": true }
+```
+
+- **Requirements.** The optional `hyperframes` package (exact version 0.8.155, installed by default
+  unless your install skips optional dependencies) and Node 22 or newer. The tool itself still runs
+  on Node 18 when motion is off. The check runs before any browser launches; if something is
+  missing the run stops and the message says how to fix it.
+- **Title card.** With a hook, the hook is fully visible from the first frame and only settles
+  slightly; the accent bar draws on, then the product name and subtitle reveal. Without a hook, the
+  product name is visible from the first frame and settles.
+- **End card.** The title fades in, then the URL reveals in the accent color.
+- **Short cards.** Animations scale down on short cards so every reveal finishes before the fade.
+- **Fonts.** Motion cards use your configured system font through a local font face, the same font
+  as static cards and captions, so no web fonts are fetched.
+- **Rendering.** HyperFrames runs its own headless browser, which it may need to download on a
+  clean machine the first time it renders. Node 22+ and ffmpeg are required.
+- **Failures.** A missing package, an old Node, or a render that fails or logs an error stops the
+  run and leaves no partial card. There is no silent fallback to static cards.
+- **Report.** The run report records `motionCards: { renderer: "hyperframes", version }`.
+- **Text.** Card text is always rendered as literal text, never as markup.
 
 ## Replicability
 

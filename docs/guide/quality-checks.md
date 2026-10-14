@@ -1,6 +1,6 @@
 # Quality checks
 
-Three checks and fixes that guard a render against problems the format checks cannot see.
+This page covers three checks and fixes for problems the [deliverable verification](pipeline.md#deliverable-verification) cannot see.
 
 **Transcript check.** When `voice.aligner` is configured, the pipeline runs the aligner once more
 over the finished `final.mp4` with the whole narration as its text, after the deliverable is

@@ -2,7 +2,7 @@
 
 For surfaces you cannot or should not drive live (SaaS login walls, desktop apps, external products), pre-capture a clip once and reference it:
 
-```json
+```markdown
 ### SHOT uipath-studio
 - target: prebaked
 - clip: clips/prebaked/uipath-studio.mp4

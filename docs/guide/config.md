@@ -10,7 +10,9 @@ Key fields in `demo.config.json` (full schema in [`src/types.ts`](../../src/type
 | `platform` | `"landscape"` | Distribution preset. `"shorts"` renders a 9:16 `1080x1920` canvas for Shorts/TikTok/Reels while still capturing at a 16:9 desktop viewport; the framed scene floats the capture as a window on the tall canvas. Explicit `resolution` / `capture.viewport` override the preset |
 | `resolution` | preset (`1920×1080` landscape) | Output canvas of the finished video |
 | `capture.viewport` | preset (follows canvas on landscape; `1920×1080` on shorts) | Browser capture geometry, decoupled from the canvas |
+| `capture.auth` | (none) | Login for `target: live` shots: `loginUrl` and `loggedInSelector` (required unless `allowUnguardedLiveCapture` is set); see [Authenticated SaaS capture](authenticated-capture.md) |
 | `fps` | `30` | Frame rate |
+| `voice.provider` | ElevenLabs | `"command"` runs your own TTS command; see [Use your own voice](voice.md) |
 | `voice.voiceId` | Rachel (ElevenLabs) | ElevenLabs voice ID |
 | `voice.modelId` | `eleven_multilingual_v2` | ElevenLabs model (`eleven_flash_v2_5` stays selectable for cheap drafts) |
 | `voice.seed` | `42` | Seed for reproducible synthesis |

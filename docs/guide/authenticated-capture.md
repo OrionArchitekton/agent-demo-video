@@ -2,7 +2,7 @@
 
 `target: live` drives an authenticated SaaS app (Slack, Notion, Linear, Stripe, any
 Google-SSO app) behind its real login: no hand-captured clip needed. A live shot uses
-the **same action syntax as `dashboard`**; the only difference is it runs against a saved
+the **same action syntax as `dashboard`** shots (the `target` value for shots recorded in your app, see [DEMO_SCRIPT format](script-format.md)); the only difference is it runs against a saved
 browser profile.
 
 It's a two-step flow:
@@ -26,14 +26,14 @@ Configure the auth section in `demo.config.json`:
   "capture": {
     "auth": {
       "loginUrl": "https://app.slack.com/",
-      "loggedInSelector": "[data-qa=\"channel_sidebar\"]", // optional; see below
+      "loggedInSelector": "[data-qa=\"channel_sidebar\"]", // required for live shots; see below
       "confirmMode": "operator"                              // operator | selector | auto
     }
   }
 }
 ```
 
-A live shot in the manifest:
+A live shot in the DEMO_SCRIPT:
 
 ```markdown
 ### SHOT workspace
@@ -45,11 +45,13 @@ A live shot in the manifest:
 
 **Login detection.** The default `confirmMode: "operator"` treats *your Enter keypress*
 as the authoritative "logged in" signal. This is robust for apps whose DOM we don't control, and
-it absorbs MFA/SSO with no special handling. An optional `loggedInSelector` enables
-`confirmMode: "selector"` / `"auto"` (wait for a stable element instead) for unattended
-re-auth, and is also used as a **record-time expiry guard**: if the marker is missing when
-a live shot runs, the render **fails closed** ("session expired, re-run `demo-video login`")
-rather than silently recording the logged-out wall. A bare URL match is never used (it
+it absorbs MFA/SSO with no special handling. A `loggedInSelector` is required for live shots. It is the **record-time expiry guard**: if
+the marker is missing when a live shot runs, the render **fails closed** ("session expired,
+re-run `demo-video login`") rather than silently recording the logged-out wall. Without a
+selector, live capture refuses to run, and that failure comes after narration has been paid
+for. The selector also enables `confirmMode: "selector"` / `"auto"` (wait for a stable element
+instead) for unattended re-auth. To record without the guard, set
+`capture.auth.allowUnguardedLiveCapture: true` (an expired session would then be recorded). A bare URL match is never used (it
 false-positives on SSO redirects).
 
 **Auth at rest (security).** The saved profile holds session cookies/tokens, so it lives

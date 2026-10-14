@@ -13,8 +13,7 @@ must write audio (any format ffmpeg reads). No shell is involved.
 }
 ```
 
-`voice.provider` and `voice.timeoutSec` are optional: leaving the provider out selects the hosted
-voice, and the timeout falls back to 600 s.
+`voice.provider` and `voice.timeoutSec` are optional: leaving the provider out selects ElevenLabs, and the timeout falls back to 600 s.
 
 Word-pop captions need word timings. They come from, in order: a `{out}.words.json` your command
 writes (`[{"word", "start", "end"}]`, seconds, at most 5 MB), the optional `aligner`, or a

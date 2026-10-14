@@ -6,24 +6,23 @@ DEMO_SCRIPT.md
       ▼
 1. parseScript: parse shots + actions from Markdown
 2. TTS (ElevenLabs): synthShot per shot → audio + per-char alignment
-3. Playwright capture: captureShot per shot: headless Chromium screencast
-                       (CDP JPEG frames + per-frame timestamps), native
-                       animated cursor + action annotations + chapter cards,
-                       zoom-on-action camera motion, dwell = narration duration
+3. Playwright capture (captureShot per shot): headless Chromium screencast
+   (CDP JPEG frames + per-frame timestamps), native animated cursor +
+   action annotations + chapter cards, zoom-on-action camera motion,
+   dwell = narration duration
 4. ffmpeg normalize: encode frames straight to H.264 (per-frame durations
-                       from capture timestamps), uniform res/fps, soft fade-in
-                       between segments
+   from capture timestamps), uniform res/fps, soft fade-in between segments
 5. build timeline: measure probe durations → assemble startSec offsets
 6. captions.srt: per-char alignment → word-timed SRT
 7. pad audio: silence-pad each audio track to match video segment
 8. concat + mux: concat video, concat audio, mux together
 9. burn captions: subtitles filter burned into final.mp4
 10. parity verify: shotCount / videoSegments / audioSec / videoSec / maxSec
-11. deliverable check: ffprobe the delivered final.mp4: one H.264 yuv420p video
-                       stream at the configured size and fps, square pixels,
-                       one AAC audio stream, frame-exact video track
-12. contact sheet:    one still per shot at its midpoint, tiled into
-                       contact-sheet.png beside final.mp4
+11. deliverable check (ffprobe on the delivered final.mp4): one H.264 yuv420p
+    video stream at the configured size and fps, square pixels, one AAC audio
+    stream, frame-exact video track
+12. contact sheet: one still per shot at its midpoint, tiled into
+    contact-sheet.png beside final.mp4
 ```
 
 ## Deliverable verification

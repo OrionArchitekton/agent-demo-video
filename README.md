@@ -23,7 +23,7 @@ Then ask Claude for a demo video of your app. The skill runs the CLI through `np
 **npx or a global install:**
 
 ```bash
-npx playwright install chromium                   # one time: the capture browser
+npx -y -p agent-demo-video@0.3.0 playwright install chromium   # one time: the browser build this CLI uses
 npx -y agent-demo-video@0.3.0 demo.config.json
 # or: npm install -g agent-demo-video, then: demo-video demo.config.json
 ```
@@ -80,8 +80,9 @@ For your own app:
 - **Screencast capture** with an animated cursor, highlights, chapter cards, zoom on action, a
   slowly drifting camera, a framed scene and light sound design
   ([how the pipeline works](docs/guide/pipeline.md)).
-- **Fail-closed preflight.** Every selector is checked on the live app before any narration is
-  generated ([preflight](docs/guide/preflight.md)).
+- **Fail-closed preflight.** Selectors are checked against the running app before any narration is
+  generated. Shots behind a login, and selectors that follow a click or type in the same shot, are
+  reported rather than proven ([preflight](docs/guide/preflight.md)).
 - **Apps behind a login.** `target: live` drives a saved browser profile kept outside the repo;
   `demo-video login <config.json>` creates it ([authenticated capture](docs/guide/authenticated-capture.md)).
 - **Prebaked clips and third-party tabs** for surfaces you cannot or prefer not to automate

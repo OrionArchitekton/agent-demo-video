@@ -34,6 +34,7 @@ npm whoami      # must print the account that owns agent-demo-video
 
 ```bash
 git switch master && git pull --ff-only
+git status --porcelain     # must print nothing: npm publishes the working tree, not the commit
 pnpm install --frozen-lockfile
 npm publish --dry-run     # file list: dist, dist-remote, tools, README.md, LICENSE, package.json
 npm publish

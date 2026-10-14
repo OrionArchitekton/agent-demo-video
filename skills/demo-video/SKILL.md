@@ -15,7 +15,8 @@ Check these before the first render and tell the user what is missing:
 
 - Node 18 or newer (`node --version`). Motion cards need Node 22.12 or newer.
 - ffmpeg 5.1 or newer and ffprobe on `PATH` (`ffmpeg -version`).
-- The capture browser, installed once: `npx playwright install chromium`.
+- The capture browser, installed once with the Playwright build this CLI uses:
+  `npx -y -p agent-demo-video@0.3.0 playwright install chromium`.
 - The app to record is running and reachable, or is a local folder of HTML files.
 
 Run the CLI pinned to this plugin's version, from the directory that holds the config:
@@ -34,23 +35,25 @@ Follow this order. Each step is cheap compared with the one after it.
 2. **Preflight.** Every render starts with a fail-closed selector gate: each action's selector must
    match on the live app before anything is generated. `click`, `type`, `scroll` and `highlight`
    selectors must match exactly one element; `hover` may match several. Shots with `target: live`
-   are not probed; the report lists them under `preflight.unverifiedShotIds`. If the silent pass
-   stops here, fix the selectors it names. Never pass `--no-preflight` to get past a failure.
+   are not probed; the report lists them under `preflight.unverifiedShotIds`. A selector that
+   follows a `click` or `type` in the same shot is reported, not proven, because the gate runs no
+   actions. If the silent pass stops here, fix the selectors it names. Never pass `--no-preflight` to get past a failure.
 3. **Silent pass.** `FAKE_TTS=1 npx -y agent-demo-video@0.3.0 demo.config.json` renders the whole
-   video with silent narration of estimated length. It costs nothing. The estimate runs short (real
+   video with silent narration of estimated length. It costs nothing. Below, `<out>` is the run's
+   output directory: the config's `out` (default `out`), or the `--out` directory if you passed one. The estimate runs short (real
    narration has run 19 to 30% longer), so keep the silent pass under about 75% of `maxDurationSec`.
 4. **Review.** Extract the first frame
-   (`ffmpeg -y -i out/final.mp4 -frames:v 1 out/frame0.png`) and dispatch the
-   `agent-demo-video:render-reviewer` agent from this plugin with `out/contact-sheet.png`,
-   `out/frame0.png`, `out/render-report.json` (it maps contact-sheet tiles to shots), the script and
+   (`ffmpeg -y -i <out>/final.mp4 -frames:v 1 <out>/frame0.png`) and dispatch the
+   `agent-demo-video:render-reviewer` agent from this plugin with `<out>/contact-sheet.png`,
+   `<out>/frame0.png`, `<out>/render-report.json` (it maps contact-sheet tiles to shots), the script and
    a one-line brief. Fix every BLOCKING flag and repeat the silent pass before going on.
 5. **Narrated render.** Run again without `FAKE_TTS`, with the voice the user chose (below).
-6. **Read the report.** Open `out/render-report.json`. Check `transcriptCheck` (always present;
+6. **Read the report.** Open `<out>/render-report.json`. Check `transcriptCheck` (always present;
    when it ran, it lists the phrases the narration did not say, and `ran: false` carries a reason
    when no aligner ran), `hook`, that `ttsMode` is `real` and not `fake`, and
    `preflight.unverifiedShotIds`. A failed deliverable check stops the run before the report is
-   written. Look at `out/contact-sheet.png` once more, then give the user the path to
-   `out/final.mp4`.
+   written. Look at `<out>/contact-sheet.png` once more, then give the user the path to
+   `<out>/final.mp4`.
 
 ## Script format
 

@@ -4,6 +4,9 @@ import { dirname, join } from "node:path";
 
 /** specs/motion-cards-spec.md S5: motion cards need the optional hyperframes package and Node 22+. */
 export const MIN_NODE_MAJOR = 22;
+/** The one HyperFrames version motion cards are built and tested against; any other is rejected. */
+export const HYPERFRAMES_VERSION = "0.8.155";
+const INSTALL_HINT = `install it next to agent-demo-video: npm install hyperframes@${HYPERFRAMES_VERSION}`;
 
 export type MotionRequirements =
   | { ok: true; hyperframesBin: string; version: string }
@@ -30,8 +33,13 @@ export function checkMotionRequirements(probes: Probes = defaultProbes()): Motio
   if (!(major >= MIN_NODE_MAJOR)) problems.push(`brand.motion needs Node ${MIN_NODE_MAJOR} or newer (running ${probes.nodeVersion})`);
   let pkg: string | undefined;
   try { pkg = probes.resolvePackageJson(); } catch {
-    problems.push('brand.motion needs the optional "hyperframes" package: hyperframes is not installed (run `npm install hyperframes@0.8.155`, or reinstall without --no-optional)');
+    problems.push(`brand.motion needs the optional "hyperframes" package: hyperframes is not installed; ${INSTALL_HINT}`);
   }
-  if (problems.length || !pkg) return { ok: false, problems };
-  return { ok: true, hyperframesBin: join(dirname(pkg), "bin", "hyperframes.mjs"), version: probes.readVersion(pkg) };
+  let version: string | undefined;
+  if (pkg) {
+    try { version = String(probes.readVersion(pkg)); } catch { version = "an unreadable version"; }
+    if (version !== HYPERFRAMES_VERSION) problems.push(`brand.motion needs hyperframes ${HYPERFRAMES_VERSION} (found ${version}); ${INSTALL_HINT}`);
+  }
+  if (problems.length || !pkg || version === undefined) return { ok: false, problems };
+  return { ok: true, hyperframesBin: join(dirname(pkg), "bin", "hyperframes.mjs"), version };
 }

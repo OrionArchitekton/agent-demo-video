@@ -37,6 +37,10 @@ export async function renderMotionCard(hyperframesBin: string, html: string, out
     );
     const bad = findRenderLogError(await readFile(logPath, "utf8").catch(() => ""));
     if (bad) throw new Error(`${name}: ${bad}`);
+  } catch (e) {
+    // A failed render must never leave an output a later step could mistake for a good card.
+    await rm(outPath, { force: true }).catch(() => undefined);
+    throw e;
   } finally {
     await rm(project, { recursive: true, force: true }).catch(() => undefined);
   }

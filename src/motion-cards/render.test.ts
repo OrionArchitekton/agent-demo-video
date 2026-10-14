@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdtemp, access } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { execFileSync } from "node:child_process";
@@ -25,6 +25,7 @@ describe("renderMotionCard log scan", () => {
     const out = join(await mkdtemp(join(tmpdir(), "mc-out-")), "o.mp4");
     const fake = resolve("tests/fixtures/voice/fake-hyperframes.mjs");
     await expect(renderMotionCard(fake, "<html></html>", out, "logscan", 30)).rejects.toThrowError(/^motion card \(logscan\): PAGEERROR boom$/);
+    await expect(access(out)).rejects.toThrow();
   });
 });
 
@@ -60,6 +61,7 @@ describe.skipIf(!req.ok)("renderMotionCard (real HyperFrames)", () => {
   it("rejects a broken composition naming the card", { timeout: 300_000 }, async () => {
     if (!req.ok) return;
     const out = join(await mkdtemp(join(tmpdir(), "mc-bad-")), "bad.mp4");
-    await expect(renderMotionCard(req.hyperframesBin, "<html></html>", out, "broken")).rejects.toThrowError(/motion card \(broken\)/);
+    await expect(renderMotionCard(req.hyperframesBin, "<html></html>", out, "broken")).rejects.toThrowError(/motion card \(broken\): exited 1:[\s\S]*zero duration/);
+    await expect(access(out)).rejects.toThrow();
   });
 });

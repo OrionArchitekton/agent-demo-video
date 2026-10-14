@@ -1,16 +1,44 @@
 # Changelog
 
-## Unreleased
+## 0.3.0
 
-### Fixed
+### Breaking
 
-- The final mux no longer drops trailing video frames. Muxing a stream-copied B-frame
-  video with `-shortest` against audio even a few ms short ended the video early (2 to
-  4 frames measured, up to about 170ms of the closing shot); the audio is now padded
-  so the video always ends the file.
+- `--clips-dir` now binds every prebaked `clip:` strictly beneath the given
+  directory for that run: each `clip:` must be a clean relative path (no
+  absolute paths, no `.` or `..` components), a path carrying its own
+  directory resolves beneath the override directory instead of the config
+  directory, and sources are opened through symlink-refusing directory handles
+  (Linux only; the run fails closed elsewhere). Previously a `clip:` carrying
+  a directory ignored `--clips-dir` and kept reading from the config
+  directory, so the flag silently did not pin those clips to the attempt-owned
+  copies it exists to pin. A `--clips-dir` layout must now mirror each
+  `clip:`'s relative path beneath the override directory. Runs without
+  `--clips-dir` are unchanged. (#19)
+- A prebaked `clip:` that does not exist at its resolved path now fails immediately,
+  naming the path that was tried. Previously the declared path was returned verbatim and
+  the run failed later, inside ffmpeg, against a path nobody had resolved. (#14)
+- `clip:` paths no longer resolve against the process working directory. A bare filename
+  resolves inside `clipsDir`; a path carrying its own directory resolves against the
+  config file's directory; an absolute path is used as given. Configs that referenced
+  clips relative to their config file, or by bare filename as the README described, keep
+  working. A config that relied on being invoked from a particular directory does not.
+- A missing `ELEVENLABS_API_KEY` is now an error instead of silently selecting
+  silent placeholder narration. Previously a forgotten credential produced a
+  complete, correctly-timed, captioned video with no voice at all, and the
+  parity check could not detect it because the estimated duration is the clock.
+  Set `FAKE_TTS=1` to request silent narration deliberately.
 
 ### Added
 
+- Claude Code plugin: the repository is its own plugin marketplace.
+  `/plugin marketplace add OrionArchitekton/agent-demo-video`, then
+  `/plugin install agent-demo-video@agent-demo-video`, adds a `demo-video` skill that walks Claude
+  through a video and a read-only `render-reviewer` agent that checks the contact sheet and first
+  frame before narration is spent.
+- Guide pages under `docs/guide/` hold the reference material that used to live in the README. The
+  README now leads with install and a keyless quickstart.
+- A maintainer release runbook, `docs/runbooks/release.md`.
 - Deliverable verification after every local or remote render: the delivered
   `final.mp4` is probed against a final-format contract (one H.264 yuv420p video
   stream at the configured size and constant fps with square pixels and no display
@@ -85,31 +113,6 @@
   probed geometry mismatches the capture viewport is rejected before compositing,
   naming the shot and the `fullBleed: true` escape hatch, instead of silently
   shipping bars inside the window. Landscape renders are unaffected.
-
-### Breaking
-
-- `--clips-dir` now binds every prebaked `clip:` strictly beneath the given
-  directory for that run: each `clip:` must be a clean relative path (no
-  absolute paths, no `.` or `..` components), a path carrying its own
-  directory resolves beneath the override directory instead of the config
-  directory, and sources are opened through symlink-refusing directory handles
-  (Linux only; the run fails closed elsewhere). Previously a `clip:` carrying
-  a directory ignored `--clips-dir` and kept reading from the config
-  directory, so the flag silently did not pin those clips to the attempt-owned
-  copies it exists to pin. A `--clips-dir` layout must now mirror each
-  `clip:`'s relative path beneath the override directory. Runs without
-  `--clips-dir` are unchanged. (#19)
-- A prebaked `clip:` that does not exist at its resolved path now fails immediately,
-  naming the path that was tried. Previously the declared path was returned verbatim and
-  the run failed later, inside ffmpeg, against a path nobody had resolved. (#14)
-- `clip:` paths no longer resolve against the process working directory. A bare filename
-  resolves inside `clipsDir`; a path carrying its own directory resolves against the
-  config file's directory; an absolute path is used as given. Configs that referenced
-  clips relative to their config file, or by bare filename as the README described, keep
-  working. A config that relied on being invoked from a particular directory does not.
-
-### Added
-
 - Pre-flight selector gate. Every selector a script declares is resolved against the page
   its own shot opens at that point, before any narration is synthesized, and the run
   refuses to start when a selector provably will not do what the script says. It also
@@ -135,37 +138,6 @@
   than the render's, so absence is reported at `INFO` instead.
 - `clipsDir` is now read. It was declared in the schema, defaulted, and documented in two
   places while no code path consulted it. (#14)
-
-### Fixed
-
-- `window.__demoHighlight` no longer fails open. A selector matching nothing hid the
-  highlight box and returned, so the shot rendered, the run exited 0, and the highlight
-  never happened. An ambiguous selector is a failure too, because `document.querySelector`
-  silently takes the first match, which is how a bare `p` or `code` selector looks correct
-  while pointing at the wrong element. (#13)
-- A failing `highlight` action now names the shot, the selector, and the real match count.
-  It previously surfaced as a raw Playwright strict-mode violation, or as a bare
-  `Timeout 30000ms exceeded` on a zero match, identifying neither the shot nor the action.
-  The locator still does the waiting, so an element that appears after load still works,
-  and a failure that is NOT a count problem (a hidden but unique element, a closed page)
-  now rethrows the original error rather than being mislabelled as one.
-- The highlight overlay is driven by a rectangle capture already resolved with Playwright,
-  instead of re-resolving the selector in the page with `document.querySelectorAll`. The
-  two engines disagree on shadow DOM and on Playwright-only selector syntax, so an element
-  inside an open shadow root previously drew no highlight at all.
-
-## 0.3.0
-
-### Breaking
-
-- A missing `ELEVENLABS_API_KEY` is now an error instead of silently selecting
-  silent placeholder narration. Previously a forgotten credential produced a
-  complete, correctly-timed, captioned video with no voice at all, and the
-  parity check could not detect it because the estimated duration is the clock.
-  Set `FAKE_TTS=1` to request silent narration deliberately.
-
-### Added
-
 - `maxDurationSec` (default 300) declares the finished video's length ceiling.
   It replaces a hardcoded constant and is carried across the render manifest, so
   a remote render enforces the same limit as a local one.
@@ -181,6 +153,25 @@
 
 ### Fixed
 
+- The final mux no longer drops trailing video frames. Muxing a stream-copied B-frame
+  video with `-shortest` against audio even a few ms short ended the video early (2 to
+  4 frames measured, up to about 170ms of the closing shot); the audio is now padded
+  so the video always ends the file.
+- `window.__demoHighlight` no longer fails open. A selector matching nothing hid the
+  highlight box and returned, so the shot rendered, the run exited 0, and the highlight
+  never happened. An ambiguous selector is a failure too, because `document.querySelector`
+  silently takes the first match, which is how a bare `p` or `code` selector looks correct
+  while pointing at the wrong element. (#13)
+- A failing `highlight` action now names the shot, the selector, and the real match count.
+  It previously surfaced as a raw Playwright strict-mode violation, or as a bare
+  `Timeout 30000ms exceeded` on a zero match, identifying neither the shot nor the action.
+  The locator still does the waiting, so an element that appears after load still works,
+  and a failure that is NOT a count problem (a hidden but unique element, a closed page)
+  now rethrows the original error rather than being mislabelled as one.
+- The highlight overlay is driven by a rectangle capture already resolved with Playwright,
+  instead of re-resolving the selector in the page with `document.querySelectorAll`. The
+  two engines disagree on shadow DOM and on Playwright-only selector syntax, so an element
+  inside an open shadow root previously drew no highlight at all.
 - CLI parsing now rejects unknown options, surplus config paths, duplicate
   singleton flags, and pipeline-only flags on `login`, so a mistyped production
   `--out` cannot silently fall back to a reusable configured output.

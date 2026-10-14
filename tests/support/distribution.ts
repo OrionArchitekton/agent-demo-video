@@ -92,6 +92,7 @@ export const EXPECTED_GUIDE_PAGES = [
 export function publicFiles(): string[] {
   return [
     "README.md",
+    "docs/runbooks/release.md",
     ...filesUnder(".claude-plugin"),
     ...filesUnder("skills"),
     ...filesUnder("agents"),

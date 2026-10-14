@@ -24,6 +24,17 @@ describe("titleCardHtml", () => {
     expect(root).toContain("data-no-timeline");
     expect(endCardHtml({ ...base, url: "x.com" }).match(/<div id="root"[^>]*>/)?.[0]).toContain("data-no-timeline");
   });
+  it("preserves repeated spaces and newlines in title, subtitle and end card text", () => {
+    const rule = (html: string, id: string) => html.match(new RegExp(`#${id}\\s*\\{[^}]*\\}`))?.[0] ?? "";
+    for (const hook of [undefined, "Stop pasting secrets"]) {
+      const html = titleCardHtml({ ...base, hook, subtitle: "a  b\nc" });
+      expect(rule(html, "title")).toContain("white-space: pre");
+      expect(rule(html, "subtitle")).toContain("white-space: pre");
+    }
+    const end = endCardHtml({ ...base, url: "x.com" });
+    expect(rule(end, "title")).toContain("white-space: pre");
+    expect(rule(end, "url")).toContain("white-space: pre");
+  });
   it("never emits author text as markup", () => {
     const html = titleCardHtml({ ...base, subtitle: "<img src=x onerror=alert(1)>", hook: "Stop <pasting>" });
     expect(html).not.toContain("<img");

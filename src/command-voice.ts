@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { appendFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
 import { readFile, stat } from "node:fs/promises";
 import type { TimedWord } from "./word-timing";
 
@@ -14,17 +14,56 @@ export function fillArgs(template: string[], vars: Record<string, string>): stri
  * also means a terminal Ctrl-C never reaches it: without this registry an
  * interrupted render would leave the voice model running.
  */
-const liveGroups = new Set<number>();
+interface LiveCommand {
+  /** Grace between asking the group to stop (SIGTERM) and killing it; 0 kills at once. */
+  gracefulKillMs: number;
+  /** Set when interrupt cleanup stopped the command, so a clean exit is not a success. */
+  interrupted: boolean;
+}
+const liveGroups = new Map<number, LiveCommand>();
 /** How long an exited command's stdio may keep draining before it is settled anyway. */
 const STDIO_DRAIN_MS = 250;
 const armedSignals = new Set<NodeJS.Signals>();
 let exitHooked = false;
 
-/** SIGKILL every live command's process group. Used by the exit and signal hooks. */
-export function killLiveCommands(): void {
-  for (const pid of liveGroups) {
-    try { process.kill(-pid, "SIGKILL"); } catch { /* already gone */ }
+function signalGroup(pid: number, signal: NodeJS.Signals): void {
+  try { process.kill(-pid, signal); } catch { /* already gone */ }
+}
+
+/** Block this thread; used only by interrupt cleanup, which may run inside the exit hook. */
+function sleepSync(ms: number): void {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+/**
+ * Whether a command's leader process has exited. It is this process's child, and while
+ * cleanup blocks the event loop it cannot be reaped, so it lingers as a zombie that still
+ * accepts signals; on Linux /proc tells a zombie from a running process.
+ */
+function leaderExited(pid: number): boolean {
+  if (process.platform === "linux") {
+    try {
+      const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
+      const state = stat.charAt(stat.lastIndexOf(")") + 2);
+      return state === "Z" || state === "X";
+    } catch { return true; }
   }
+  try { process.kill(pid, 0); return false; } catch { return true; }
+}
+
+/**
+ * Stop every live command. Commands started with gracefulKillMs are first asked to stop
+ * (SIGTERM to the group) and given up to that long to exit, so a tool that runs helpers in
+ * their own process groups can shut them down; then every group is SIGKILLed. Used by the
+ * exit and signal hooks.
+ */
+export function killLiveCommands(): void {
+  const graceful = [...liveGroups].filter(([, c]) => c.gracefulKillMs > 0);
+  for (const c of liveGroups.values()) c.interrupted = true;
+  for (const [pid] of graceful) signalGroup(pid, "SIGTERM");
+  const deadline = Date.now() + Math.max(0, ...graceful.map(([, c]) => c.gracefulKillMs));
+  while (graceful.some(([pid]) => !leaderExited(pid)) && Date.now() < deadline) sleepSync(25);
+  for (const pid of liveGroups.keys()) signalGroup(pid, "SIGKILL");
 }
 
 function onTerminatingSignal(signal: NodeJS.Signals): void {
@@ -50,20 +89,32 @@ export interface RunCommandOpts {
   env?: Record<string, string>;
   /** Tee the child's combined stdout and stderr to this file (created or truncated at start). */
   logPath?: string;
+  /**
+   * On timeout or interrupt, send SIGTERM to the command's process group and wait up to
+   * this long for it to exit before SIGKILL. For tools that start helpers (a browser, an
+   * encoder) in their own process groups, which a group SIGKILL would orphan.
+   */
+  gracefulKillMs?: number;
 }
 
 /** Run an operator-supplied program WITHOUT a shell; every failure names `label` and its cause. */
 export async function runCommand(label: string, template: string[], vars: Record<string, string>, timeoutSec: number, opts?: RunCommandOpts): Promise<void> {
   const [prog, ...args] = fillArgs(template, vars);
   if (!prog) throw new Error(`${label}: empty command`);
+  const gracefulKillMs = Math.max(0, opts?.gracefulKillMs ?? 0);
   await new Promise<void>((resolveRun, reject) => {
     let settled = false;
+    let timedOut = false;
     let drain: NodeJS.Timeout | undefined;
+    let grace: NodeJS.Timeout | undefined;
+    const live: LiveCommand = { gracefulKillMs, interrupted: false };
+    const timedOutError = () => new Error(`${label}: timed out after ${timeoutSec}s`);
     const done = (fn: () => void) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
       clearTimeout(drain);
+      clearTimeout(grace);
       if (child.pid !== undefined) liveGroups.delete(child.pid);
       // A helper the command left behind may still hold these pipes; let go of
       // them so it cannot keep this process alive.
@@ -80,14 +131,25 @@ export async function runCommand(label: string, template: string[], vars: Record
     if (opts?.logPath) {
       try { writeFileSync(opts.logPath, ""); } catch { /* the log is best-effort */ }
     }
-    if (child.pid !== undefined) liveGroups.add(child.pid);
+    if (child.pid !== undefined) liveGroups.set(child.pid, live);
     let stderrTail = "";
     child.stdout!.on("data", tee);
     child.stderr!.setEncoding("utf8");
     child.stderr!.on("data", (d: string) => { stderrTail = (stderrTail + d).slice(-4000); tee(d); });
     const timer = setTimeout(() => {
-      try { process.kill(-child.pid!, "SIGKILL"); } catch { /* already gone */ }
-      done(() => reject(new Error(`${label}: timed out after ${timeoutSec}s`)));
+      timedOut = true;
+      if (gracefulKillMs > 0) {
+        // Ask first; the exit handler settles if the command stops within the grace.
+        signalGroup(child.pid!, "SIGTERM");
+        grace = setTimeout(() => {
+          signalGroup(child.pid!, "SIGKILL");
+          done(() => reject(timedOutError()));
+        }, gracefulKillMs);
+        grace.unref();
+        return;
+      }
+      signalGroup(child.pid!, "SIGKILL");
+      done(() => reject(timedOutError()));
     }, timeoutSec * 1000);
     timer.unref();
     child.on("error", (e: NodeJS.ErrnoException) => {
@@ -98,7 +160,11 @@ export async function runCommand(label: string, template: string[], vars: Record
     // running would hang until the timeout. stderr stays best-effort: a short
     // grace (ended early by "close") lets an ordinary exit's last output drain.
     child.on("exit", (code, signal) => {
+      // A command that stopped after a timeout's SIGTERM: sweep anything left in its group.
+      if (timedOut && child.pid !== undefined) signalGroup(child.pid, "SIGKILL");
       const finish = () => done(() => {
+        if (timedOut) return reject(timedOutError());
+        if (code === 0 && live.interrupted) return reject(new Error(`${label}: interrupted`));
         if (code === 0) return resolveRun();
         if (signal) return reject(new Error(`${label}: killed by signal ${signal}`));
         reject(new Error(`${label}: exited ${code}: ${stderrTail.trim().slice(-400)}`));

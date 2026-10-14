@@ -49,6 +49,16 @@ describe("renderMotionCard log scan", () => {
   });
 });
 
+describe("renderMotionCard timeout", () => {
+  it("asks HyperFrames to shut down (SIGTERM) before killing it, and leaves no output", async () => {
+    const out = join(await mkdtemp(join(tmpdir(), "mc-slow-")), "o.mp4");
+    const fake = resolve("tests/fixtures/voice/fake-hyperframes-slow.mjs");
+    await expect(renderMotionCard(fake, "<html></html>", out, "slow", 1)).rejects.toThrowError(/^motion card \(slow\): timed out after 1s$/);
+    expect(await readFile(`${out}.term`, "utf8")).toBe("term");
+    await expect(access(out)).rejects.toThrow();
+  });
+});
+
 const req = checkMotionRequirements();
 if (!req.ok) console.warn(`render integration skipped: ${req.problems.join("; ")}`);
 

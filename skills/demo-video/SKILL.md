@@ -31,28 +31,36 @@ Follow this order. Each step is cheap compared with the one after it.
 
 1. **Write the script and config.** Read the app first (routes, the elements the demo will touch)
    and pick stable selectors: ids, `data-testid` attributes, labels. Keep each shot's narration to
-   one or two plain sentences; the narration length sets the shot length.
-2. **Preflight.** Every render starts with a fail-closed selector gate: each action's selector must
-   match on the live app before anything is generated. `click`, `type`, `scroll` and `highlight`
-   selectors must match exactly one element; `hover` may match several. Shots with `target: live`
-   are not probed; the report lists them under `preflight.unverifiedShotIds`. A selector that
-   follows a `click` or `type` in the same shot is reported, not proven, because the gate runs no
-   actions. If the silent pass stops here, fix the selectors it names. Never pass `--no-preflight` to get past a failure.
+   one or two plain sentences; the narration length sets the shot length. Every pass runs each
+   action against the app for real, so point the demo at a test account or sandbox data, and only
+   script clicks and typing that are safe to repeat (no real sends, payments or deletions).
+2. **Preflight.** Every render starts with a fail-closed selector gate: each action's selector is
+   checked against the app before anything is generated. `click`, `type`, `scroll` and
+   `highlight` selectors must match exactly one element; `hover` may match several. Some selectors
+   can only be reported, not proven: shots with `target: live`, selectors that follow an earlier
+   `click`, `type` or `hover` in the same shot (the gate runs no actions), and pages that had not
+   settled. If the silent pass stops here, fix the selectors it names. Never pass
+   `--no-preflight` to get past a failure.
 3. **Silent pass.** `FAKE_TTS=1 npx -y agent-demo-video@0.3.0 demo.config.json` renders the whole
-   video with silent narration of estimated length. It costs nothing. Below, `<out>` is the run's
-   output directory: the config's `out` (default `out`), or the `--out` directory if you passed one. The estimate runs short (real
-   narration has run 19 to 30% longer), so keep the silent pass under about 75% of `maxDurationSec`.
-4. **Review.** Extract the first frame
-   (`ffmpeg -y -i <out>/final.mp4 -frames:v 1 <out>/frame0.png`) and dispatch the
-   `agent-demo-video:render-reviewer` agent from this plugin with `<out>/contact-sheet.png`,
-   `<out>/frame0.png`, `<out>/render-report.json` (it maps contact-sheet tiles to shots), the script and
-   a one-line brief. Fix every BLOCKING flag and repeat the silent pass before going on.
-5. **Narrated render.** Run again without `FAKE_TTS`, with the voice the user chose (below).
-6. **Read the report.** Open `<out>/render-report.json`. Check `transcriptCheck` (always present;
-   when it ran, it lists the phrases the narration did not say, and `ran: false` carries a reason
-   when no aligner ran), `hook`, that `ttsMode` is `real` and not `fake`, and
-   `preflight.unverifiedShotIds`. A failed deliverable check stops the run before the report is
-   written. Look at `<out>/contact-sheet.png` once more, then give the user the path to
+   video with silent narration of estimated length. It spends no narration, but it still runs every
+   action against the app. The estimate runs short (real narration has run 19 to 30% longer), so
+   keep the silent pass under about 75% of `maxDurationSec`. Below, `<out>` is the run's output
+   directory: the config's `out` (default `out`), or the `--out` directory if you passed one.
+4. **Review.** Open `<out>/render-report.json` and read `preflight.unverifiedShotIds`: those shots
+   were reported rather than proven, so check them by eye in the silent video before paying for
+   narration. Extract the first frame (`ffmpeg -y -i <out>/final.mp4 -frames:v 1 <out>/frame0.png`)
+   and dispatch the `agent-demo-video:render-reviewer` agent from this plugin with
+   `<out>/contact-sheet.png`, `<out>/frame0.png`, `<out>/render-report.json` (it maps contact-sheet
+   tiles to shots), the script and a one-line brief. Fix every BLOCKING flag and repeat the silent
+   pass before going on.
+5. **Narrated render.** Change `out` in the config to a new directory (for example `out-final`),
+   then run again without `FAKE_TTS`, with the voice the user chose (below). A separate directory
+   means a failed narrated run can never leave the silent pass's `final.mp4` looking finished.
+6. **Read the report.** Open `<out>/render-report.json` from the narrated run. Check
+   `transcriptCheck` (always present; when it ran, it lists the phrases the narration did not say,
+   and `ran: false` carries a reason when no aligner ran), `hook`, and that `ttsMode` is `real`,
+   not `fake`. If the run failed or the report is missing, nothing in that directory is a
+   deliverable. Look at `<out>/contact-sheet.png` once more, then give the user the path to
    `<out>/final.mp4`.
 
 ## Script format
@@ -103,7 +111,8 @@ Options worth knowing:
   `npx -y -p agent-demo-video@0.3.0 -p hyperframes@0.8.155 demo-video demo.config.json`.
 - Shots behind a login use `target: live` and need `capture.auth.loginUrl` and
   `capture.auth.loggedInSelector` in the config. Live capture refuses to run without the selector
-  unless the user deliberately sets `capture.auth.allowUnguardedLiveCapture`. The default login
+  unless the user deliberately sets `capture.auth.allowUnguardedLiveCapture`; never add that flag
+  yourself. The default login
   mode waits for a person to press Enter, so the user runs
   `npx -y agent-demo-video@0.3.0 login demo.config.json` in their own terminal, not Claude.
 
@@ -133,5 +142,6 @@ Ask the user which voice to use before the narrated render:
 ## Rules
 
 - Never commit or print API keys or login profiles. The login profile lives outside the project.
-- Fix a failing selector; never skip the preflight gate.
+- Fix a failing selector; never skip the preflight gate. Never write `preflight: false` or
+  `capture.auth.allowUnguardedLiveCapture` into a config yourself; those are the user's choices.
 - Do not run the narrated render until the reviewer's BLOCKING flags are fixed.

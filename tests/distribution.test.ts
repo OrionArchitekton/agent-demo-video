@@ -303,3 +303,21 @@ describe("release preparation", () => {
     }
   });
 });
+
+describe("every version pin in the public files is the package version", () => {
+  it("pins npx commands and package specs to the package version", () => {
+    for (const f of publicFiles()) {
+      const body = read(f);
+      for (const pin of npxPins(body)) expect(pin, `${f}: npx pin`).toBe(`@${pkg.version}`);
+      for (const m of body.matchAll(/agent-demo-video@(\d[\w.+-]*)/g)) {
+        expect(m[1]!.replace(/\.+$/, ""), `${f}: agent-demo-video@${m[1]}`).toBe(pkg.version);
+      }
+    }
+  });
+
+  it("names only the package version in release tags", () => {
+    const tags = [...read("docs/runbooks/release.md").matchAll(/\bv(\d+\.\d+\.\d+)\b/g)].map((m) => m[1]);
+    expect(tags.length).toBeGreaterThan(0);
+    for (const t of tags) expect(t).toBe(pkg.version);
+  });
+});

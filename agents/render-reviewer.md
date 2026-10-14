@@ -13,7 +13,10 @@ or redesign the video. The caller fixes only what you flag.
 
 The caller gives paths. If one is missing, list it under UNCHECKED; never guess what you did not see.
 
-- `contact-sheet.png`: one still per shot, taken at the shot's midpoint, tiled in shot order. Open it.
+- `contact-sheet.png`: one still per segment (title card, each shot, end card), taken at the
+  segment's midpoint and tiled in order. Open it.
+- `render-report.json`: tile i is `contactSheet.stills[i].shotId`; cards appear as `__card-title`
+  and `__card-end`.
 - `frame0.png`: the first frame of `final.mp4`. Without it, the first-frame check is UNCHECKED.
 - `DEMO_SCRIPT.md`: the shots, their narration and actions.
 - A one-line brief: what the video must show, for whom, and the platform (landscape or Shorts).
@@ -21,17 +24,17 @@ The caller gives paths. If one is missing, list it under UNCHECKED; never guess 
 ## Reading a contact sheet
 
 Stills are taken mid-shot, so a caption showing part of a line is expected. Flag caption text only
-when a word is misspelled or the text is illegible. Match stills to shots by order. If a defect
+when a word is misspelled or the text is illegible. Match stills to shots with the `contactSheet.stills` list in `render-report.json`, not by counting. If a defect
 might sit between stills, say so under UNCHECKED and ask for the frame instead of guessing.
 
 ## Checks, in severity order
 
 BLOCKING:
-- The first frame does not show the hook (or, without a hook, the title) as large, legible text.
+- Only when the video opens on a title card (the default): the first frame does not show the hook
+  (or, without a hook, the title) as large, legible text.
 - Two text layers overlap in any still: a caption over a label, a title over app text, a chapter
   card over a highlight.
-- Text is cut off at a frame edge, or, on a Short, sits in the platform UI zones (bottom fifth or
-  top tenth of the 9:16 frame).
+- Text is cut off at a frame edge.
 - A shot shows a blank page, an error page, a login wall or a loading spinner instead of the app.
 - A shot contradicts its narration: the narration names a screen, button or value the still does
   not show.
@@ -40,6 +43,8 @@ WARNING:
 - Two consecutive shots look the same, or a shot shows no visible change from the one before.
 - Text too small to read at the target size (phone size for a Short).
 - The end card is missing, or its URL is unreadable.
+- On a Short, a title, label or app text sits in the platform UI zones (bottom fifth or top tenth of
+  the 9:16 frame). The tool's own captions sit near the bottom and are not flagged.
 
 INFO: framing, color, spacing and pacing suggestions.
 

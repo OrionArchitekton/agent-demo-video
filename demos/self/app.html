@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Shipyard: release checklist</title>
+<style>
+  :root { --bg: #0f1419; --panel: #182029; --ink: #e8edf2; --muted: #93a1b0; --accent: #4fb3a9; --done: #2f6f68; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 18px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 760px; margin: 72px auto; padding: 40px; background: var(--panel); border-radius: 16px; }
+  h1 { margin: 0; font-size: 40px; letter-spacing: -0.5px; }
+  .sub { margin: 4px 0 28px; color: var(--muted); }
+  label { display: block; color: var(--muted); font-size: 15px; margin-bottom: 6px; }
+  input { width: 100%; padding: 14px 16px; font: inherit; color: var(--ink); background: var(--bg); border: 1px solid #2c3a47; border-radius: 10px; }
+  ul { list-style: none; padding: 0; margin: 28px 0; }
+  li button { width: 100%; display: flex; align-items: center; gap: 14px; padding: 16px; margin-bottom: 10px; font: inherit; color: var(--ink); text-align: left; background: var(--bg); border: 1px solid #2c3a47; border-radius: 10px; cursor: pointer; }
+  li button .box { width: 26px; height: 26px; border-radius: 6px; border: 2px solid var(--muted); display: grid; place-items: center; }
+  li button.done { background: var(--done); border-color: var(--accent); }
+  li button.done .box { background: var(--accent); border-color: var(--accent); }
+  li button.done .box::after { content: "\2713"; color: var(--bg); font-weight: 700; }
+  .bar { height: 14px; background: var(--bg); border-radius: 7px; overflow: hidden; }
+  .bar span { display: block; height: 100%; width: 0; background: var(--accent); transition: width 400ms ease; }
+  .ship { margin-top: 24px; padding: 16px 28px; font: inherit; font-weight: 700; color: var(--bg); background: var(--accent); border: 0; border-radius: 10px; cursor: pointer; }
+  .ship:disabled { opacity: 0.35; cursor: default; }
+  .shipped { margin-top: 24px; padding: 18px; border-radius: 10px; background: var(--done); font-size: 22px; display: none; }
+  .shipped.show { display: block; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Shipyard</h1>
+  <p class="sub">Release checklist</p>
+  <label for="release-name">Release name</label>
+  <input id="release-name" data-testid="release-name" placeholder="Name this release">
+  <ul data-testid="checklist">
+    <li><button data-testid="task-tests" data-task="tests"><span class="box"></span>Tests pass</button></li>
+    <li><button data-testid="task-docs" data-task="docs"><span class="box"></span>Docs updated</button></li>
+    <li><button data-testid="task-notes" data-task="notes"><span class="box"></span>Release notes written</button></li>
+  </ul>
+  <div class="bar" data-testid="progress"><span></span></div>
+  <button class="ship" data-testid="ship" disabled>Ship it</button>
+  <div class="shipped" data-testid="shipped"></div>
+</main>
+<script>
+  const tasks = [...document.querySelectorAll("[data-task]")];
+  const name = document.querySelector("[data-testid=release-name]");
+  const bar = document.querySelector("[data-testid=progress] span");
+  const ship = document.querySelector("[data-testid=ship]");
+  const shipped = document.querySelector("[data-testid=shipped]");
+  function update() {
+    const done = tasks.filter((t) => t.classList.contains("done")).length;
+    bar.style.width = `${(done / tasks.length) * 100}%`;
+    ship.disabled = done < tasks.length;
+  }
+  tasks.forEach((t) => t.addEventListener("click", () => { t.classList.toggle("done"); update(); }));
+  ship.addEventListener("click", () => {
+    shipped.textContent = `Shipped: ${name.value || "untitled release"}`;
+    shipped.classList.add("show");
+  });
+  // Each shot starts in a fresh browser, so a query string can preset earlier progress.
+  const q = new URLSearchParams(location.search);
+  if (q.get("name")) name.value = q.get("name");
+  for (const id of (q.get("done") || "").split(",").filter(Boolean)) {
+    document.querySelector(`[data-task="${CSS.escape(id)}"]`)?.classList.add("done");
+  }
+  update();
+</script>
+</body>
+</html>

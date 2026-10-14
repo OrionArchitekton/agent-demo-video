@@ -1,7 +1,7 @@
 {
   "name": "agent-demo-video",
   "version": "0.3.0",
-  "description": "Generate narrated, captioned demo videos from a Markdown script and a running web app \u2014 Playwright capture + ElevenLabs TTS + ffmpeg. Supports auth-walled SaaS live capture.",
+  "description": "Generate narrated, captioned demo videos from a Markdown script and a running web app — Playwright capture + ElevenLabs TTS + ffmpeg. Supports auth-walled SaaS live capture.",
   "type": "module",
   "bin": {
     "demo-video": "dist/cli.js"
@@ -53,11 +53,14 @@
     "zod": "^3.23.0"
   },
   "devDependencies": {
-    "typescript": "^5.6.0",
-    "vitest": "^2.1.0",
-    "tsx": "^4.19.0",
+    "@types/node": "^22.0.0",
     "tsup": "^8.3.0",
-    "@types/node": "^22.0.0"
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
   },
-  "packageManager": "pnpm@9.12.0"
+  "packageManager": "pnpm@9.12.0",
+  "optionalDependencies": {
+    "hyperframes": "0.8.155"
+  }
 }

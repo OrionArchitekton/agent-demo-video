@@ -38,6 +38,12 @@ describe("buildRenderReport", () => {
     preflight: { ran: true, declined: false, findings: 0, unverifiedShotIds: [] as string[] },
   };
 
+  it("records the transcript check when one was made", () => {
+    const tc = { ran: false as const, reason: "no voice.aligner configured" };
+    expect(buildRenderReport({ ...base, transcriptCheck: tc }).transcriptCheck).toEqual(tc);
+    expect(buildRenderReport(base).transcriptCheck).toBeUndefined();
+  });
+
   it("records the resolved voice, so two renders can be compared to explain a runtime change", () => {
     const r = buildRenderReport(base);
     expect(r.voice).toMatchObject({ modelId: "eleven_multilingual_v2", seed: 42 });

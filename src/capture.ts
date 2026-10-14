@@ -16,6 +16,7 @@ import { mkdir, rm, writeFile } from "node:fs/promises";
 import { existsSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { frameDurations, framesConcatContent, frameTimestampsToSec, cursorMode } from "./screencast.js";
+import { headlessBrowserEnv } from "./browser-env.js";
 import { ffmpeg, framesEncodeArgs } from "./ffmpeg.js";
 import { zoomFilterExpr, cameraFilterExpr, cameraMode, type InteractionEvent } from "./motion.js";
 // Capture runs in VIEWPORT space (decoupled from the output canvas: a shorts
@@ -446,9 +447,9 @@ export async function captureShot(
   // dashboard/uipath/terminal — fresh headless context, no persisted state.
   let browser;
   try {
-    browser = await chromium.launch({ headless: true });
+    browser = await chromium.launch({ headless: true, env: headlessBrowserEnv() });
   } catch {
-    browser = await chromium.launch({ headless: true, channel: "chrome" });
+    browser = await chromium.launch({ headless: true, channel: "chrome", env: headlessBrowserEnv() });
   }
   const useScreencast = config.capture.engine === "screencast";
   const context = await browser.newContext({
@@ -539,6 +540,7 @@ async function captureLiveShot(
     viewport: captureViewport(config),
     ...(useScreencast ? {} : { recordVideo: { dir: outDir, size: captureViewport(config) } }),
     headless: true,
+    env: headlessBrowserEnv(),
   });
   let page: Page | undefined;
   try {
@@ -640,6 +642,7 @@ export async function captureLogin(config: DemoConfig): Promise<string> {
   const context = await chromium.launchPersistentContext(profileDir, {
     viewport: captureViewport(config),
     headless: auth.headlessLogin,
+    ...(auth.headlessLogin ? { env: headlessBrowserEnv() } : {}),
   });
   try {
     const page = context.pages()[0] ?? (await context.newPage());

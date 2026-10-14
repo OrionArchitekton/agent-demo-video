@@ -248,6 +248,8 @@ export const DemoConfigSchema = z.object({
     title: z.string(),
     subtitle: z.string().optional(),
     url: z.string().optional(),
+    // Large opening line drawn on the frame-0 title card (Shorts hook).
+    hook: z.string().trim().min(1, "brand.hook must not be blank").max(60, "brand.hook must be at most 60 characters").optional(),
     accent: hexColor().default("#3fb950"),
     // Backward-compatible shared switch. titleCard/endCard, when declared,
     // override only their own side so an artifact-first piece can cold-open on

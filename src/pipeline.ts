@@ -14,12 +14,14 @@ import { tmpdir } from "node:os";
 import { basename, dirname, extname, isAbsolute, join, resolve, win32 } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { DemoConfig, Shot, TtsResult } from "./types";
+import { DEFAULT_VOICE_TIMEOUT_SEC } from "./types";
+import { runTranscriptCheck } from "./transcript-check";
 import { parseScript, deriveSegmentKinds } from "./parse-script";
 import { formatPreflightReport, runPreflight } from "./preflight";
 import { synthShot } from "./tts";
 import { captureShot } from "./capture";
 import { resolveClipPath } from "./clips";
-import { titleCardArgs, endCardArgs } from "./cards";
+import { titleCardArgs, endCardArgs, hookLayout } from "./cards";
 import { ffmpeg, probeDeliverable, run as runProcess, silentMp3Args } from "./ffmpeg";
 import { checkDeliverable, checkTimelineBinding } from "./verify";
 import { buildContactSheet, planContactSheet } from "./contact-sheet";
@@ -1140,6 +1142,10 @@ export async function runPipeline(config: DemoConfig, opts: RunPipelineOpts = {}
   //     segmentKinds). The two resolved booleans preserve brand.cards as the
   //     legacy shared default while allowing artifact-first cold opens.
   let segmentKinds: ("shot" | "card")[] = deriveSegmentKinds(shots);
+  let hookStatus: "set" | "missing" | undefined;
+  if (config.brand?.hook && !config.brand.titleCard) {
+    console.warn("[agent-demo-video] brand.hook is set but the title card is disabled; the hook is not shown");
+  }
   if (config.brand && (config.brand.titleCard || config.brand.endCard)) {
     const b = config.brand;
     const cardBase = {
@@ -1169,10 +1175,28 @@ export async function runPipeline(config: DemoConfig, opts: RunPipelineOpts = {}
     const urlTextFile = b.endCard && b.url ? join(segDir, "card_url_text.txt") : undefined;
     if (urlTextFile) await writeFile(urlTextFile, b.url!, "utf8");
 
+    // One textfile per wrapped hook line (each line is drawn centered on its own).
+    let hookTextFiles: string[] | undefined;
+    if (b.titleCard && b.hook) {
+      const hookLines = hookLayout(config.resolution.width, config.resolution.height, b.hook).lines;
+      hookTextFiles = [];
+      for (const [i, line] of hookLines.entries()) {
+        const f = join(segDir, `card_hook_text_${i}.txt`);
+        await writeFile(f, line, "utf8");
+        hookTextFiles.push(f);
+      }
+    }
+    if (config.platform === "shorts" && b.titleCard) hookStatus = b.hook ? "set" : "missing";
+    else if (b.titleCard && b.hook) hookStatus = "set";
+    if (hookStatus === "missing") {
+      console.warn("[agent-demo-video] shorts render has no brand.hook: frame 0 shows only the product name; a short hook line on the first frame holds far more viewers");
+    }
+
     if (b.titleCard) {
       const titlePath = join(segDir, "card_title.mp4");
-      await ffmpeg(titleCardArgs({ ...cardBase, durationSec: b.titleSec }, titlePath, {
+      await ffmpeg(titleCardArgs({ ...cardBase, ...(b.hook ? { hook: b.hook } : {}), durationSec: b.titleSec }, titlePath, {
         titleFile: titleTextFile,
+        ...(hookTextFiles ? { hookFiles: hookTextFiles } : {}),
         ...(subtitleTextFile ? { subtitleFile: subtitleTextFile } : {}),
       }));
       rawSegments.unshift(titlePath);
@@ -1240,6 +1264,23 @@ export async function runPipeline(config: DemoConfig, opts: RunPipelineOpts = {}
     planContactSheet(result.report.timeline.entries, config.fps, config.resolution),
   );
 
+  const transcriptCheck = await runTranscriptCheck(
+    result.outPath,
+    shots.map((s) => s.narration).filter(Boolean),
+    config.voice.aligner,
+    config.voice.timeoutSec ?? DEFAULT_VOICE_TIMEOUT_SEC,
+    join(audioDir, "transcript-check"),
+    { fakeTts: ttsMode === "fake" },
+  );
+  if (transcriptCheck.ran && transcriptCheck.droppedPhrases.length) {
+    const dropped = transcriptCheck.droppedPhrases;
+    const shown = dropped.slice(0, 5).map((p) => JSON.stringify(p)).join(", ");
+    const more = dropped.length > 5 ? ` and ${dropped.length - 5} more` : "";
+    console.warn(
+      `[agent-demo-video] transcript check: ${dropped.length} narration phrase(s) not heard in the render: ${shown}${more} (advisory; the render is unaffected)`,
+    );
+  }
+
   // This is a render gate, not best-effort provenance. If any scoped source
   // changed while the artifact was being made, fail the run before a report
   // can certify the completed bytes.
@@ -1268,6 +1309,8 @@ export async function runPipeline(config: DemoConfig, opts: RunPipelineOpts = {}
       preflight: preflightRecord,
       deliverable,
       contactSheet,
+      transcriptCheck,
+      ...(hookStatus ? { hook: hookStatus } : {}),
       ...(opts.sourceBuild
         ? { sourceBuildAttestation: opts.sourceBuild.attestation }
         : {}),

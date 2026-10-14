@@ -11,7 +11,7 @@ import { headlessBrowserEnv } from "../browser-env";
  * "Continuing render despite lint issues" notice: lint warnings are non-blocking
  * and it prints that line on every render of a CSS-only card.
  */
-const HARD_ERROR = /Unresolved font|PAGEERROR|net::ERR|Failed to load resource|Continuing render despite(?! lint issues)/;
+const HARD_ERROR = /unresolved font|page ?error|net::ERR|Failed to load resource|Continuing render despite(?! lint issues)/i;
 
 /**
  * HyperFrames opt-outs, all read as "1" by the 0.8.155 CLI: no usage telemetry, no update

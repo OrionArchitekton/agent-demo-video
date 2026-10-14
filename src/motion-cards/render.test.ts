@@ -16,6 +16,10 @@ describe("findRenderLogError", () => {
       expect(findRenderLogError(`fine\n${bad}\n`)).toBe(bad);
     }
     expect(findRenderLogError("Lint: 0 error(s), 2 warning(s)\n  Continuing render despite lint issues. Use --strict to block errors.\n")).toBeNull();
+    for (const bad of ["Page error: boom", "pageerror: x", "unresolved font Foo"]) {
+      expect(findRenderLogError(`fine\n${bad}\n`)).toBe(bad);
+    }
+    expect(findRenderLogError("Continuing render despite lint issues. Use --strict\n")).toBeNull();
     expect(findRenderLogError("all good\nlint warning\n")).toBeNull();
   });
 });

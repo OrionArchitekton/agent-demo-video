@@ -98,8 +98,9 @@ Options worth knowing:
 - `brand.motion: true` animates the title and end cards. It needs Node 22.12 or newer and
   HyperFrames installed alongside the CLI, for example
   `npx -y -p agent-demo-video@0.3.0 -p hyperframes@0.8.155 demo-video demo.config.json`.
-- Shots behind a login use `target: live` and need `capture.auth.loginUrl` (and usually
-  `capture.auth.loggedInSelector`) in the config. The default login mode waits for a person to
+- Shots behind a login use `target: live` and need `capture.auth.loginUrl` and
+  `capture.auth.loggedInSelector` in the config. Live capture refuses to run without the selector
+  unless the user deliberately sets `capture.auth.allowUnguardedLiveCapture`. The default login mode waits for a person to
   press Enter, so the user runs `npx -y agent-demo-video@0.3.0 login demo.config.json` in their
   own terminal, not Claude.
 

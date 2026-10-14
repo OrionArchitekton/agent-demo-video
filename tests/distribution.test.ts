@@ -24,8 +24,8 @@ export function frontmatter(md: string): Record<string, string> {
 // purpose: this file is public too, so it names no private host, project or person.
 const PRIVATE_PATTERNS: [string, RegExp][] = [
   ["secret-manager invocation", /\bdoppler\s+run\b/i],
-  ["Linux home directory path", /\/home\/[a-z_][a-z0-9_-]*/],
-  ["macOS home directory path", /\/Users\/[A-Za-z][A-Za-z0-9._-]*\//],
+  ["Linux home directory path", /(?<!\w+:\/\/\S*)\/home\/[a-z_][a-z0-9_-]*/],
+  ["macOS home directory path", /(?<!\w+:\/\/\S*)\/Users\/[A-Za-z][A-Za-z0-9._-]*/],
   ["Windows home directory path", /[A-Za-z]:\\{1,2}Users\\{1,2}/],
   ["tailnet host name", /\.ts\.net\b/i],
   ["tailnet address", /\b100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.\d{1,3}\.\d{1,3}\b/],
@@ -81,7 +81,7 @@ describe("plugin and marketplace manifests", () => {
 
 /** For every `agent-demo-video` reference inside an npx command line: the suffix after the name. */
 export function npxPins(md: string): string[] {
-  return [...md.matchAll(/npx\s[^\n`]*?agent-demo-video(@[^\s`]*)?(?=[\s`])/g)].map((m) => m[1] ?? "");
+  return [...md.matchAll(/npx\s[^\n`]*?agent-demo-video(@[\w.+-]*\w)?(?![\w@-]|\.\w)/g)].map((m) => m[1] ?? "");
 }
 
 describe("npxPins", () => {
@@ -89,6 +89,11 @@ describe("npxPins", () => {
     expect(npxPins("run `npx -y agent-demo-video x`")).toEqual([""]);
     expect(npxPins("npx -y agent-demo-video@latest x")).toEqual(["@latest"]);
     expect(npxPins("npx -y agent-demo-video@0.3.0-rc.1 x")).toEqual(["@0.3.0-rc.1"]);
+    expect(npxPins("Run npx agent-demo-video.")).toEqual([""]);
+    expect(npxPins("(npx agent-demo-video)")).toEqual([""]);
+    expect(npxPins("then npx -y agent-demo-video")).toEqual([""]);
+    expect(npxPins("`npx -y agent-demo-video@0.3.0`, then stop")).toEqual(["@0.3.0"]);
+    expect(npxPins("use npx -y agent-demo-video@0.3.0.")).toEqual(["@0.3.0"]);
     expect(npxPins("npx -y -p agent-demo-video@1.2.3 -p hyperframes@4.5.6 demo-video c.json")).toEqual([
       "@1.2.3",
     ]);
@@ -149,6 +154,12 @@ describe("demo-video skill", () => {
     expect(md).toContain("render-report.json");
   });
 
+  it("says live capture requires the logged-in selector unless explicitly unguarded", () => {
+    expect(md).toContain("capture.auth.loggedInSelector");
+    expect(md).toContain("capture.auth.allowUnguardedLiveCapture");
+    expect(md).not.toMatch(/usually\s+`capture\.auth\.loggedInSelector/);
+  });
+
   it("explains the three voice choices", () => {
     expect(md).toContain("ELEVENLABS_API_KEY");
     expect(md).toContain('"provider": "command"');
@@ -166,6 +177,13 @@ describe("public files carry nothing private and no long dashes", () => {
     expect(findPrivateStrings("at 100.80.1.2")).toContain("tailnet address");
     expect(findPrivateStrings("mail someone@gmail.com")).toContain("personal mail address");
     expect(findPrivateStrings("see /home/someone")).toContain("Linux home directory path");
+    expect(findPrivateStrings('path "/home/someone/src"')).toContain("Linux home directory path");
+    expect(findPrivateStrings('path "/Users/someone"')).toContain("macOS home directory path");
+    expect(findPrivateStrings("see /Users/someone/x")).toContain("macOS home directory path");
+    expect(findPrivateStrings("https://x.example/home/feed")).toEqual([]);
+    expect(findPrivateStrings("[a](https://x.example/Users/list)")).toEqual([]);
+    expect(findPrivateStrings("ELEVENLABS_API_KEY=your_key_here")).toContain("API key assignment");
+    expect(findPrivateStrings("ELEVENLABS_API_KEY=<your key>")).toEqual([]);
     expect(findPrivateStrings("C:\\Users\\x")).toContain("Windows home directory path");
     expect(findPrivateStrings('"C:\\\\Users\\\\x"')).toContain("Windows home directory path");
     expect(findPrivateStrings("key sk_" + "a".repeat(24))).toContain("API key value");

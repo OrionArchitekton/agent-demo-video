@@ -28,6 +28,12 @@
   complete, correctly-timed, captioned video with no voice at all, and the
   parity check could not detect it because the estimated duration is the clock.
   Set `FAKE_TTS=1` to request silent narration deliberately.
+- CLI parsing now rejects unknown options, surplus config paths, duplicate
+  singleton flags, and pipeline-only flags on `login`, so a mistyped production
+  `--out` cannot silently fall back to a reusable configured output.
+- Every config schema object now rejects unrecognised keys, so a typo in a
+  setting fails loudly instead of silently applying the default it was written
+  to override.
 
 ### Added
 
@@ -39,6 +45,28 @@
 - Guide pages under `docs/guide/` hold the reference material that used to live in the README. The
   README now leads with install and a keyless quickstart.
 - A maintainer release runbook, `docs/runbooks/release.md`.
+- Command voice provider. `voice.provider: "command"` runs any program you can call from a shell
+  to produce the narration audio, with an optional `aligner` for word-timed captions. A reference
+  aligner ships as `tools/align_whisper.py`. See `docs/guide/voice.md`.
+- Transcript check. When `voice.aligner` is configured, the finished video is transcribed and
+  compared with the script, and phrases the narration dropped are reported in `render-report.json`.
+  The check is advisory and never fails a render. See `docs/guide/quality-checks.md`.
+- `brand.hook`, an optional line of 1 to 60 characters drawn large on the first frame of the title
+  card. A Shorts render with a title card but no hook prints a warning and records it in the report.
+- Motion cards. `brand.motion: true` renders the title and end cards as animated clips with
+  HyperFrames, an optional add-on that needs Node 22.12 or newer. Static cards stay the default. See
+  `docs/guide/motion-cards.md`.
+- Screencast capture engine, now the default. It assembles CDP frames with their capture
+  timestamps straight into H.264, so text stays crisp and the frame timeline is deterministic.
+  `capture.engine: "recordvideo"` selects the legacy path.
+- Word-pop captions (`theme.captions: "wordpop"`, the default), which pop word by word in sync with
+  speech. `"block"` restores the legacy burned-in subtitles.
+- Sound design (`audio.soundDesign`, on by default): a synthesized ambient bed ducked under the
+  narration, click ticks and segment sweeps. `audio.musicPath` swaps in your own track.
+- Living camera (`motion.livingCamera`, on by default): a continuous camera path with a gentle
+  drift, plus zoom on the element each action targets (`motion.zoomOnAction`).
+- Remote render. `--render-host <host>` offloads the render stage to another host over ssh. Local
+  rendering stays the default.
 - Deliverable verification after every local or remote render: the delivered
   `final.mp4` is probed against a final-format contract (one H.264 yuv420p video
   stream at the configured size and constant fps with square pixels and no display
@@ -172,14 +200,8 @@
   instead of re-resolving the selector in the page with `document.querySelectorAll`. The
   two engines disagree on shadow DOM and on Playwright-only selector syntax, so an element
   inside an open shadow root previously drew no highlight at all.
-- CLI parsing now rejects unknown options, surplus config paths, duplicate
-  singleton flags, and pipeline-only flags on `login`, so a mistyped production
-  `--out` cannot silently fall back to a reusable configured output.
 - Source-attested production renders now fail if their required
   `render-report.json` cannot be built or written. Ordinary renders retain the
   historical best-effort provenance behavior.
-- Every config schema object now rejects unrecognised keys, so a typo in a
-  setting fails loudly instead of silently applying the default it was written
-  to override.
 - Offloading to a remote render bundle older than the local sources is refused.
   A stale bundle ran an old renderer that ignored the declared duration cap.

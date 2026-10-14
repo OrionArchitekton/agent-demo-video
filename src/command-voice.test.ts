@@ -35,6 +35,26 @@ describe("runCommand", () => {
   it("names a non-zero exit and keeps the stderr tail", async () => {
     await expect(runCommand("voice command (shot s1)", [fx("fail.sh")], {}, 5)).rejects.toThrowError(/exited 3: voice model not loaded/);
   });
+  it("passes opts.env to the child instead of the parent environment", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "env-"));
+    const out = join(dir, "out.txt");
+    const prev = process.env.DISPLAY;
+    process.env.DISPLAY = ":99";
+    try {
+      await runCommand("env probe", [fx("print-env.sh"), "{out}"], { out }, 5, { env: { PATH: process.env.PATH! } });
+    } finally {
+      if (prev === undefined) delete process.env.DISPLAY; else process.env.DISPLAY = prev;
+    }
+    expect(await readFile(out, "utf8")).toBe("unset");
+  });
+  it("tees stdout and stderr to opts.logPath", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "log-"));
+    const logPath = join(dir, "cli.log");
+    await runCommand("log probe", [fx("pageerror-exit0.sh")], {}, 5, { logPath });
+    const log = await readFile(logPath, "utf8");
+    expect(log).toContain("rendering...");
+    expect(log).toContain("PAGEERROR boom");
+  });
   it("names a timeout", async () => {
     await expect(runCommand("voice command (shot s1)", [fx("slow.sh")], {}, 1)).rejects.toThrowError(/timed out after 1s/);
   });

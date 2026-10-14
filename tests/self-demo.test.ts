@@ -10,13 +10,12 @@ const root = process.cwd();
 const read = (p: string) => readFileSync(resolve(root, p), "utf8");
 
 describe("self-demo preflight", () => {
-  it("every shot passes the selector gate offline with no blocking finding", async () => {
+  it("every shot passes the selector gate offline with no finding at all", async () => {
     const cfg = loadConfig("demos/self/demo.config.json");
     const manifest = parseScript(read(cfg.script));
-    const structural = structuralFindings(manifest, cfg).filter((f) => f.severity === "blocking");
-    expect(structural, JSON.stringify(structural)).toEqual([]);
-    const selectors = (await resolveSelectorFindings(manifest, cfg)).filter((f) => f.severity === "blocking");
-    expect(selectors, JSON.stringify(selectors)).toEqual([]);
+    // Any finding at all fails: a typo in a selector after a click is only "unverified", not blocking.
+    const findings = [...structuralFindings(manifest, cfg), ...(await resolveSelectorFindings(manifest, cfg))];
+    expect(findings, JSON.stringify(findings)).toEqual([]);
     expect(manifest.shots.length).toBeGreaterThanOrEqual(3);
   }, 120_000);
 });

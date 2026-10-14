@@ -12,7 +12,9 @@
 - narration: First we name the release, then tick off the tests and the docs. The camera follows each click, and the captions keep pace with the voice.
 - action: goto url="/app.html"
 - action: type selector="[data-testid=release-name]" text="Spring release"
+- action: wait ms=2000
 - action: click selector="[data-testid=task-tests]"
+- action: wait ms=2000
 - action: click selector="[data-testid=task-docs]"
 - action: wait ms=600
 
@@ -20,6 +22,8 @@
 - target: dashboard
 - narration: The last box fills the progress bar, and one click ships it.
 - action: goto url="/app.html?name=Spring%20release&done=tests,docs"
+- action: wait ms=1500
 - action: click selector="[data-testid=task-notes]"
+- action: wait ms=1500
 - action: click selector="[data-testid=ship]"
 - action: wait ms=1200

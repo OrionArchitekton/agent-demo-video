@@ -1172,10 +1172,16 @@ export async function runPipeline(config: DemoConfig, opts: RunPipelineOpts = {}
     const urlTextFile = b.endCard && b.url ? join(segDir, "card_url_text.txt") : undefined;
     if (urlTextFile) await writeFile(urlTextFile, b.url!, "utf8");
 
-    let hookTextFile: string | undefined;
+    // One textfile per wrapped hook line (each line is drawn centered on its own).
+    let hookTextFiles: string[] | undefined;
     if (b.titleCard && b.hook) {
-      hookTextFile = join(segDir, "card_hook_text.txt");
-      await writeFile(hookTextFile, hookLayout(config.resolution.width, config.resolution.height, b.hook).lines.join("\n"), "utf8");
+      const hookLines = hookLayout(config.resolution.width, config.resolution.height, b.hook).lines;
+      hookTextFiles = [];
+      for (const [i, line] of hookLines.entries()) {
+        const f = join(segDir, `card_hook_text_${i}.txt`);
+        await writeFile(f, line, "utf8");
+        hookTextFiles.push(f);
+      }
     }
     if (config.platform === "shorts" && b.titleCard) hookStatus = b.hook ? "set" : "missing";
     else if (b.titleCard && b.hook) hookStatus = "set";
@@ -1187,7 +1193,7 @@ export async function runPipeline(config: DemoConfig, opts: RunPipelineOpts = {}
       const titlePath = join(segDir, "card_title.mp4");
       await ffmpeg(titleCardArgs({ ...cardBase, ...(b.hook ? { hook: b.hook } : {}), durationSec: b.titleSec }, titlePath, {
         titleFile: titleTextFile,
-        ...(hookTextFile ? { hookFile: hookTextFile } : {}),
+        ...(hookTextFiles ? { hookFiles: hookTextFiles } : {}),
         ...(subtitleTextFile ? { subtitleFile: subtitleTextFile } : {}),
       }));
       rawSegments.unshift(titlePath);

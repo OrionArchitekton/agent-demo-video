@@ -76,19 +76,36 @@ describe("hookLayout", () => {
   });
 });
 describe("titleCardArgs with a hook", () => {
-  const P = { ...O, width: 1080, height: 1920, hook: "Stop pasting secrets" };
-  it("draws the hook from its textfile, larger than the title", () => {
-    const j = titleCardArgs(P, "/t/title.mp4", { titleFile: "/t/c_t.txt", hookFile: "/t/c_h.txt" }).join(" ");
-    expect(j).toContain("textfile=/t/c_h.txt");
-    const sizes = (j.match(/fontsize=(\d+)/g) ?? []).map((m) => Number(m.slice(9)));
-    const hookSize = Number(/c_h\.txt:fontsize=(\d+)/.exec(j)![1]);
+  const P = { ...O, width: 1080, height: 1920, hook: "Stop pasting client secrets into AI chats" };
+  const files = { titleFile: "/t/c_t.txt", hookFiles: ["/t/h0.txt", "/t/h1.txt", "/t/h2.txt"] };
+  const vf = (a: string[]): string => a[a.indexOf("-vf") + 1] as string;
+  it("draws one centered drawtext per hook line, each from its own textfile, larger than the title", () => {
+    const j = vf(titleCardArgs(P, "/t/title.mp4", files));
+    for (const f of files.hookFiles) {
+      const m = new RegExp(`textfile=${f.replace(/[./]/g, "\\$&")}:[^,]*x=\\(w-text_w\\)/2`).exec(j);
+      expect(m, f).not.toBeNull();
+    }
+    const hookSize = Number(/h0\.txt:fontsize=(\d+)/.exec(j)![1]);
     const titleSize = Number(/c_t\.txt:fontsize=(\d+)/.exec(j)![1]);
-    expect(sizes.length).toBeGreaterThanOrEqual(2);
     expect(titleSize).toBeLessThan(hookSize);
+    expect(j).not.toContain("Stop");
   });
-  it("without a hook file the filtergraph is unchanged", () => {
+  it("stacks the lines at fontSize*1.2 steps", () => {
+    const j = vf(titleCardArgs(P, "/t/title.mp4", files));
+    const size = Number(/h0\.txt:fontsize=(\d+)/.exec(j)![1]);
+    const ys = files.hookFiles.map((f, i) => Number(new RegExp(`h${i}\\.txt:[^,]*:y=(\\d+)`).exec(j)![1]));
+    expect(ys[1]! - ys[0]!).toBe(Math.round(size * 1.2));
+    expect(ys[2]! - ys[1]!).toBe(Math.round(size * 1.2));
+  });
+  it("has no fade-in (frame 0 is full opacity) but keeps the fade-out", () => {
+    const j = vf(titleCardArgs(P, "/t/title.mp4", files));
+    expect(j).not.toContain("fade=t=in");
+    expect(j).toContain("fade=t=out");
+  });
+  it("without hook files the args are unchanged and still fade in", () => {
     const a = titleCardArgs(O, "/t/title.mp4", { titleFile: "/t/c_t.txt", subtitleFile: "/t/c_s.txt" });
     const b = titleCardArgs({ ...O, hook: "x" }, "/t/title.mp4", { titleFile: "/t/c_t.txt", subtitleFile: "/t/c_s.txt" });
     expect(b).toEqual(a);
+    expect(vf(a)).toContain("fade=t=in");
   });
 });

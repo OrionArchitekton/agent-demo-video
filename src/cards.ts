@@ -32,7 +32,7 @@ export interface CardOpts {
  * quoted value), so all text is referenced via textfile= paths the pipeline
  * writes. This also closes the text-injection class outright.
  */
-export interface CardTextFiles { titleFile: string; subtitleFile?: string; urlFile?: string; hookFile?: string }
+export interface CardTextFiles { titleFile: string; subtitleFile?: string; urlFile?: string; hookFiles?: string[] }
 
 /**
  * The textfile PATH itself lives inside the filtergraph string, so it uses
@@ -48,11 +48,11 @@ function gradientInput(o: CardOpts): string[] {
   return ["-f", "lavfi", "-i", grad];
 }
 
-function cardArgs(o: CardOpts, lines: string[], out: string): string[] {
+function cardArgs(o: CardOpts, lines: string[], out: string, fadeIn = true): string[] {
   const fade = o.fadeSec ?? 0.4;
   const vf = [
     ...lines,
-    `fade=t=in:st=0:d=${fade}`,
+    ...(fadeIn ? [`fade=t=in:st=0:d=${fade}`] : []),
     `fade=t=out:st=${Math.max(0, o.durationSec - fade)}:d=${fade}`,
     `fps=${o.fps}`,
     "format=yuv420p",
@@ -89,7 +89,7 @@ export function hookLayout(width: number, height: number, hook: string): { fontS
 
 /** Cold-open title card: product name, optional subtitle, accent underline. */
 export function titleCardArgs(o: CardOpts, out: string, files: CardTextFiles): string[] {
-  if (o.hook && files.hookFile) return hookTitleCardArgs(o, out, files, files.hookFile);
+  if (o.hook && files.hookFiles?.length) return hookTitleCardArgs(o, out, files, files.hookFiles);
   const titleSize = Math.round(o.height * 0.085);
   const subSize = Math.round(o.height * 0.034);
   const barW = Math.round(o.width * 0.09);
@@ -107,15 +107,18 @@ export function titleCardArgs(o: CardOpts, out: string, files: CardTextFiles): s
 }
 
 /** Title card with a large wrapped hook; the product title sits small beneath it. */
-function hookTitleCardArgs(o: CardOpts, out: string, files: CardTextFiles, hookFile: string): string[] {
+function hookTitleCardArgs(o: CardOpts, out: string, files: CardTextFiles, hookFiles: string[]): string[] {
   const layout = hookLayout(o.width, o.height, o.hook!);
-  const blockH = layout.lines.length * layout.fontSize * 1.2;
+  const step = Math.round(layout.fontSize * 1.2);
+  const blockH = hookFiles.length * step;
   const titleSize = Math.round(o.height * 0.034);
   const barW = Math.round(o.width * 0.09);
   const barH = Math.max(4, Math.round(o.height * 0.007));
-  const lift = Math.round(o.height * 0.06);
+  const blockTop = Math.round(o.height / 2 - blockH / 2 - o.height * 0.06);
   const lines = [
-    `drawtext=expansion=none:font=${o.font}:textfile=${tf(hookFile)}:fontsize=${layout.fontSize}:line_spacing=${Math.round(layout.fontSize * 0.2)}:fontcolor=white:x=(w-text_w)/2:y=(h-text_h)/2-${lift}`,
+    ...hookFiles.map(
+      (f, i) => `drawtext=expansion=none:font=${o.font}:textfile=${tf(f)}:fontsize=${layout.fontSize}:fontcolor=white:x=(w-text_w)/2:y=${blockTop + i * step}`,
+    ),
     `drawbox=x=(iw-${barW})/2:y=(ih)/2+${Math.round(blockH / 2)}:w=${barW}:h=${barH}:color=${hex(o.accent)}@1:t=fill`,
     `drawtext=expansion=none:font=${o.font}:textfile=${tf(files.titleFile)}:fontsize=${titleSize}:fontcolor=white:x=(w-text_w)/2:y=(h)/2+${Math.round(blockH / 2) + barH + Math.round(o.height * 0.015)}`,
     ...(o.subtitle && files.subtitleFile
@@ -124,7 +127,7 @@ function hookTitleCardArgs(o: CardOpts, out: string, files: CardTextFiles, hookF
         ]
       : []),
   ];
-  return cardArgs(o, lines, out);
+  return cardArgs(o, lines, out, false);
 }
 
 /** End card: title small, URL prominent in the accent color. */

@@ -27,7 +27,7 @@ describe("shorts hook card (smoke)", { timeout: 180_000 }, () => {
   it("records hook=set and writes the wrapped hook textfile", async () => {
     const { dir, report } = await render({ platform: "shorts", brand: { title: "Demo Fixture", hook: "Stop pasting secrets" } });
     expect(report.hook).toBe("set");
-    await access(join(dir, "out", "seg", "card_hook_text.txt"));
+    await access(join(dir, "out", "seg", "card_hook_text_0.txt"));
   });
 
   it("records hook=missing and warns when a Shorts render has no hook", async () => {

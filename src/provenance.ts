@@ -98,6 +98,8 @@ export type RenderReport = {
   narration?: { shotId: string; timing: TimingSource }[];
   /** Advisory: narration phrases the finished video did not say (specs/render-quality-checks-spec.md). */
   transcriptCheck?: TranscriptCheck;
+  /** Shorts hook line status on the frame-0 title card (specs/render-quality-checks-spec.md). */
+  hook?: "set" | "missing";
 };
 
 /** Short stable content digest retained for report compatibility and scanning. */
@@ -148,6 +150,7 @@ export function buildRenderReport(o: {
   /** Per-shot caption timing source (specs/command-tts-provider-spec.md). */
   narration?: { shotId: string; timing: TimingSource }[];
   transcriptCheck?: TranscriptCheck;
+  hook?: "set" | "missing";
 }): RenderReport {
   return {
     voice: reportVoice(o.voice),
@@ -170,6 +173,7 @@ export function buildRenderReport(o: {
     ...(o.sourceBuildAttestation ? { sourceBuildAttestation: o.sourceBuildAttestation } : {}),
     ...(o.narration && o.narration.length ? { narration: o.narration } : {}),
     ...(o.transcriptCheck ? { transcriptCheck: o.transcriptCheck } : {}),
+    ...(o.hook ? { hook: o.hook } : {}),
   };
 }
 

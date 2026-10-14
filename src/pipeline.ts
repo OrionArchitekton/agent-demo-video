@@ -21,7 +21,7 @@ import { formatPreflightReport, runPreflight } from "./preflight";
 import { synthShot } from "./tts";
 import { captureShot } from "./capture";
 import { resolveClipPath } from "./clips";
-import { titleCardArgs, endCardArgs } from "./cards";
+import { titleCardArgs, endCardArgs, hookLayout } from "./cards";
 import { ffmpeg, probeDeliverable, run as runProcess, silentMp3Args } from "./ffmpeg";
 import { checkDeliverable, checkTimelineBinding } from "./verify";
 import { buildContactSheet, planContactSheet } from "./contact-sheet";
@@ -1142,6 +1142,7 @@ export async function runPipeline(config: DemoConfig, opts: RunPipelineOpts = {}
   //     segmentKinds). The two resolved booleans preserve brand.cards as the
   //     legacy shared default while allowing artifact-first cold opens.
   let segmentKinds: ("shot" | "card")[] = deriveSegmentKinds(shots);
+  let hookStatus: "set" | "missing" | undefined;
   if (config.brand && (config.brand.titleCard || config.brand.endCard)) {
     const b = config.brand;
     const cardBase = {
@@ -1171,10 +1172,22 @@ export async function runPipeline(config: DemoConfig, opts: RunPipelineOpts = {}
     const urlTextFile = b.endCard && b.url ? join(segDir, "card_url_text.txt") : undefined;
     if (urlTextFile) await writeFile(urlTextFile, b.url!, "utf8");
 
+    let hookTextFile: string | undefined;
+    if (b.titleCard && b.hook) {
+      hookTextFile = join(segDir, "card_hook_text.txt");
+      await writeFile(hookTextFile, hookLayout(config.resolution.width, config.resolution.height, b.hook).lines.join("\n"), "utf8");
+    }
+    if (config.platform === "shorts" && b.titleCard) hookStatus = b.hook ? "set" : "missing";
+    else if (b.titleCard && b.hook) hookStatus = "set";
+    if (hookStatus === "missing") {
+      console.warn("[agent-demo-video] shorts render has no brand.hook: frame 0 shows only the product name; a short hook line on the first frame holds far more viewers");
+    }
+
     if (b.titleCard) {
       const titlePath = join(segDir, "card_title.mp4");
-      await ffmpeg(titleCardArgs({ ...cardBase, durationSec: b.titleSec }, titlePath, {
+      await ffmpeg(titleCardArgs({ ...cardBase, ...(b.hook ? { hook: b.hook } : {}), durationSec: b.titleSec }, titlePath, {
         titleFile: titleTextFile,
+        ...(hookTextFile ? { hookFile: hookTextFile } : {}),
         ...(subtitleTextFile ? { subtitleFile: subtitleTextFile } : {}),
       }));
       rawSegments.unshift(titlePath);
@@ -1287,6 +1300,7 @@ export async function runPipeline(config: DemoConfig, opts: RunPipelineOpts = {}
       deliverable,
       contactSheet,
       transcriptCheck,
+      ...(hookStatus ? { hook: hookStatus } : {}),
       ...(opts.sourceBuild
         ? { sourceBuildAttestation: opts.sourceBuild.attestation }
         : {}),

@@ -59,7 +59,7 @@ describe("runTranscriptCheck", () => {
     const huge = Array.from({ length: 6000 }, (_, i) => `word${i}`).join(" ") + ".";
     const r = await runTranscriptCheck("v.mp4", [huge], [fx("align-hear-all.sh"), "{audio}", "{text}", "{out}"], 60, dir);
     expect(r.ran).toBe(false);
-    expect(r).toMatchObject({ reason: expect.stringContaining("too large to align") });
+    expect(r).toMatchObject({ reason: expect.stringMatching(/^script too long to compare: .*too large to align/) });
   });
   it("ignores a stale words file left by a previous run", async () => {
     const dir = await mkdtemp(join(tmpdir(), "tcheck-"));

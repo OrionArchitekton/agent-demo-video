@@ -62,6 +62,7 @@ export async function runTranscriptCheck(
 ): Promise<TranscriptCheck> {
   if (!aligner) return { ran: false, reason: "no voice.aligner configured" };
   if (opts.fakeTts) return { ran: false, reason: "FAKE_TTS: narration is silent" };
+  let heard: string[];
   try {
     await mkdir(workDir, { recursive: true });
     const textPath = join(workDir, "transcript-check.txt");
@@ -71,9 +72,14 @@ export async function runTranscriptCheck(
     await runCommand("transcript check", aligner, { audio: videoPath, text: textPath, out: outPath }, timeoutSec);
     const words = await readWordsFile(outPath, "transcript check");
     if (!words) return { ran: false, reason: "aligner wrote no word timings" };
-    // droppedPhrases can throw on very long scripts (alignment size cap); it stays inside the try.
-    return { ran: true, droppedPhrases: droppedPhrases(splitPhrases(narrations), words.map((w) => w.word)) };
+    heard = words.map((w) => w.word);
   } catch (e) {
     return { ran: false, reason: `aligner failed: ${(e as Error).message}` };
+  }
+  try {
+    return { ran: true, droppedPhrases: droppedPhrases(splitPhrases(narrations), heard) };
+  } catch (e) {
+    // The in-order matching refuses scripts past its size cap; that is not an aligner failure.
+    return { ran: false, reason: `script too long to compare: ${(e as Error).message}` };
   }
 }

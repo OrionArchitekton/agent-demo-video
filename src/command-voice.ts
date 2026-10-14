@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { appendFileSync, writeFileSync } from "node:fs";
 import { readFile, stat } from "node:fs/promises";
 import type { TimedWord } from "./word-timing";
 
@@ -44,8 +45,15 @@ function armCleanup(): void {
   }
 }
 
+export interface RunCommandOpts {
+  /** Child environment; defaults to the parent's. */
+  env?: Record<string, string>;
+  /** Tee the child's combined stdout and stderr to this file (created or truncated at start). */
+  logPath?: string;
+}
+
 /** Run an operator-supplied program WITHOUT a shell; every failure names `label` and its cause. */
-export async function runCommand(label: string, template: string[], vars: Record<string, string>, timeoutSec: number): Promise<void> {
+export async function runCommand(label: string, template: string[], vars: Record<string, string>, timeoutSec: number, opts?: RunCommandOpts): Promise<void> {
   const [prog, ...args] = fillArgs(template, vars);
   if (!prog) throw new Error(`${label}: empty command`);
   await new Promise<void>((resolveRun, reject) => {
@@ -64,12 +72,19 @@ export async function runCommand(label: string, template: string[], vars: Record
       fn();
     };
     armCleanup();
-    const child = spawn(prog, args, { detached: true, stdio: ["ignore", "pipe", "pipe"] });
+    const child = spawn(prog, args, { detached: true, stdio: ["ignore", "pipe", "pipe"], env: opts?.env ?? process.env });
+    const tee = (d: Buffer | string) => {
+      if (!opts?.logPath) return;
+      try { appendFileSync(opts.logPath, d); } catch { /* the log is best-effort */ }
+    };
+    if (opts?.logPath) {
+      try { writeFileSync(opts.logPath, ""); } catch { /* the log is best-effort */ }
+    }
     if (child.pid !== undefined) liveGroups.add(child.pid);
     let stderrTail = "";
-    child.stdout!.resume();
+    child.stdout!.on("data", tee);
     child.stderr!.setEncoding("utf8");
-    child.stderr!.on("data", (d: string) => { stderrTail = (stderrTail + d).slice(-4000); });
+    child.stderr!.on("data", (d: string) => { stderrTail = (stderrTail + d).slice(-4000); tee(d); });
     const timer = setTimeout(() => {
       try { process.kill(-child.pid!, "SIGKILL"); } catch { /* already gone */ }
       done(() => reject(new Error(`${label}: timed out after ${timeoutSec}s`)));

@@ -51,8 +51,8 @@ own hook and payoff.
 
 ### S4 - Pinned channel identity and disclosure
 
-Given any Gate 1 config, when narration and styling are resolved, then Dan's
-approved cloned voice, model, seed, stability, similarity, copper accent, and
+Given any Gate 1 config, when narration and styling are resolved, then the
+approved narration voice, model, seed, stability, similarity, copper accent, and
 channel palette are explicit rather than inherited from mutable defaults.
 Publishing copy and the master end card carry the approved AI-production
 disclosure.

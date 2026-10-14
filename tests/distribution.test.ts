@@ -1,100 +1,21 @@
 import { describe, it, expect } from "vitest";
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
-import { dirname, join, relative, resolve } from "node:path";
-
-// vitest runs with cwd = repo root (see the other smoke tests).
-const root = process.cwd();
-const read = (p: string): string => readFileSync(resolve(root, p), "utf8");
-const json = (p: string): any => JSON.parse(read(p));
-const pkg = json("package.json") as { name: string; version: string };
-
-/** Flat `key: value` frontmatter of a Markdown file with a leading `---` block. */
-export function frontmatter(md: string): Record<string, string> {
-  const m = /^---\n([\s\S]*?)\n---\n/.exec(md);
-  if (!m) return {};
-  const out: Record<string, string> = {};
-  for (const line of m[1]!.split("\n")) {
-    const kv = /^([A-Za-z_-]+):\s*(.*)$/.exec(line);
-    if (kv) out[kv[1]!] = kv[2]!.replace(/^(['"])(.*)\1$/, "$2");
-  }
-  return out;
-}
-
-// Shapes that only appear when a maintainer's private setup leaks into public files. Generic on
-// purpose: this file is public too, so it names no private host, project or person.
-const PRIVATE_PATTERNS: [string, RegExp][] = [
-  ["secret-manager invocation", /\bdoppler\s+run\b/i],
-  ["Linux home directory path", /(?<!\w+:\/\/\S*)\/home\/[a-z_][a-z0-9_-]*/],
-  ["macOS home directory path", /(?<!\w+:\/\/\S*)\/Users\/[A-Za-z][A-Za-z0-9._-]*/],
-  ["Windows home directory path", /[A-Za-z]:\\{1,2}Users\\{1,2}/],
-  ["tailnet host name", /\.ts\.net\b/i],
-  ["tailnet address", /\b100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.\d{1,3}\.\d{1,3}\b/],
-  ["personal mail address", /[A-Za-z0-9._%+-]+@gmail\.com/i],
-  ["API key value", /\bsk_[A-Za-z0-9]{20,}/],
-  ["API key assignment", /ELEVENLABS_API_KEY\s*[=:]\s*["']?[A-Za-z0-9_]{8,}/],
-];
-
-export function findPrivateStrings(text: string): string[] {
-  return PRIVATE_PATTERNS.filter(([, re]) => re.test(text)).map(([label]) => label);
-}
-
-// Built from code points so this source file holds no literal long dash.
-const LONG_DASH = new RegExp(`[${String.fromCodePoint(0x2013, 0x2014, 0x2015)}]`);
-
-/** Repo-relative paths of every .md and .json file under `dir`, recursively. */
-function filesUnder(dir: string): string[] {
-  const abs = resolve(root, dir);
-  if (!existsSync(abs)) return [];
-  const out: string[] = [];
-  for (const name of readdirSync(abs)) {
-    const p = join(abs, name);
-    if (statSync(p).isDirectory()) out.push(...filesUnder(relative(root, p)));
-    else if (/\.(md|json)$/.test(name)) out.push(relative(root, p));
-  }
-  return out.sort();
-}
-
-/** Relative link targets in Markdown, anchor removed; skips URLs with a scheme and pure anchors. */
-export function relativeLinks(md: string): string[] {
-  const out: string[] = [];
-  for (const m of md.matchAll(/\]\(([^)\s]+)\)/g)) {
-    const href = m[1]!;
-    if (/^[a-z][a-z0-9+.-]*:/i.test(href) || href.startsWith("#")) continue;
-    out.push(href.split("#")[0]!);
-  }
-  return out;
-}
-
-/** Repo paths named by absolute links to this repository's files on master, anchor removed. */
-export function repoBlobLinks(md: string): string[] {
-  const out: string[] = [];
-  for (const m of md.matchAll(/https:\/\/github\.com\/OrionArchitekton\/agent-demo-video\/blob\/master\/([^\s)#`>]+)/g)) {
-    out.push(m[1]!);
-  }
-  return out;
-}
-
-const GUIDE_PAGES = [
-  "pipeline",
-  "script-format",
-  "preflight",
-  "authenticated-capture",
-  "config",
-  "voice",
-  "third-party-tabs",
-  "quality-checks",
-  "motion-cards",
-].map((p) => `docs/guide/${p}.md`);
-
-/** Files shipped to the public as documentation or plugin content. Grows as pages are added. */
-function publicFiles(): string[] {
-  return [
-    ...filesUnder(".claude-plugin"),
-    ...filesUnder("skills"),
-    ...filesUnder("agents"),
-    ...filesUnder("docs/guide"),
-  ];
-}
+import { existsSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import {
+  EXPECTED_GUIDE_PAGES,
+  GUIDE_PAGES,
+  LONG_DASH,
+  findPrivateStrings,
+  frontmatter,
+  json,
+  npxPins,
+  pkg,
+  publicFiles,
+  read,
+  relativeLinks,
+  repoBlobLinks,
+  root,
+} from "./support/distribution";
 
 describe("plugin and marketplace manifests", () => {
   const plugin = json(".claude-plugin/plugin.json");
@@ -116,11 +37,6 @@ describe("plugin and marketplace manifests", () => {
   });
 });
 
-/** For every `agent-demo-video` reference inside an npx command line: the suffix after the name. */
-export function npxPins(md: string): string[] {
-  return [...md.matchAll(/npx\s[^\n`]*?agent-demo-video(@[\w.+-]*\w)?(?![\w@-]|\.\w)/g)].map((m) => m[1] ?? "");
-}
-
 describe("npxPins", () => {
   it("reports unpinned, tagged and pinned references", () => {
     expect(npxPins("run `npx -y agent-demo-video x`")).toEqual([""]);
@@ -131,6 +47,10 @@ describe("npxPins", () => {
     expect(npxPins("then npx -y agent-demo-video")).toEqual([""]);
     expect(npxPins("`npx -y agent-demo-video@0.3.0`, then stop")).toEqual(["@0.3.0"]);
     expect(npxPins("use npx -y agent-demo-video@0.3.0.")).toEqual(["@0.3.0"]);
+    for (const bad of ["@^0.3.0", "@~0.3.0", "@"]) {
+      expect(npxPins(`npx -y agent-demo-video${bad} demo.json`), bad).toEqual([bad]);
+      expect(npxPins(`npx -y agent-demo-video${bad} demo.json`)[0], bad).not.toBe("@0.3.0");
+    }
     expect(npxPins("npx -y -p agent-demo-video@1.2.3 -p hyperframes@4.5.6 demo-video c.json")).toEqual([
       "@1.2.3",
     ]);
@@ -221,6 +141,19 @@ describe("public files carry nothing private and no long dashes", () => {
     expect(findPrivateStrings("[a](https://x.example/Users/list)")).toEqual([]);
     expect(findPrivateStrings("ELEVENLABS_API_KEY=your_key_here")).toContain("API key assignment");
     expect(findPrivateStrings("ELEVENLABS_API_KEY=<your key>")).toEqual([]);
+    expect(findPrivateStrings("ELEVENLABS_API_KEY: required for narration")).toEqual([]);
+    expect(findPrivateStrings('{"ELEVENLABS_API_KEY": "' + "x1".repeat(6) + '"}')).toContain("API key assignment");
+    for (const leak of [
+      "file:///home/someone/x",
+      "file:///Users/someone/x",
+      "file:///C:/Users/someone/x",
+      "ssh://host/home/someone",
+      '{"homepage":"https://a.example","cwd":"/home/someone"}',
+      '{"url":"https://a.example","p":"/Users/someone/x"}',
+    ]) {
+      expect(findPrivateStrings(leak).length, leak).toBeGreaterThan(0);
+    }
+    expect(findPrivateStrings("http://localhost:3000/home/overview")).toEqual([]);
     expect(findPrivateStrings("C:\\Users\\x")).toContain("Windows home directory path");
     expect(findPrivateStrings('"C:\\\\Users\\\\x"')).toContain("Windows home directory path");
     expect(findPrivateStrings("key sk_" + "a".repeat(24))).toContain("API key value");
@@ -253,6 +186,15 @@ describe("guide pages", () => {
     expect(
       repoBlobLinks("[a](https://github.com/OrionArchitekton/agent-demo-video/blob/master/docs/guide/voice.md#x)"),
     ).toEqual(["docs/guide/voice.md"]);
+    expect(
+      repoBlobLinks(
+        'see https://github.com/OrionArchitekton/agent-demo-video/blob/master/docs/guide/config.md. And "https://github.com/OrionArchitekton/agent-demo-video/blob/master/README.md", ok',
+      ),
+    ).toEqual(["docs/guide/config.md", "README.md"]);
+  });
+
+  it("the page list is derived from the folder and holds the nine expected pages", () => {
+    expect(GUIDE_PAGES).toEqual(expect.arrayContaining(EXPECTED_GUIDE_PAGES));
   });
 
   it("all exist, start with a title and end by pointing back to the README", () => {

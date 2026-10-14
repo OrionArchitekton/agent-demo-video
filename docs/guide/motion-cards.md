@@ -10,11 +10,16 @@ without `motion` behaves exactly as before.
 
 - **Install.** HyperFrames is an optional peer dependency: it is not installed with
   agent-demo-video, so installs that never use motion cards keep the two-dependency footprint.
-  To use motion cards, install exactly version 0.8.155 next to agent-demo-video, in the same
-  project (add `-g` when agent-demo-video is installed globally):
+  To use motion cards, install exactly version 0.8.155 wherever agent-demo-video itself is
+  installed. The CLI looks for HyperFrames next to its own files, not in your project:
 
   ```bash
-  npm install hyperframes@0.8.155
+  # npx: put both packages in the same temporary install
+  npx -y -p agent-demo-video@0.3.0 -p hyperframes@0.8.155 demo-video demo.config.json
+  # a project install: install both in that project
+  npm install agent-demo-video@0.3.0 hyperframes@0.8.155
+  # a global install: install both globally
+  npm install -g agent-demo-video@0.3.0 hyperframes@0.8.155
   ```
 
   Motion cards need Node 22.12 or newer; the tool itself still runs on Node 18 when motion is off.

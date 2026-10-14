@@ -86,7 +86,7 @@ describe("demo-video skill", () => {
   });
 
   it("names the prerequisites and runs the CLI pinned to the package version", () => {
-    for (const s of ["Node 18", "ffmpeg", "ffprobe", "npx playwright install chromium"]) {
+    for (const s of ["Node 18", "ffmpeg", "ffprobe", `npx -y -p agent-demo-video@${pkg.version} playwright install chromium`]) {
       expect(md).toContain(s);
     }
     expect(md).toContain(`npx -y agent-demo-video@${pkg.version} `);
@@ -256,6 +256,7 @@ describe("README leads with adoption", () => {
     expect(section).toContain("/plugin marketplace add OrionArchitekton/agent-demo-video");
     expect(section).toContain("/plugin install agent-demo-video@agent-demo-video");
     expect(section).toContain(`npx -y agent-demo-video@${pkg.version} `);
+    expect(section).toContain(`npx -y -p agent-demo-video@${pkg.version} playwright install chromium`);
     expect(section).toContain("git clone https://github.com/OrionArchitekton/agent-demo-video.git");
   });
 

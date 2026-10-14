@@ -17,7 +17,7 @@ The caller gives paths. If one is missing, list it under UNCHECKED; never guess 
   segment's midpoint and tiled in order. Open it.
 - `render-report.json`: tile i is `contactSheet.stills[i].shotId`; cards appear as `__card-title`
   and `__card-end`.
-- `frame0.png`: the first frame of `final.mp4`. Without it, the first-frame check is UNCHECKED.
+- `frame0.png`: the first frame of `final.mp4`. Without it, the first-frame checks are UNCHECKED.
 - `DEMO_SCRIPT.md`: the shots, their narration and actions.
 - A one-line brief: what the video must show, for whom, and the platform (landscape or Shorts).
 
@@ -30,8 +30,10 @@ might sit between stills, say so under UNCHECKED and ask for the frame instead o
 ## Checks, in severity order
 
 BLOCKING:
-- Only when the video opens on a title card (cards exist only when `brand` is set): the first frame does not show the hook
-  (or, without a hook, the title) as large, legible text.
+- The first frame is blank, an error page, a login wall or a loading screen. Check this on every
+  video: the contact sheet samples mid-segment and never shows the first frame.
+- When the video opens on a title card (cards exist only when `brand` is set), the first frame does
+  not show the hook (or, without a hook, the title) as large, legible text.
 - Two text layers overlap in any still: a caption over a label, a title over app text, a chapter
   card over a highlight.
 - Text is cut off at a frame edge.

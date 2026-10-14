@@ -129,6 +129,9 @@ Seams chosen: the fewest that exercise every scenario.
 
 ## Acceptance criteria
 
+Criteria 1 to 7 are met by the distribution pull request; criteria 8 to 11 by the self-demo pull
+request.
+
 1. Adding the repository as a marketplace and installing the plugin succeeds, and the validator
    reports no errors.
 2. The plugin version and the package version are equal, and a test fails if they drift.

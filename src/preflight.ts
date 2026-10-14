@@ -1,5 +1,6 @@
 import { lstatSync } from "node:fs";
 import { chromium, type Page } from "playwright";
+import { headlessBrowserEnv } from "./browser-env.js";
 import { cssInjectScript, overlayInitScript } from "./overlay.js";
 import { waitForReady } from "./ready.js";
 import { resolveUrl } from "./urls.js";
@@ -255,9 +256,9 @@ export async function resolveSelectorFindings(
 
   let browser;
   try {
-    browser = await chromium.launch({ headless: true });
+    browser = await chromium.launch({ headless: true, env: headlessBrowserEnv() });
   } catch {
-    browser = await chromium.launch({ headless: true, channel: "chrome" });
+    browser = await chromium.launch({ headless: true, channel: "chrome", env: headlessBrowserEnv() });
   }
   try {
     for (const [url, probes] of byUrl) {

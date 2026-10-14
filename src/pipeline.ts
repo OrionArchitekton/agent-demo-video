@@ -21,6 +21,9 @@ import { formatPreflightReport, runPreflight } from "./preflight";
 import { synthShot } from "./tts";
 import { captureShot } from "./capture";
 import { resolveClipPath } from "./clips";
+import { checkMotionRequirements } from "./motion-cards/requirements";
+import { titleCardHtml, endCardHtml } from "./motion-cards/compose";
+import { renderMotionCard } from "./motion-cards/render";
 import { titleCardArgs, endCardArgs, hookLayout } from "./cards";
 import { ffmpeg, probeDeliverable, run as runProcess, silentMp3Args } from "./ffmpeg";
 import { checkDeliverable, checkTimelineBinding } from "./verify";
@@ -1085,6 +1088,15 @@ export async function runPipeline(config: DemoConfig, opts: RunPipelineOpts = {}
   // that legitimately never needed a key.
   const ttsMode = resolveTtsMode(process.env, config.voice.provider);
 
+  // Motion cards need the optional hyperframes package and Node 22+; fail
+  // before any capture or spend rather than mid-render.
+  let motion: ReturnType<typeof checkMotionRequirements> | undefined;
+  if (config.brand?.motion && (config.brand.titleCard || config.brand.endCard)) {
+    motion = checkMotionRequirements();
+    if (!motion.ok) throw new Error("[agent-demo-video] " + motion.problems.join("; "));
+  }
+  let motionCards: { renderer: "hyperframes"; version: string } | undefined;
+
   // 3. TTS — sequential to respect ElevenLabs concurrency limits
   const ttsResults: TtsResult[] = [];
   for (const shot of shots) {
@@ -1194,11 +1206,16 @@ export async function runPipeline(config: DemoConfig, opts: RunPipelineOpts = {}
 
     if (b.titleCard) {
       const titlePath = join(segDir, "card_title.mp4");
-      await ffmpeg(titleCardArgs({ ...cardBase, ...(b.hook ? { hook: b.hook } : {}), durationSec: b.titleSec }, titlePath, {
-        titleFile: titleTextFile,
-        ...(hookTextFiles ? { hookFiles: hookTextFiles } : {}),
-        ...(subtitleTextFile ? { subtitleFile: subtitleTextFile } : {}),
-      }));
+      if (motion?.ok) {
+        await renderMotionCard(motion.hyperframesBin, titleCardHtml({ ...cardBase, ...(b.hook ? { hook: b.hook } : {}), durationSec: b.titleSec }), titlePath, "title");
+        motionCards = { renderer: "hyperframes", version: motion.version };
+      } else {
+        await ffmpeg(titleCardArgs({ ...cardBase, ...(b.hook ? { hook: b.hook } : {}), durationSec: b.titleSec }, titlePath, {
+          titleFile: titleTextFile,
+          ...(hookTextFiles ? { hookFiles: hookTextFiles } : {}),
+          ...(subtitleTextFile ? { subtitleFile: subtitleTextFile } : {}),
+        }));
+      }
       rawSegments.unshift(titlePath);
       ttsResults.unshift(await silentCard("__card-title", b.titleSec));
       segmentKinds.unshift("card");
@@ -1207,10 +1224,15 @@ export async function runPipeline(config: DemoConfig, opts: RunPipelineOpts = {}
 
     if (b.endCard) {
       const endPath = join(segDir, "card_end.mp4");
-      await ffmpeg(endCardArgs({ ...cardBase, durationSec: b.endSec }, endPath, {
-        titleFile: titleTextFile,
-        ...(urlTextFile ? { urlFile: urlTextFile } : {}),
-      }));
+      if (motion?.ok) {
+        await renderMotionCard(motion.hyperframesBin, endCardHtml({ ...cardBase, durationSec: b.endSec }), endPath, "end");
+        motionCards = { renderer: "hyperframes", version: motion.version };
+      } else {
+        await ffmpeg(endCardArgs({ ...cardBase, durationSec: b.endSec }, endPath, {
+          titleFile: titleTextFile,
+          ...(urlTextFile ? { urlFile: urlTextFile } : {}),
+        }));
+      }
       rawSegments.push(endPath);
       ttsResults.push(await silentCard("__card-end", b.endSec));
       segmentKinds.push("card");
@@ -1311,6 +1333,7 @@ export async function runPipeline(config: DemoConfig, opts: RunPipelineOpts = {}
       contactSheet,
       transcriptCheck,
       ...(hookStatus ? { hook: hookStatus } : {}),
+      ...(motionCards ? { motionCards } : {}),
       ...(opts.sourceBuild
         ? { sourceBuildAttestation: opts.sourceBuild.attestation }
         : {}),

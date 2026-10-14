@@ -100,6 +100,8 @@ export type RenderReport = {
   transcriptCheck?: TranscriptCheck;
   /** Shorts hook line status on the frame-0 title card (specs/render-quality-checks-spec.md). */
   hook?: "set" | "missing";
+  /** Present only when brand.motion rendered the title/end cards (specs/motion-cards-spec.md). */
+  motionCards?: { renderer: "hyperframes"; version: string };
 };
 
 /** Short stable content digest retained for report compatibility and scanning. */
@@ -151,6 +153,7 @@ export function buildRenderReport(o: {
   narration?: { shotId: string; timing: TimingSource }[];
   transcriptCheck?: TranscriptCheck;
   hook?: "set" | "missing";
+  motionCards?: { renderer: "hyperframes"; version: string };
 }): RenderReport {
   return {
     voice: reportVoice(o.voice),
@@ -174,6 +177,7 @@ export function buildRenderReport(o: {
     ...(o.narration && o.narration.length ? { narration: o.narration } : {}),
     ...(o.transcriptCheck ? { transcriptCheck: o.transcriptCheck } : {}),
     ...(o.hook ? { hook: o.hook } : {}),
+    ...(o.motionCards ? { motionCards: o.motionCards } : {}),
   };
 }
 

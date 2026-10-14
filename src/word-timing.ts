@@ -14,14 +14,19 @@ const MAX_JOIN = 4;
 const MIN_STEP = 0.05;
 const MIN_WIDTH = 0.01;
 
+/** How one run of script tokens was matched: `merged` tokens from `token` on cover timed words j..j+len-1. */
+export interface MatchLink { token: number; j: number; len: number; merged: number; }
+
 /**
- * Map timed words onto the script's OWN words (captions never show recognizer spelling),
- * interpolate words the timings missed between their neighbours, and expand to the
- * per-character alignment the caption builder consumes.
+ * Ordered, spelling-insensitive match of the script's words against timed (or heard) words.
+ * `matched[i]` says whether script token i found its place; `links` records how, for timing.
+ * When several alignments match equally many words, `preferSkip` leaves a script word unmatched
+ * rather than letting it steal a later sentence's heard words (right for omission checks).
  */
-export function alignScriptWords(text: string, timed: TimedWord[], durationSec: number): { alignment: Alignment; coverage: number } {
+export function matchScriptTokens(text: string, timed: { word: string }[], opts: { preferSkip?: boolean } = {}): { tokens: { word: string; index: number }[]; matched: boolean[]; links: MatchLink[] } {
   const tokens = [...text.matchAll(/\S+/g)].map((m) => ({ word: m[0], index: m.index! }));
-  const times: ({ start: number; end: number } | null)[] = tokens.map(() => null);
+  const matched: boolean[] = tokens.map(() => false);
+  const links: MatchLink[] = [];
 
   // Sequence alignment: maximize matched script tokens. The match is symmetric: one script
   // token may consume 1..MAX_JOIN joined timed words ("state-of-the-art" vs state,of,the,art),
@@ -68,24 +73,49 @@ export function alignScriptWords(text: string, timed: TimedWord[], durationSec: 
   let ci = 0, j = 0;
   while (ci < n && j < m) {
     const here = dp[ci * W + j]!;
+    if (opts.preferSkip && dp[(ci + 1) * W + j]! === here) { ci++; continue; }
     const len = joinLen(ci, j);
     const merged = mergeLen(ci, j);
     if (len && 1 + dp[(ci + 1) * W + j + len]! === here) {
-      times[cand[ci]!.i] = { start: timed[j]!.start, end: timed[j + len - 1]!.end };
+      matched[cand[ci]!.i] = true;
+      links.push({ token: cand[ci]!.i, j, len, merged: 1 });
       ci++; j += len;
     } else if (merged && merged + dp[(ci + merged) * W + j + 1]! === here) {
       // The merged script tokens share the timed word's span, split by character share.
-      const { start, end } = timed[j]!;
-      const total = tkeys[j]!.length;
-      let used = 0;
-      for (let q = 0; q < merged; q++) {
-        const share = cand[ci + q]!.k.length;
-        times[cand[ci + q]!.i] = { start: start + ((end - start) * used) / total, end: start + ((end - start) * (used + share)) / total };
-        used += share;
-      }
+      for (let q = 0; q < merged; q++) matched[cand[ci + q]!.i] = true;
+      links.push({ token: cand[ci]!.i, j, len: 1, merged });
       ci += merged; j++;
     } else if (dp[(ci + 1) * W + j]! === here) ci++;
     else j++;
+  }
+  return { tokens, matched, links };
+}
+
+/**
+ * Map timed words onto the script's OWN words (captions never show recognizer spelling),
+ * interpolate words the timings missed between their neighbours, and expand to the
+ * per-character alignment the caption builder consumes.
+ */
+export function alignScriptWords(text: string, timed: TimedWord[], durationSec: number): { alignment: Alignment; coverage: number } {
+  const { tokens, links } = matchScriptTokens(text, timed);
+  const times: ({ start: number; end: number } | null)[] = tokens.map(() => null);
+  const n = tokens.filter((t) => key(t.word)).length;
+  for (const l of links) {
+    if (l.merged === 1) {
+      times[l.token] = { start: timed[l.j]!.start, end: timed[l.j + l.len - 1]!.end };
+      continue;
+    }
+    // Merged script tokens (countable ones) share the timed word's span, split by character share.
+    const { start, end } = timed[l.j]!;
+    const total = key(timed[l.j]!.word).length;
+    const idx: number[] = [];
+    for (let q = l.token; idx.length < l.merged; q++) if (key(tokens[q]!.word)) idx.push(q);
+    let used = 0;
+    for (const q of idx) {
+      const share = key(tokens[q]!.word).length;
+      times[q] = { start: start + ((end - start) * used) / total, end: start + ((end - start) * (used + share)) / total };
+      used += share;
+    }
   }
   const coverage = times.filter(Boolean).length / (n || 1);
 

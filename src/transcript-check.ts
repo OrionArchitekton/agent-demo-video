@@ -1,30 +1,33 @@
+import { matchScriptTokens } from "./word-timing";
+
 /**
  * Transcript check (specs/render-quality-checks-spec.md S1): did the finished video SAY the script?
- * Comparison is on letters and digits only, by three-letter sequences, so "A.I." matches "AI" and
- * "Work Cue" matches "WorkCue". Advisory: recognizers mishear names and spelled numbers.
+ * Recognized words are matched to the narration words IN ORDER with the caption-timing
+ * matcher, so "A.I." matches "AI" and "log in" matches "login". Advisory: recognizers mishear names and spelled numbers.
  */
 export const MIN_HEARD = 0.7;
 
-const letters = (s: string): string => s.toLowerCase().normalize("NFD").replace(/\p{M}/gu, "").replace(/[^\p{L}\p{N}]/gu, "");
-
-function trigrams(s: string): string[] {
-  const out: string[] = [];
-  for (let i = 0; i + 3 <= s.length; i++) out.push(s.slice(i, i + 3));
-  return out;
-}
+const key = (w: string) => w.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
 
 /** Narration texts -> sentence-level phrases. */
 export function splitPhrases(narrations: string[]): string[] {
   return narrations.flatMap((n) => n.split(/(?<=[.!?])\s+/)).map((p) => p.trim()).filter(Boolean);
 }
 
-/** Phrases whose three-letter sequences mostly do not occur in the heard text. */
-export function droppedPhrases(phrases: string[], heard: string, minHeard = MIN_HEARD): string[] {
-  const heardSet = new Set(trigrams(letters(heard)));
-  return phrases.filter((p) => {
-    const t = trigrams(letters(p));
-    if (t.length === 0) return false;
-    const hit = t.filter((g) => heardSet.has(g)).length;
-    return hit / t.length < minHeard;
-  });
+/** Phrases fewer than `minHeard` of whose words were matched, in order, in the heard words. */
+export function droppedPhrases(phrases: string[], heardWords: string[], minHeard = MIN_HEARD): string[] {
+  const { tokens, matched } = matchScriptTokens(phrases.join(" "), heardWords.map((word) => ({ word })), { preferSkip: true });
+  const out: string[] = [];
+  let offset = 0, ti = 0;
+  for (const phrase of phrases) {
+    const from = offset, to = offset + phrase.length;
+    offset = to + 1;
+    let hit = 0, countable = 0;
+    while (ti < tokens.length && tokens[ti]!.index < to) {
+      if (tokens[ti]!.index >= from && key(tokens[ti]!.word)) { countable++; if (matched[ti]) hit++; }
+      ti++;
+    }
+    if (countable > 0 && hit / countable < minHeard) out.push(phrase);
+  }
+  return out;
 }

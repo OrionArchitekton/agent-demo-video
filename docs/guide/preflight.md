@@ -46,6 +46,8 @@ shots it could not adjudicate, so a finished video says for itself how it was ch
 The gate is fail-closed. Set `preflight: false` in the config, or pass `--no-preflight`
 for a single run, to decline it; a declined run says so in its output.
 
+## Production runs
+
 For a production attempt, pass `--out <new-directory>`. This per-run override
 atomically reserves the fresh output name and refuses an existing path before
 reading the script or changing an artifact. On a Linux filesystem under Linux

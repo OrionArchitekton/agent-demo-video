@@ -35,7 +35,7 @@ The script is a Markdown file. Each shot is a `### SHOT <id>` heading followed b
 | `highlight` | `selector` | Injects a highlight overlay. The selector must match **exactly one** element |
 | `chapter` | `label` or `text` | Shows a chapter card overlay |
 | `wait` | `ms` | Pauses for N milliseconds |
-| `scroll` | `selector` | Smoothly scrolls the element into view |
+| `scroll` | `selector` or `y` | Smoothly scrolls the element into view, or to a pixel offset |
 
 For `target: prebaked`, set `clip` to the path of an existing video file; no browser is launched for that shot.
 

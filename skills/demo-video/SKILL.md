@@ -100,9 +100,9 @@ Options worth knowing:
   `npx -y -p agent-demo-video@0.3.0 -p hyperframes@0.8.155 demo-video demo.config.json`.
 - Shots behind a login use `target: live` and need `capture.auth.loginUrl` and
   `capture.auth.loggedInSelector` in the config. Live capture refuses to run without the selector
-  unless the user deliberately sets `capture.auth.allowUnguardedLiveCapture`. The default login mode waits for a person to
-  press Enter, so the user runs `npx -y agent-demo-video@0.3.0 login demo.config.json` in their
-  own terminal, not Claude.
+  unless the user deliberately sets `capture.auth.allowUnguardedLiveCapture`. The default login
+  mode waits for a person to press Enter, so the user runs
+  `npx -y agent-demo-video@0.3.0 login demo.config.json` in their own terminal, not Claude.
 
 Full reference:
 https://github.com/OrionArchitekton/agent-demo-video/blob/master/docs/guide/config.md

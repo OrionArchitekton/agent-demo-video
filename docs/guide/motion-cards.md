@@ -20,7 +20,7 @@ without `motion` behaves exactly as before.
   Motion cards need Node 22.12 or newer; the tool itself still runs on Node 18 when motion is off.
   The first render may download a headless Chrome.
 - **Requirements check.** Before any browser, voice or capture work, the run checks that HyperFrames
-  is installed at exactly 0.8.155, that Node is 22 or newer, and that the cards can be built
+  is installed at exactly 0.8.155, that Node is 22.12 or newer, and that the cards can be built
   (an even, positive canvas size, a whole-number frame rate, cards up to 60 s). If anything is
   wrong the run stops and the message says how to fix it.
 - **Title card.** With a hook, the hook is fully visible from the first frame and only settles

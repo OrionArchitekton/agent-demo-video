@@ -43,6 +43,13 @@ describe("titleCardHtml", () => {
     expect(html).toMatch(/#title\s*\{[^}]*opacity:\s*0/);
     expect(html).toMatch(/#title\s*\{[^}]*animation:[^;]*reveal/);
   });
+  it("declares the configured font as a local @font-face so the renderer does not alias it or fetch Google Fonts", () => {
+    const face = '@font-face { font-family: "Arial"; src: local("Arial"); font-weight: 100 900; }';
+    expect(titleCardHtml(base)).toContain(face);
+    expect(endCardHtml({ ...base, url: "x.com" })).toContain(face);
+    expect(titleCardHtml(base).indexOf(face)).toBeLessThan(titleCardHtml(base).indexOf("html, body"));
+  });
+
   it("uses the configured colors and font", () => {
     const html = titleCardHtml(base);
     expect(html).toContain("#101418");

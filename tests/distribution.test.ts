@@ -58,3 +58,44 @@ describe("render-reviewer agent", () => {
     expect(md).toContain("UNCHECKED");
   });
 });
+
+describe("demo-video skill", () => {
+  const md = read("skills/demo-video/SKILL.md");
+  const fm = frontmatter(md);
+
+  it("has a when-to-use description", () => {
+    expect(fm.name).toBe("demo-video");
+    expect(fm.description).toMatch(/^Use when /);
+  });
+
+  it("names the prerequisites and runs the CLI pinned to the package version", () => {
+    for (const s of ["Node 18", "ffmpeg", "ffprobe", "npx playwright install chromium"]) {
+      expect(md).toContain(s);
+    }
+    expect(md).toContain(`npx -y agent-demo-video@${pkg.version} `);
+    const pins = [...md.matchAll(/agent-demo-video@(\d+\.\d+\.\d+)/g)].map((m) => m[1]);
+    expect(new Set(pins)).toEqual(new Set([pkg.version]));
+  });
+
+  it("sets the six-step order of work", () => {
+    const steps = [
+      "**Write the script and config.**",
+      "**Preflight.**",
+      "**Silent pass.**",
+      "**Review.**",
+      "**Narrated render.**",
+      "**Read the report.**",
+    ];
+    const at = steps.map((s) => md.indexOf(s));
+    for (const i of at) expect(i).toBeGreaterThan(-1);
+    expect([...at].sort((a, b) => a - b)).toEqual(at);
+    expect(md).toContain("render-reviewer");
+    expect(md).toContain("render-report.json");
+  });
+
+  it("explains the three voice choices", () => {
+    expect(md).toContain("ELEVENLABS_API_KEY");
+    expect(md).toContain('"provider": "command"');
+    expect(md).toContain("FAKE_TTS=1");
+  });
+});

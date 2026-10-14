@@ -50,8 +50,10 @@ export function filesUnder(dir: string): string[] {
   const out: string[] = [];
   for (const name of readdirSync(abs)) {
     const p = join(abs, name);
-    if (statSync(p).isDirectory()) out.push(...filesUnder(relative(root, p)));
-    else if (/\.(md|json|html|log)$/.test(name)) out.push(relative(root, p));
+    // `out` holds git-ignored render output, never public files.
+    if (statSync(p).isDirectory()) {
+      if (name !== "out") out.push(...filesUnder(relative(root, p)));
+    } else if (/\.(md|json|html|log)$/.test(name)) out.push(relative(root, p));
   }
   return out.sort();
 }

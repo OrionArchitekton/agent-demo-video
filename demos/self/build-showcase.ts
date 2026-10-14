@@ -47,6 +47,20 @@ export function sanitizeLog(text: string, repoRoot: string, home: string): strin
   });
 }
 
+/**
+ * Only the report fields the showcase reads. The full report records the voice setup exactly as
+ * configured, which must never be committed, so assets are always written through this.
+ */
+export function trimReport(r: Record<string, any>): ReportLike {
+  const out: ReportLike = {};
+  if (r.ttsMode !== undefined) out.ttsMode = r.ttsMode;
+  if (r.hook !== undefined) out.hook = r.hook;
+  if (r.transcriptCheck !== undefined) out.transcriptCheck = r.transcriptCheck;
+  if (r.deliverable !== undefined) out.deliverable = { ok: r.deliverable.ok, problems: r.deliverable.problems };
+  if (r.motionCards !== undefined) out.motionCards = { renderer: r.motionCards.renderer, version: r.motionCards.version };
+  return out;
+}
+
 export function checksFrom(r: ReportLike): Check[] {
   const t = r.transcriptCheck;
   const transcript = !t
@@ -76,29 +90,55 @@ export function checksFrom(r: ReportLike): Check[] {
 const CSS = `
 :root { --bg: #0f1419; --panel: #182029; --ink: #e8edf2; --muted: #93a1b0; --accent: #4fb3a9; }
 * { box-sizing: border-box; }
-body { margin: 0; background: var(--bg); color: var(--ink); font: 22px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
-section { display: none; max-width: 1500px; margin: 56px auto; padding: 0 48px; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 24px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+/* The tool frames the page as a window and burns captions over its lower part, so every view
+   keeps its content in the upper part of the viewport. */
+section { display: none; max-width: 1500px; margin: 40px auto 0; padding: 0 48px; }
 section:target { display: block; }
 body:not(:has(section:target)) #script { display: block; }
-h2 { font-size: 44px; margin: 0 0 8px; }
-.sub { color: var(--muted); margin: 0 0 28px; }
-pre { margin: 0; padding: 28px 32px; background: var(--panel); border-radius: 14px; font: 21px/1.55 ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; white-space: pre-wrap; }
-#script pre { font-size: 17px; line-height: 1.4; padding: 20px 28px; }
-#run pre .line { display: block; min-height: 1.55em; opacity: 0; animation: show 0.2s ease forwards; }
+h2 { font-size: 48px; margin: 0 0 6px; }
+.sub { color: var(--muted); margin: 0 0 22px; font-size: 24px; }
+pre { margin: 0; padding: 24px 30px; background: var(--panel); border-radius: 14px; font: 21px/1.5 ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; white-space: pre-wrap; }
+#script pre { column-count: 2; column-gap: 48px; }
+#run pre { font-size: 24px; line-height: 1.4; }
+#run pre .line { display: block; min-height: 1.4em; opacity: 0; animation: show 0.2s ease forwards; }
 @keyframes show { to { opacity: 1; } }
-.cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin-bottom: 28px; }
-.card { background: var(--panel); border-radius: 14px; padding: 22px 26px; }
-.card .label { color: var(--muted); font-size: 18px; }
+#install { margin-top: 70px; }
+#install pre { font-size: 34px; line-height: 1.6; margin-bottom: 32px; }
+#install .sub { font-size: 30px; }
+.cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 20px; }
+.card { background: var(--panel); border-radius: 14px; padding: 16px 24px; }
+.card .label { color: var(--muted); font-size: 20px; }
 .card .value { font-size: 28px; font-weight: 700; color: var(--accent); }
-img.sheet { width: 100%; border-radius: 14px; }
+img.sheet { display: block; margin: 0 auto; max-width: 100%; max-height: 36vh; border-radius: 14px; }
 `;
 
 const MAX_LINES = 24;
 const LEAD_IN_SEC = 1.5;
 const REPLAY_SEC = 7;
 
+const NUMBER_WORDS = ["zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine"];
+
+/**
+ * The part of the script the page shows: everything before shot `shown + 1`, verbatim, then one
+ * line naming the shots left out. Built from the script so it cannot drift from it.
+ */
+export function scriptExcerpt(
+  script: string,
+  shown = 3,
+): { shown: string; remaining: string[]; text: string } {
+  const heads = [...script.matchAll(/^### SHOT (\S+)/gm)];
+  const body = (t: string): string => t.replace(/\s+$/, "");
+  if (heads.length <= shown) return { shown: body(script), remaining: [], text: body(script) };
+  const head = body(script.slice(0, heads[shown]!.index));
+  const remaining = heads.slice(shown).map((m) => m[1]!);
+  const n = remaining.length;
+  const line = `(and ${NUMBER_WORDS[n] ?? String(n)} more shot${n === 1 ? "" : "s"}: ${remaining.join(", ")})`;
+  return { shown: head, remaining, text: `${head}\n\n${line}` };
+}
+
 export function buildShowcase(i: ShowcaseInputs): string {
-  const all = i.runLog.replace(/\n+$/, "").split("\n");
+  const all = i.runLog.replace(/^\n+/, "").replace(/\n+$/, "").split("\n");
   const lines = all.slice(-MAX_LINES);
   const truncated = all.length > MAX_LINES;
   // The animation starts at page load, before recording settles, so lead in; then spread the lines.
@@ -121,16 +161,16 @@ export function buildShowcase(i: ShowcaseInputs): string {
 <section id="script">
 <h2>The script</h2>
 <p class="sub">Every shot: a heading, one line of narration, and the clicks to perform.</p>
-<pre data-testid="script-text">${esc(i.script)}</pre>
+<pre data-testid="script-text">${esc(scriptExcerpt(i.script).text)}</pre>
 </section>
 <section id="run">
 <h2>The run</h2>
-<p class="sub">A real run of this script, replayed${truncated ? " (the last 24 lines)" : ""}.</p>
+<p class="sub">A real run of this script, replayed${truncated ? " (the last 24 lines)" : ""}. Notices are the tool explaining what it adjusted.</p>
 <pre data-testid="run-log">${run}</pre>
 </section>
 <section id="checks">
 <h2>The checks</h2>
-<p class="sub">From the render report of this video's previous render.</p>
+<p class="sub">From the render report and contact sheet of an earlier render of this script.</p>
 <div class="cards">
 ${cards}
 </div>

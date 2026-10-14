@@ -5,11 +5,12 @@ import { resolve } from "node:path";
 import { loadConfig } from "../src/config";
 import { parseScript } from "../src/parse-script";
 import { resolveSelectorFindings, structuralFindings } from "../src/preflight";
-import { findPrivateStrings } from "./support/distribution";
-import { buildShowcase, checksFrom, committedInputs, sanitizeLog } from "../demos/self/build-showcase";
+import { filesUnder, findPrivateStrings } from "./support/distribution";
+import { buildShowcase, checksFrom, committedInputs, sanitizeLog, scriptExcerpt, trimReport } from "../demos/self/build-showcase";
 
 const root = process.cwd();
 const read = (p: string) => readFileSync(resolve(root, p), "utf8");
+const ABSOLUTE_PATH = /(?<![\w.~-])\/(home|Users|tmp|mnt|root|var|private|opt|srv)\//;
 
 describe("self-demo preflight", () => {
   it("every shot passes the selector gate offline with no finding at all", async () => {
@@ -119,9 +120,41 @@ describe("showcase generator", () => {
     expect(short).not.toContain("the last 24 lines");
   });
 
-  it("sets the script smaller so all seven shots fit one frame", () => {
+  it("shows the first three shots verbatim, then counts the rest from the script", () => {
+    const script = [
+      "# title",
+      "### SHOT one\n- narration: a",
+      "### SHOT two\n- narration: b",
+      "### SHOT three\n- narration: c",
+      "### SHOT four\n- narration: d",
+      "### SHOT five\n- narration: <e>",
+    ].join("\n\n") + "\n";
+    const ex = scriptExcerpt(script);
+    expect(script.startsWith(ex.shown)).toBe(true);
+    expect(ex.shown).toContain("### SHOT three");
+    expect(ex.shown).not.toContain("### SHOT four");
+    expect(ex.remaining).toEqual(["four", "five"]);
+    expect(ex.text).toBe(`${ex.shown}\n\n(and two more shots: four, five)`);
+    const html = buildShowcase({ script, runLog: "x", report, version: "0.3.0" });
+    expect(html).toContain("(and two more shots: four, five)");
+    expect(html).not.toContain("narration: d");
+    expect(scriptExcerpt("### SHOT a\n- x\n").text).toBe("### SHOT a\n- x");
+  });
+
+  it("the committed script excerpt ends with the four later shots by name", () => {
+    const ex = scriptExcerpt(read("demos/self/DEMO_SCRIPT.md"));
+    expect(ex.text.endsWith("(and four more shots: script, run, checks, install)")).toBe(true);
+  });
+
+  it("explains the notices in the run subheading and the checks source honestly", () => {
     const html = buildShowcase({ script: "s", runLog: "x", report, version: "0.3.0" });
-    expect(html).toMatch(/#script pre \{[^}]*font-size: 17px/);
+    expect(html).toContain("A real run of this script, replayed. Notices are the tool explaining what it adjusted.");
+    expect(html).toContain("From the render report and contact sheet of an earlier render of this script.");
+  });
+
+  it("keeps the contact sheet short enough to sit above the captions", () => {
+    const html = buildShowcase({ script: "s", runLog: "x", report, version: "0.3.0" });
+    expect(html).toMatch(/img\.sheet \{[^}]*max-height: 36vh/);
   });
 
   it("shows the script view when opened with no hash", () => {
@@ -133,14 +166,13 @@ describe("showcase generator", () => {
 describe("self-demo files", () => {
   it("the committed showcase is exactly what the generator builds", () => {
     expect(read("demos/self/showcase.html")).toBe(buildShowcase(committedInputs()));
-    expect(read("demos/self/showcase.html")).toBe(buildShowcase(committedInputs(root)));
   });
 
   it("the run log and report name no absolute paths", () => {
     for (const f of ["demos/self/assets/run.log", "demos/self/assets/report.json"]) {
       const body = read(f);
       expect(findPrivateStrings(body), f).toEqual([]);
-      expect(body, f).not.toMatch(/(^|[\s"'(=])\/(home|Users|tmp|mnt|root|var)\//m);
+      expect(body, f).not.toMatch(ABSOLUTE_PATH);
     }
   });
 
@@ -161,5 +193,55 @@ describe("self-demo files", () => {
   it("has seven shots in order", () => {
     const ids = [...read("demos/self/DEMO_SCRIPT.md").matchAll(/^### SHOT (\S+)/gm)].map((m) => m[1]);
     expect(ids).toEqual(["checklist", "name-release", "ship", "script", "run", "checks", "install"]);
+  });
+});
+
+describe("committed assets", () => {
+  it("the absolute-path check catches the shapes a log can hold", () => {
+    for (const bad of ["file:///tmp/x", "at :/tmp/x", "[/var/x", "/private/var/x", "x /home/u/y", '"/opt/x/']) {
+      expect(bad, bad).toMatch(ABSOLUTE_PATH);
+    }
+    for (const ok of ["./demos/x", "~/x", "a/tmp/x", "https://example.com/tmp/x"]) {
+      expect(ok, ok).not.toMatch(ABSOLUTE_PATH);
+    }
+  });
+
+  it("the report holds only the fields the showcase reads, and never the voice setup", () => {
+    const report = JSON.parse(read("demos/self/assets/report.json")) as Record<string, unknown>;
+    const allowed = ["ttsMode", "hook", "transcriptCheck", "deliverable", "motionCards"];
+    expect(Object.keys(report).filter((k) => !allowed.includes(k))).toEqual([]);
+    expect(report).not.toHaveProperty("voice");
+    expect(Object.keys(report.deliverable as object).sort()).toEqual(["ok", "problems"]);
+  });
+
+  it("trimReport keeps only what the showcase reads", () => {
+    const full = {
+      ttsMode: "real",
+      voice: { anything: "configured" },
+      hook: "set",
+      transcriptCheck: { ran: false, reason: "r" },
+      deliverable: { ok: true, problems: [], extra: 1 },
+      motionCards: { renderer: "x", version: "1", more: 2 },
+      segments: [1],
+    };
+    expect(trimReport(full)).toEqual({
+      ttsMode: "real",
+      hook: "set",
+      transcriptCheck: { ran: false, reason: "r" },
+      deliverable: { ok: true, problems: [] },
+      motionCards: { renderer: "x", version: "1" },
+    });
+    expect(trimReport({ ttsMode: "fake" })).toEqual({ ttsMode: "fake" });
+  });
+
+  it("demos/self contributes exactly the expected public files, never render output", () => {
+    expect(filesUnder("demos/self")).toEqual([
+      "demos/self/DEMO_SCRIPT.md",
+      "demos/self/app.html",
+      "demos/self/assets/report.json",
+      "demos/self/assets/run.log",
+      "demos/self/demo.config.json",
+      "demos/self/showcase.html",
+    ]);
   });
 });

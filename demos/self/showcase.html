@@ -7,21 +7,27 @@
 <style>
 :root { --bg: #0f1419; --panel: #182029; --ink: #e8edf2; --muted: #93a1b0; --accent: #4fb3a9; }
 * { box-sizing: border-box; }
-body { margin: 0; background: var(--bg); color: var(--ink); font: 22px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
-section { display: none; max-width: 1500px; margin: 56px auto; padding: 0 48px; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 24px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+/* The tool frames the page as a window and burns captions over its lower part, so every view
+   keeps its content in the upper part of the viewport. */
+section { display: none; max-width: 1500px; margin: 40px auto 0; padding: 0 48px; }
 section:target { display: block; }
 body:not(:has(section:target)) #script { display: block; }
-h2 { font-size: 44px; margin: 0 0 8px; }
-.sub { color: var(--muted); margin: 0 0 28px; }
-pre { margin: 0; padding: 28px 32px; background: var(--panel); border-radius: 14px; font: 21px/1.55 ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; white-space: pre-wrap; }
-#script pre { font-size: 17px; line-height: 1.4; padding: 20px 28px; }
-#run pre .line { display: block; min-height: 1.55em; opacity: 0; animation: show 0.2s ease forwards; }
+h2 { font-size: 48px; margin: 0 0 6px; }
+.sub { color: var(--muted); margin: 0 0 22px; font-size: 24px; }
+pre { margin: 0; padding: 24px 30px; background: var(--panel); border-radius: 14px; font: 21px/1.5 ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; white-space: pre-wrap; }
+#script pre { column-count: 2; column-gap: 48px; }
+#run pre { font-size: 24px; line-height: 1.4; }
+#run pre .line { display: block; min-height: 1.4em; opacity: 0; animation: show 0.2s ease forwards; }
 @keyframes show { to { opacity: 1; } }
-.cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin-bottom: 28px; }
-.card { background: var(--panel); border-radius: 14px; padding: 22px 26px; }
-.card .label { color: var(--muted); font-size: 18px; }
+#install { margin-top: 70px; }
+#install pre { font-size: 34px; line-height: 1.6; margin-bottom: 32px; }
+#install .sub { font-size: 30px; }
+.cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 20px; }
+.card { background: var(--panel); border-radius: 14px; padding: 16px 24px; }
+.card .label { color: var(--muted); font-size: 20px; }
 .card .value { font-size: 28px; font-weight: 700; color: var(--accent); }
-img.sheet { width: 100%; border-radius: 14px; }
+img.sheet { display: block; margin: 0 auto; max-width: 100%; max-height: 36vh; border-radius: 14px; }
 </style>
 </head>
 <body>
@@ -58,43 +64,16 @@ img.sheet { width: 100%; border-radius: 14px; }
 - action: click selector=&quot;[data-testid=ship]&quot;
 - action: wait ms=1200
 
-### SHOT script
-- target: dashboard
-- narration: None of that was recorded by hand. It came from this script: each shot is a heading, one line of narration, and the clicks to perform.
-- action: goto url=&quot;/showcase.html#script&quot;
-- action: highlight selector=&quot;[data-testid=script-text]&quot;
-- action: wait ms=1500
-
-### SHOT run
-- target: dashboard
-- narration: One command turned the script into the video. The voice comes first, and its timing sets the pace for the recording and the captions.
-- action: goto url=&quot;/showcase.html#run&quot;
-- action: wait ms=3000
-
-### SHOT checks
-- target: dashboard
-- narration: Then the tool checks its own work. It listens back to the narration, confirms the first frame carries the hook, verifies the video file, and lays out a contact sheet of every shot.
-- action: goto url=&quot;/showcase.html#checks&quot;
-- action: highlight selector=&quot;[data-testid=check-transcript]&quot;
-- action: highlight selector=&quot;[data-testid=contact-sheet]&quot;
-- action: wait ms=1000
-
-### SHOT install
-- target: dashboard
-- narration: To make one for your own app, add it to Claude Code as a plugin, or run it from a terminal. The video you just watched made itself.
-- action: goto url=&quot;/showcase.html#install&quot;
-- action: highlight selector=&quot;[data-testid=install-plugin]&quot;
-- action: wait ms=1500
-</pre>
+(and four more shots: script, run, checks, install)</pre>
 </section>
 <section id="run">
 <h2>The run</h2>
-<p class="sub">A real run of this script, replayed.</p>
-<pre data-testid="run-log"><span class="line" style="animation-delay:1.50s"></span><span class="line" style="animation-delay:2.20s">&gt; agent-demo-video@0.3.0 demo .</span><span class="line" style="animation-delay:2.90s">&gt; tsx src/cli.ts &quot;demos/self/demo.config.json&quot;</span><span class="line" style="animation-delay:3.60s"></span><span class="line" style="animation-delay:4.30s">[agent-demo-video] shot &quot;checklist&quot;: prebaked clip (7.57s) is shorter than its narration (7.60s); froze the last frame to extend it to 7.63s so the voiceover is not truncated.</span><span class="line" style="animation-delay:5.00s">[agent-demo-video] shot &quot;name-release&quot;: prebaked clip (9.80s) is shorter than its narration (9.88s); froze the last frame to extend it to 9.90s so the voiceover is not truncated.</span><span class="line" style="animation-delay:5.70s">[agent-demo-video] shot &quot;script&quot;: prebaked clip (9.80s) is shorter than its narration (9.88s); froze the last frame to extend it to 9.90s so the voiceover is not truncated.</span><span class="line" style="animation-delay:6.40s">[agent-demo-video] shot &quot;checks&quot;: prebaked clip (12.47s) is shorter than its narration (12.54s); froze the last frame to extend it to 12.57s so the voiceover is not truncated.</span><span class="line" style="animation-delay:7.10s">[agent-demo-video] shot &quot;install&quot;: prebaked clip (10.60s) is shorter than its narration (10.64s); froze the last frame to extend it to 10.67s so the voiceover is not truncated.</span><span class="line" style="animation-delay:7.80s">✓ wrote ./demos/self/out/final.mp4 (71.5s, 9 segments)</span></pre>
+<p class="sub">A real run of this script, replayed. Notices are the tool explaining what it adjusted.</p>
+<pre data-testid="run-log"><span class="line" style="animation-delay:1.50s">&gt; agent-demo-video@0.3.0 demo .</span><span class="line" style="animation-delay:2.20s">&gt; tsx src/cli.ts &quot;demos/self/demo.config.json&quot;</span><span class="line" style="animation-delay:2.90s"></span><span class="line" style="animation-delay:3.60s">[agent-demo-video] shot &quot;checklist&quot;: prebaked clip (7.57s) is shorter than its narration (7.60s); froze the last frame to extend it to 7.63s so the voiceover is not truncated.</span><span class="line" style="animation-delay:4.30s">[agent-demo-video] shot &quot;name-release&quot;: prebaked clip (9.80s) is shorter than its narration (9.88s); froze the last frame to extend it to 9.90s so the voiceover is not truncated.</span><span class="line" style="animation-delay:5.00s">[agent-demo-video] shot &quot;script&quot;: prebaked clip (9.80s) is shorter than its narration (9.88s); froze the last frame to extend it to 9.90s so the voiceover is not truncated.</span><span class="line" style="animation-delay:5.70s">[agent-demo-video] shot &quot;run&quot;: prebaked clip (9.07s) is shorter than its narration (9.12s); froze the last frame to extend it to 9.17s so the voiceover is not truncated.</span><span class="line" style="animation-delay:6.40s">[agent-demo-video] shot &quot;checks&quot;: prebaked clip (12.47s) is shorter than its narration (12.54s); froze the last frame to extend it to 12.57s so the voiceover is not truncated.</span><span class="line" style="animation-delay:7.10s">[agent-demo-video] shot &quot;install&quot;: prebaked clip (10.60s) is shorter than its narration (10.64s); froze the last frame to extend it to 10.67s so the voiceover is not truncated.</span><span class="line" style="animation-delay:7.80s">✓ wrote ./demos/self/out/final.mp4 (70.3s, 9 segments)</span></pre>
 </section>
 <section id="checks">
 <h2>The checks</h2>
-<p class="sub">From the render report of this video's previous render.</p>
+<p class="sub">From the render report and contact sheet of an earlier render of this script.</p>
 <div class="cards">
 <div class="card" data-testid="check-transcript"><div class="label">Transcript check</div><div class="value">not run (no voice.aligner configured)</div></div>
 <div class="card" data-testid="check-hook"><div class="label">Hook on the first frame</div><div class="value">set</div></div>

@@ -6,7 +6,7 @@ import { headlessBrowserEnv } from "../browser-env";
 
 /**
  * Lines the HyperFrames CLI may print while still exiting 0 on a render that is wrong
- * (a missing font, a page script error, a blocked resource). The estate's proven render
+ * (a missing font, a page script error, a blocked resource). A proven render setup
  * treats any of them as a failed render. The one exception is the CLI's routine
  * "Continuing render despite lint issues" notice: lint warnings are non-blocking
  * and it prints that line on every render of a CSS-only card.

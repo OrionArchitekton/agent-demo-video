@@ -1,0 +1,13 @@
+{
+  "name": "agent-demo-video",
+  "version": "0.3.0",
+  "description": "Make narrated, captioned demo videos of web apps from a script, headless. Adds a demo-video skill and a read-only render-reviewer agent.",
+  "author": {
+    "name": "Dan Mercede",
+    "url": "https://www.danmercede.com"
+  },
+  "homepage": "https://github.com/OrionArchitekton/agent-demo-video",
+  "repository": "https://github.com/OrionArchitekton/agent-demo-video",
+  "license": "MIT",
+  "keywords": ["demo-video", "screencast", "playwright", "ffmpeg", "tts", "captions"]
+}

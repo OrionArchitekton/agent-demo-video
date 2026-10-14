@@ -1,0 +1,18 @@
+{
+  "name": "agent-demo-video",
+  "owner": {
+    "name": "Dan Mercede",
+    "url": "https://www.danmercede.com"
+  },
+  "metadata": {
+    "description": "agent-demo-video for Claude Code: narrated, captioned demo videos of web apps."
+  },
+  "plugins": [
+    {
+      "name": "agent-demo-video",
+      "source": "./",
+      "description": "Make narrated, captioned demo videos of web apps from a script, headless.",
+      "version": "0.3.0"
+    }
+  ]
+}

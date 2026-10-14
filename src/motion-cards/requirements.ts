@@ -2,8 +2,9 @@ import { createRequire } from "node:module";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
-/** specs/motion-cards-spec.md S5: motion cards need the optional hyperframes package and Node 22+. */
+/** specs/motion-cards-spec.md S5: motion cards need the optional hyperframes package and Node 22.12+. */
 export const MIN_NODE_MAJOR = 22;
+export const MIN_NODE_MINOR = 12;
 /** The one HyperFrames version motion cards are built and tested against; any other is rejected. */
 export const HYPERFRAMES_VERSION = "0.8.155";
 const INSTALL_HINT = `install it next to agent-demo-video: npm install hyperframes@${HYPERFRAMES_VERSION}`;
@@ -29,8 +30,9 @@ const defaultProbes = (): Probes => {
 
 export function checkMotionRequirements(probes: Probes = defaultProbes()): MotionRequirements {
   const problems: string[] = [];
-  const major = Number(probes.nodeVersion.replace(/^v/, "").split(".")[0]);
-  if (!(major >= MIN_NODE_MAJOR)) problems.push(`brand.motion needs Node ${MIN_NODE_MAJOR} or newer (running ${probes.nodeVersion})`);
+  const [major, minor] = probes.nodeVersion.replace(/^v/, "").split(".").map(Number);
+  const nodeOk = major > MIN_NODE_MAJOR || (major === MIN_NODE_MAJOR && minor >= MIN_NODE_MINOR);
+  if (!nodeOk) problems.push(`brand.motion needs Node ${MIN_NODE_MAJOR}.${MIN_NODE_MINOR} or newer (running ${probes.nodeVersion})`);
   let pkg: string | undefined;
   try { pkg = probes.resolvePackageJson(); } catch {
     problems.push(`brand.motion needs the optional "hyperframes" package: hyperframes is not installed; ${INSTALL_HINT}`);

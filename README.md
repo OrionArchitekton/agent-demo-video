@@ -532,7 +532,7 @@ without `motion` behaves exactly as before.
   npm install hyperframes@0.8.155
   ```
 
-  Motion cards need Node 22 or newer; the tool itself still runs on Node 18 when motion is off.
+  Motion cards need Node 22.12 or newer; the tool itself still runs on Node 18 when motion is off.
   The first render may download a headless Chrome.
 - **Requirements check.** Before any browser, voice or capture work, the run checks that HyperFrames
   is installed at exactly 0.8.155, that Node is 22 or newer, and that the cards can be built
@@ -547,7 +547,7 @@ without `motion` behaves exactly as before.
   (`theme.captionFont`), through a local font face, so no web fonts are fetched. The hook and the
   large titles are drawn bold.
 - **Rendering.** HyperFrames runs its own headless browser, which it may need to download on a
-  clean machine the first time it renders. Node 22+ and ffmpeg are required. HyperFrames
+  clean machine the first time it renders. Node 22.12+ and ffmpeg are required. HyperFrames
   telemetry, update checks and auto-install are turned off for these renders. On a timeout or an
   interrupt, HyperFrames is asked to shut down its browser and encoder before it is killed.
 - **Failures.** A missing or different HyperFrames version, an old Node, card settings motion cards

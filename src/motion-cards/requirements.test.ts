@@ -2,12 +2,12 @@ import { describe, it, expect } from "vitest";
 import { checkMotionRequirements, HYPERFRAMES_VERSION } from "./requirements";
 
 describe("checkMotionRequirements", () => {
-  it("passes with the package present and Node 22+", () => {
-    const r = checkMotionRequirements({ resolvePackageJson: () => "/x/node_modules/hyperframes/package.json", readVersion: () => "0.8.155", nodeVersion: "v22.3.0" });
+  it("passes with the package present and Node 22.12+", () => {
+    const r = checkMotionRequirements({ resolvePackageJson: () => "/x/node_modules/hyperframes/package.json", readVersion: () => "0.8.155", nodeVersion: "v22.12.0" });
     expect(r).toEqual({ ok: true, hyperframesBin: "/x/node_modules/hyperframes/bin/hyperframes.mjs", version: "0.8.155" });
   });
   it("names a missing package and how to install it next to agent-demo-video", () => {
-    const r = checkMotionRequirements({ resolvePackageJson: () => { throw new Error("Cannot find module"); }, readVersion: () => "", nodeVersion: "v22.3.0" });
+    const r = checkMotionRequirements({ resolvePackageJson: () => { throw new Error("Cannot find module"); }, readVersion: () => "", nodeVersion: "v22.12.0" });
     expect(r).toEqual({
       ok: false,
       problems: ['brand.motion needs the optional "hyperframes" package: hyperframes is not installed; install it next to agent-demo-video: npm install hyperframes@0.8.155'],
@@ -16,7 +16,7 @@ describe("checkMotionRequirements", () => {
   });
   it("rejects any hyperframes version other than the pinned one", () => {
     expect(HYPERFRAMES_VERSION).toBe("0.8.155");
-    const r = checkMotionRequirements({ resolvePackageJson: () => "/x/node_modules/hyperframes/package.json", readVersion: () => "0.9.0", nodeVersion: "v22.3.0" });
+    const r = checkMotionRequirements({ resolvePackageJson: () => "/x/node_modules/hyperframes/package.json", readVersion: () => "0.9.0", nodeVersion: "v22.12.0" });
     expect(r).toEqual({
       ok: false,
       problems: ["brand.motion needs hyperframes 0.8.155 (found 0.9.0); install it next to agent-demo-video: npm install hyperframes@0.8.155"],
@@ -25,6 +25,14 @@ describe("checkMotionRequirements", () => {
   it("names an old Node", () => {
     const r = checkMotionRequirements({ resolvePackageJson: () => "/x/node_modules/hyperframes/package.json", readVersion: () => "0.8.155", nodeVersion: "v20.11.1" });
     expect(r.ok).toBe(false);
-    expect(JSON.stringify(r)).toMatch(/Node 22 or newer/);
+    expect(JSON.stringify(r)).toMatch(/Node 22\.12 or newer/);
+  });
+  it("requires Node 22.12 or newer (the HyperFrames browser installer needs it)", () => {
+    const run = (nodeVersion: string) => checkMotionRequirements({ resolvePackageJson: () => "/x/node_modules/hyperframes/package.json", readVersion: () => "0.8.155", nodeVersion });
+    expect(run("v22.11.0").ok).toBe(false);
+    expect(JSON.stringify(run("v22.11.0"))).toContain("brand.motion needs Node 22.12 or newer (running v22.11.0)");
+    expect(run("v22.12.0").ok).toBe(true);
+    expect(run("v23.0.0").ok).toBe(true);
+    expect(run("v20.11.1").ok).toBe(false);
   });
 });

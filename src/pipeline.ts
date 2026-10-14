@@ -1058,7 +1058,7 @@ export async function runPipeline(config: DemoConfig, opts: RunPipelineOpts = {}
   const scriptSha256 = digestFull(md);
 
   // Motion cards need valid card values, the optional hyperframes package at
-  // its pinned version, and Node 22+; fail before any capture or spend rather
+  // its pinned version, and Node 22.12+; fail before any capture or spend rather
   // than mid-render. The card values are checked first: they depend only on
   // the config, not on this machine.
   let motion: ReturnType<typeof checkMotionRequirements> | undefined;

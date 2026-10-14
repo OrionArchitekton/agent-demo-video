@@ -1001,7 +1001,7 @@ describe("Factory AI at Work Gate 1 production pack", () => {
       ),
     );
     expect(run(wrongGeometryPath).status).not.toBe(0);
-  });
+  }, 180_000); // ~28 s alone, over 60 s under full-suite load
 
   it("promotes only a closed read-only file set and detects later mutations or additions", async () => {
     const promoterSource = readFileSync(ATTEMPT_PROMOTER, "utf8");

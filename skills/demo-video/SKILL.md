@@ -35,8 +35,9 @@ Follow this order. Each step is cheap compared with the one after it.
    one or two plain sentences; the narration length sets the shot length. Every pass runs each
    action against the app for real, so point the demo at a test account or sandbox data, and only
    script clicks and typing that are safe to repeat (no real sends, payments or deletions).
-2. **Preflight.** Every render starts with a fail-closed selector gate: each action's selector is
-   checked against the app before anything is generated. `click`, `type`, `scroll` and
+2. **Preflight.** Unless it is turned off (`preflight: false` or `--no-preflight`), every render
+   starts with a fail-closed selector gate: each action's selector is checked against the app
+   before anything is generated. `click`, `type`, `scroll` and
    `highlight` selectors must match exactly one element; `hover` may match several. Some selectors
    can only be reported, not proven: shots with `target: live`, selectors that follow an earlier
    `click`, `type` or `hover` in the same shot (the gate runs no actions), and pages that had not

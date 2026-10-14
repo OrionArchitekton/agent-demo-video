@@ -5,7 +5,7 @@ This is the executable production pack for:
 `How to Use Claude Cowork on Windows (Step-by-Step Tutorial)`
 
 It contains one landscape master and three portrait cuts selected in the
-approved episode script. The configs pin Dan's approved cloned voice and the
+approved episode script. The configs pin the approved narration voice and the
 channel palette. The manifests use only operator-supplied prebaked footage
 because Windows setup dialogs, Claude Desktop, File Explorer, a physical
 laptop, and a phone cannot be reproduced honestly by the headless Linux
@@ -82,7 +82,7 @@ The approved source carries per-block delivery cues. The current pipeline pins
 one voice parameter set for the whole render, so those cues remain human
 listening criteria rather than a machine-enforced config field. The production
 receipt requires an end-to-end final-mix playback and a disposition for every
-block. If the clone delivers a block flat, adjust the spoken punctuation or
+block. If the voice delivers a block flat, adjust the spoken punctuation or
 split and review the voice take; do not silently rotate voices or models.
 
 The claim ledger was refreshed against live Anthropic documentation on

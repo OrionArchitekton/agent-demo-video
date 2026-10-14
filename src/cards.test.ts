@@ -105,6 +105,14 @@ describe("hookLayout fit guarantee", () => {
   it("keeps the base size for ordinary mixed-case text", () => {
     expect(hookLayout(1080, 1920, "Stop pasting client secrets into AI chats").fontSize).toBe(base);
   });
+  it("terminates on a small frame whose floor is below 10 px", { timeout: 2000 }, () => {
+    const hook = "#StopPastingClientSecretsIntoAIChatsAndDiffTheResultToday";
+    const l = hookLayout(320, 180, hook);
+    const floor = Math.round(180 * 0.035);
+    expect(l.lines).toEqual([hook]);
+    expect(l.fontSize).toBeGreaterThanOrEqual(floor);
+    expect(estimateTextWidth(hook, l.fontSize) <= 0.9 * 320 || l.fontSize === floor).toBe(true);
+  });
 });
 describe("titleCardArgs with a hook", () => {
   const P = { ...O, width: 1080, height: 1920, hook: "Stop pasting client secrets into AI chats" };

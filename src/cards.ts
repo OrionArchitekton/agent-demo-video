@@ -101,7 +101,7 @@ function wrapByWidth(text: string, fontSize: number, maxWidth: number): string[]
 
 /**
  * Hook font size and lines. Starts large (7.5% of height on portrait, 8.5% on
- * landscape) and shrinks 5% at a time (floor 3.5% of height) until every
+ * landscape) and shrinks about 5% (at least 1 px) at a time (floor 3.5% of height) until every
  * wrapped line is estimated to fit 90% of the width and the block is at most half the height. At the floor the result
  * is accepted: a single giant word may still overflow (documented limit).
  */
@@ -114,7 +114,9 @@ export function hookLayout(width: number, height: number, hook: string): { fontS
     const widest = Math.max(...lines.map((l) => estimateTextWidth(l, fontSize)));
     const blockH = lines.length * Math.round(fontSize * 1.2);
     if ((widest <= maxWidth && blockH <= height * 0.5) || fontSize <= floor) return { fontSize, lines };
-    fontSize = Math.max(floor, Math.round(fontSize * 0.95));
+    // Strictly decreasing (at least 1 px per step, so rounding cannot stall it) and clamped
+    // at the floor: the size reaches the floor within (start - floor) steps and the loop ends.
+    fontSize = Math.max(floor, Math.min(fontSize - 1, Math.round(fontSize * 0.95)));
   }
 }
 

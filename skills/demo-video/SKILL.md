@@ -14,7 +14,7 @@ Everything runs headless from a config file.
 Check these before the first render and tell the user what is missing:
 
 - Node 18 or newer (`node --version`). Motion cards need Node 22.12 or newer.
-- ffmpeg and ffprobe on `PATH` (`ffmpeg -version`).
+- ffmpeg 5.1 or newer and ffprobe on `PATH` (`ffmpeg -version`).
 - The capture browser, installed once: `npx playwright install chromium`.
 - The app to record is running and reachable, or is a local folder of HTML files.
 

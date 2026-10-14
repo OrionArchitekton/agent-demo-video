@@ -21,7 +21,7 @@ DEMO_SCRIPT.md
 11. deliverable check (ffprobe on the delivered final.mp4): one H.264 yuv420p
     video stream at the configured size and fps, square pixels, one AAC audio
     stream, frame-exact video track
-12. contact sheet: one still per shot at its midpoint, tiled into
+12. contact sheet: one still per segment at its midpoint, tiled into
     contact-sheet.png beside final.mp4
 ```
 
@@ -41,7 +41,8 @@ frame of it. Any mismatch fails the run with every mismatched property named, be
 `render-report.json` is written. The final mux pads the audio so it never drops trailing
 video frames.
 
-The pipeline then writes `out/contact-sheet.png`: one still per shot, taken at the
+The pipeline then writes `out/contact-sheet.png`: one still per segment (title and end cards
+included), taken at the
 midpoint of its measured timeline entry (clamped to a frame inside the shot), tiled in
 timeline order, four across for landscape and six across for portrait. The individual
 stills stay in `out/contact-sheet/`; both are rebuilt from scratch on every run, and a

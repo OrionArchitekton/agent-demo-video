@@ -355,7 +355,7 @@ Key fields in `demo.config.json` (full schema in `src/types.ts`):
 | `theme.frame.enabled` | `true` | Scene framing: the capture floats as a rounded, shadowed window on a gradient backdrop |
 | `audio.soundDesign` | `true` | Synthesized ambient bed ducked under narration, click ticks, segment sweeps |
 | `motion.livingCamera` | `true` | Continuous camera path with drift; `motion.zoomOnAction: false` disables all camera motion |
-| `brand` | (off) | `{ title, subtitle, url, accent, cards }` adds branded title and end cards. `titleCard` / `endCard` may override either side independently while `cards` remains the shared default |
+| `brand` | (off) | `{ title, subtitle, url, accent, hook, cards }` adds branded title and end cards. `hook` (1 to 60 characters) is large text on the title card's first frame; see [Quality checks](#quality-checks). `titleCard` / `endCard` may override either side independently while `cards` remains the shared default |
 | `clipsDir` | `"clips/prebaked"` | Where a **bare** prebaked clip filename resolves. Resolved against the config file's directory unless absolute; `--clips-dir <absolute-directory>` overrides it for one run and additionally binds every relative `clip:` strictly beneath that directory |
 | `preflight` | `true` | Fail-closed pre-flight selector gate; see [Pre-flight selector gate](#pre-flight-selector-gate). `false` (or `--no-preflight`) declines it |
 | `maxDurationSec` | `300` | Hard ceiling for the finished video. The render fails if the result exceeds it. Set it to the length limit you are shipping against. |
@@ -466,6 +466,36 @@ you opted out of framing while the pipeline frames anyway.
 
 Author the clip to the length of its narration. Segment duration is `max(clipSec, narrationSec)`, so
 a clip shorter than its narration is padded by freezing the last frame, never trimmed.
+
+## Quality checks
+
+Three checks and fixes that guard a render against problems the format checks cannot see.
+
+**Transcript check.** When `voice.aligner` is configured, the pipeline runs the aligner once over
+the finished `final.mp4` with the whole narration as its text, after the deliverable is verified.
+Recognized words are matched to the script in order, spelling-insensitively ("A.I." matches "AI",
+"log in" matches "login"). A narration phrase with under 70% of its words heard is a dropped
+phrase. `render-report.json` records `transcriptCheck` as `{ ran: true, droppedPhrases }`, or
+`{ ran: false, reason }` when no aligner is configured or the check could not run, and a warning
+lists at most 5 dropped phrases. The check is advisory and never fails a render: recognizers can
+mishear names and spelled-out numbers, so read the list as a prompt to listen, not a verdict.
+
+**Headless display isolation.** Every headless browser (capture, live capture and preflight)
+launches without `DISPLAY` and `WAYLAND_DISPLAY`, so a dead desktop display (for example WSLg after
+its compositor crashes) no longer stalls capture. There is nothing to configure. The interactive
+login browser keeps the full environment.
+
+**Title card hook (`brand.hook`).** An optional line of 1 to 60 characters drawn large on the
+title card's first frame (no fade-in), each line centered, with the product name small beneath it.
+It wraps and shrinks to fit the frame width and half its height.
+
+```json
+"brand": { "title": "WorkCue", "hook": "Your standup, written for you" }
+```
+
+A Shorts render (`platform: "shorts"`) with a title card but no hook prints a warning and records
+`hook: "missing"` in the report (`"set"` when a hook is present). A hook with the title card
+disabled is not shown and prints a warning.
 
 ## Replicability
 

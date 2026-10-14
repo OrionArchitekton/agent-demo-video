@@ -24,6 +24,12 @@ describe("droppedPhrases", () => {
   it("tolerates a single misheard word", () => {
     expect(droppedPhrases(["Keep a human on every commitment."], w("keep a human on every commitments"))).toEqual([]);
   });
+  it("does not blame an earlier phrase whose words a later dropped phrase repeats", () => {
+    expect(droppedPhrases(["Click save.", "Then click save again to confirm."], ["click", "save"])).toEqual(["Then click save again to confirm."]);
+  });
+  it("reports only the phrase dropped under both tie-break directions", () => {
+    expect(droppedPhrases(["Open the settings page.", "Now close the settings page."], "open the settings page".split(" "))).toEqual(["Now close the settings page."]);
+  });
   it("never flags a phrase with no letters or digits", () => {
     expect(droppedPhrases(["...", "?!"], [])).toEqual([]);
   });

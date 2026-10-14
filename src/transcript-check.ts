@@ -17,10 +17,23 @@ export function splitPhrases(narrations: string[]): string[] {
   return narrations.flatMap((n) => n.split(/(?<=[.!?])\s+/)).map((p) => p.trim()).filter(Boolean);
 }
 
-/** Phrases fewer than `minHeard` of whose words were matched, in order, in the heard words. */
+/**
+ * Phrases fewer than `minHeard` of whose words were matched, in order, in the heard words.
+ * When a later phrase repeats an earlier one's words, equally good alignments can hand the
+ * heard words to either phrase. A phrase is reported only when it is dropped under BOTH
+ * tie-break directions, so a heard phrase is never blamed for a neighbour's omission.
+ */
 export function droppedPhrases(phrases: string[], heardWords: string[], minHeard = MIN_HEARD): string[] {
-  const { tokens, matched } = matchScriptTokens(phrases.join(" "), heardWords.map((word) => ({ word })), { preferSkip: true });
-  const out: string[] = [];
+  const heard = heardWords.map((word) => ({ word }));
+  const skipFirst = droppedUnder(phrases, heard, minHeard, true);
+  const matchFirst = droppedUnder(phrases, heard, minHeard, false);
+  return phrases.filter((_, i) => skipFirst[i] && matchFirst[i]);
+}
+
+/** Per phrase: dropped under one tie-break direction of the in-order matching. */
+function droppedUnder(phrases: string[], heard: { word: string }[], minHeard: number, preferSkip: boolean): boolean[] {
+  const { tokens, matched } = matchScriptTokens(phrases.join(" "), heard, { preferSkip });
+  const out: boolean[] = [];
   let offset = 0, ti = 0;
   for (const phrase of phrases) {
     const from = offset, to = offset + phrase.length;
@@ -30,7 +43,7 @@ export function droppedPhrases(phrases: string[], heardWords: string[], minHeard
       if (tokens[ti]!.index >= from && key(tokens[ti]!.word)) { countable++; if (matched[ti]) hit++; }
       ti++;
     }
-    if (countable > 0 && hit / countable < minHeard) out.push(phrase);
+    out.push(countable > 0 && hit / countable < minHeard);
   }
   return out;
 }

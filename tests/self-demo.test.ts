@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { loadConfig } from "../src/config";
 import { parseScript } from "../src/parse-script";
@@ -71,6 +72,54 @@ describe("showcase generator", () => {
   it("sanitizes absolute paths in a run log", () => {
     const log = "wrote /repo/root/demos/self/out/final.mp4\nprofile /home/someone/.cache/x\ntmp /tmp/abc/seg";
     const clean = sanitizeLog(log, "/repo/root", "/home/someone");
-    expect(clean).toBe("wrote ./demos/self/out/final.mp4\nprofile ~/.cache/x\ntmp <tmp>/abc/seg");
+    expect(clean).toBe("wrote ./demos/self/out/final.mp4\nprofile ~/.cache/x\ntmp <tmp>/seg");
+  });
+
+  it("replaces whole paths only, at path boundaries", () => {
+    const log = "a /home/u2/x\nb /home/u/x\nc /repo-old/x\nd /repo/x\ne '/home/u'\nf /home/u";
+    expect(sanitizeLog(log, "/repo", "/home/u")).toBe("a /home/u2/x\nb ~/x\nc /repo-old/x\nd ./x\ne '~'\nf ~");
+  });
+
+  it("does the repo root before home when the root is under home", () => {
+    expect(sanitizeLog("at /home/u/src/repo/out and /home/u/other", "/home/u/src/repo", "/home/u")).toBe(
+      "at ./out and ~/other",
+    );
+  });
+
+  it("ignores empty root or home arguments", () => {
+    expect(sanitizeLog("keep /a/b", "", "")).toBe("keep /a/b");
+  });
+
+  it("collapses temp paths to their last segment and strips ANSI color codes", () => {
+    const log = "\u001b[32m\u2713 wrote\u001b[0m /tmp/x/-home-user-/y/final.mp4\nscratch " + tmpdir() + "/a/b/seg.png";
+    expect(sanitizeLog(log, "/repo", "/home/u")).toBe("\u2713 wrote <tmp>/final.mp4\nscratch <tmp>/seg.png");
+    expect(sanitizeLog("/tmpfoo/x", "/repo", "/home/u")).toBe("/tmpfoo/x");
+  });
+
+  it("uses singular wording and does not claim a hook that was not recorded", () => {
+    expect(checksFrom({ ...report, transcriptCheck: { ran: true, droppedPhrases: ["a"] } })[0]!.value).toBe("1 phrase missing");
+    expect(checksFrom({ ...report, deliverable: { ok: false, problems: ["p"] } })[2]!.value).toBe("1 problem");
+    const { hook: _h, ...noHook } = report;
+    expect(checksFrom(noHook)[1]!.value).toBe("not recorded");
+    expect(checksFrom({ ...report, hook: "missing" })[1]!.value).toBe("missing");
+  });
+
+  it("replays with a lead-in, within about 7 seconds, the last 24 lines only", () => {
+    const log = Array.from({ length: 30 }, (_, n) => `l${n}`).join("\n");
+    const html = buildShowcase({ script: "s", runLog: log, report, version: "0.3.0" });
+    expect(html).not.toContain(">l5<");
+    expect(html).toContain(">l6<");
+    expect(html).toContain("the last 24 lines");
+    const delays = [...html.matchAll(/animation-delay:([\d.]+)s/g)].map((m) => Number(m[1]));
+    expect(delays).toHaveLength(24);
+    expect(delays[0]).toBeGreaterThanOrEqual(1.5);
+    expect(delays[23]!).toBeLessThanOrEqual(8.6);
+    const short = buildShowcase({ script: "s", runLog: "a\n\nb", report, version: "0.3.0" });
+    expect(short).not.toContain("the last 24 lines");
+  });
+
+  it("shows the script view when opened with no hash", () => {
+    const html = buildShowcase({ script: "s", runLog: "x", report, version: "0.3.0" });
+    expect(html).toContain("body:not(:has(section:target)) #script { display: block; }");
   });
 });

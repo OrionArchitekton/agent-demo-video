@@ -1,5 +1,6 @@
-import { readFileSync, writeFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 /** The render report fields the showcase reads. Everything else in the report is ignored. */
@@ -17,12 +18,33 @@ export type Check = { testid: string; label: string; value: string };
 const esc = (s: string): string =>
   s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
-/** Replace machine-specific absolute paths so a committed log names no one's directories. */
+const escapeRe = (x: string): string => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+// A path starts after a non-path character and ends at "/", whitespace, a quote or end of text.
+const START = "(?<![\\w.~/-])";
+const END = "(?=$|[/\\s'\"])";
+
+function replacePath(text: string, path: string, to: string): string {
+  const p = path.replace(/\/+$/, "");
+  if (!p) return text;
+  return text.replace(new RegExp(`${START}${escapeRe(p)}${END}`, "g"), () => to);
+}
+
+/**
+ * Replace machine-specific absolute paths so a committed log names no one's directories.
+ * Whole paths only, repo root before home (the root usually lives under home), and any path
+ * under the system temp directory collapses to its last segment.
+ */
 export function sanitizeLog(text: string, repoRoot: string, home: string): string {
-  return text
-    .split(repoRoot).join(".")
-    .split(home).join("~")
-    .replace(/\/tmp\//g, "<tmp>/");
+  // eslint-disable-next-line no-control-regex
+  let out = text.replace(/\u001b\[[0-9;]*[A-Za-z]/g, "");
+  out = replacePath(out, repoRoot, ".");
+  out = replacePath(out, home, "~");
+  const temps = [...new Set([tmpdir().replace(/\/+$/, ""), "/tmp"])].filter(Boolean).sort((x, y) => y.length - x.length);
+  const re = new RegExp(`${START}(?:${temps.map(escapeRe).join("|")})(?:/[^\\s'"]*)?(?=$|[\\s'"])`, "g");
+  return out.replace(re, (m) => {
+    const last = m.replace(/\/+$/, "").split("/").pop() ?? "";
+    return temps.includes(m.replace(/\/+$/, "")) ? "<tmp>" : `<tmp>/${last}`;
+  });
 }
 
 export function checksFrom(r: ReportLike): Check[] {
@@ -32,15 +54,15 @@ export function checksFrom(r: ReportLike): Check[] {
     : t.ran
       ? t.droppedPhrases.length === 0
         ? "every scripted phrase was heard"
-        : `${t.droppedPhrases.length} phrases missing`
+        : `${t.droppedPhrases.length} ${t.droppedPhrases.length === 1 ? "phrase" : "phrases"} missing`
       : `not run (${t.reason})`;
   return [
     { testid: "check-transcript", label: "Transcript check", value: transcript },
-    { testid: "check-hook", label: "Hook on the first frame", value: r.hook === "missing" ? "missing" : "set" },
+    { testid: "check-hook", label: "Hook on the first frame", value: r.hook === undefined ? "not recorded" : r.hook === "missing" ? "missing" : "set" },
     {
       testid: "check-deliverable",
       label: "Video file verified",
-      value: r.deliverable ? (r.deliverable.ok ? "passed" : `${r.deliverable.problems.length} problems`) : "not recorded",
+      value: r.deliverable ? (r.deliverable.ok ? "passed" : `${r.deliverable.problems.length} ${r.deliverable.problems.length === 1 ? "problem" : "problems"}`) : "not recorded",
     },
     {
       testid: "check-motion",
@@ -57,10 +79,11 @@ const CSS = `
 body { margin: 0; background: var(--bg); color: var(--ink); font: 22px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
 section { display: none; max-width: 1500px; margin: 56px auto; padding: 0 48px; }
 section:target { display: block; }
+body:not(:has(section:target)) #script { display: block; }
 h2 { font-size: 44px; margin: 0 0 8px; }
 .sub { color: var(--muted); margin: 0 0 28px; }
 pre { margin: 0; padding: 28px 32px; background: var(--panel); border-radius: 14px; font: 21px/1.55 ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; white-space: pre-wrap; }
-#run pre .line { display: block; opacity: 0; animation: show 0.2s ease forwards; }
+#run pre .line { display: block; min-height: 1.55em; opacity: 0; animation: show 0.2s ease forwards; }
 @keyframes show { to { opacity: 1; } }
 .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin-bottom: 28px; }
 .card { background: var(--panel); border-radius: 14px; padding: 22px 26px; }
@@ -69,11 +92,18 @@ pre { margin: 0; padding: 28px 32px; background: var(--panel); border-radius: 14
 img.sheet { width: 100%; border-radius: 14px; }
 `;
 
+const MAX_LINES = 24;
+const LEAD_IN_SEC = 1.5;
+const REPLAY_SEC = 7;
+
 export function buildShowcase(i: ShowcaseInputs): string {
-  const lines = i.runLog.replace(/\n+$/, "").split("\n");
-  const step = Math.min(0.35, 12 / Math.max(1, lines.length));
+  const all = i.runLog.replace(/\n+$/, "").split("\n");
+  const lines = all.slice(-MAX_LINES);
+  const truncated = all.length > MAX_LINES;
+  // The animation starts at page load, before recording settles, so lead in; then spread the lines.
+  const step = REPLAY_SEC / Math.max(1, lines.length);
   const run = lines
-    .map((l, n) => `<span class="line" style="animation-delay:${(n * step).toFixed(2)}s">${esc(l)}</span>`)
+    .map((l, n) => `<span class="line" style="animation-delay:${(LEAD_IN_SEC + n * step).toFixed(2)}s">${esc(l)}</span>`)
     .join("");
   const cards = checksFrom(i.report)
     .map((c) => `<div class="card" data-testid="${c.testid}"><div class="label">${esc(c.label)}</div><div class="value">${esc(c.value)}</div></div>`)
@@ -94,7 +124,7 @@ export function buildShowcase(i: ShowcaseInputs): string {
 </section>
 <section id="run">
 <h2>The run</h2>
-<p class="sub">A real run of this script, replayed.</p>
+<p class="sub">A real run of this script, replayed${truncated ? " (the last 24 lines)" : ""}.</p>
 <pre data-testid="run-log">${run}</pre>
 </section>
 <section id="checks">
@@ -118,8 +148,11 @@ ${cards}
 `;
 }
 
+/** The repository root, from this module's own location (demos/self/ is two levels down). */
+export const repoRoot = (): string => resolve(dirname(fileURLToPath(import.meta.url)), "../..");
+
 /** Inputs as committed in the repository. */
-export function committedInputs(root: string): ShowcaseInputs {
+export function committedInputs(root: string = repoRoot()): ShowcaseInputs {
   const r = (p: string) => readFileSync(resolve(root, p), "utf8");
   return {
     script: r("demos/self/DEMO_SCRIPT.md"),
@@ -129,8 +162,8 @@ export function committedInputs(root: string): ShowcaseInputs {
   };
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const root = process.cwd();
+if (process.argv[1] && realpathSync(resolve(process.argv[1])) === realpathSync(fileURLToPath(import.meta.url))) {
+  const root = repoRoot();
   writeFileSync(resolve(root, "demos/self/showcase.html"), buildShowcase(committedInputs(root)));
   console.log("wrote demos/self/showcase.html");
 }

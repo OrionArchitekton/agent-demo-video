@@ -59,6 +59,12 @@ describe("transcript check in the pipeline (smoke)", { timeout: 180_000 }, () =>
     }
   });
 
+  it("FAKE_TTS dry run: the aligner does not run over silent narration", async () => {
+    process.env.FAKE_TTS = "1";
+    const report = await render(commandVoice("align-hear-all.sh"));
+    expect(report.transcriptCheck).toEqual({ ran: false, reason: "FAKE_TTS: narration is silent" });
+  });
+
   it("AC1c/AC5: without an aligner the report says the check did not run", async () => {
     process.env.FAKE_TTS = "1";
     const report = await render({});

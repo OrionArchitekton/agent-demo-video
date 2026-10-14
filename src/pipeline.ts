@@ -1270,6 +1270,7 @@ export async function runPipeline(config: DemoConfig, opts: RunPipelineOpts = {}
     config.voice.aligner,
     config.voice.timeoutSec ?? DEFAULT_VOICE_TIMEOUT_SEC,
     join(audioDir, "transcript-check"),
+    { fakeTts: ttsMode === "fake" },
   );
   if (transcriptCheck.ran && transcriptCheck.droppedPhrases.length) {
     const dropped = transcriptCheck.droppedPhrases;

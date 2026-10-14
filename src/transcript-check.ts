@@ -52,11 +52,16 @@ export type TranscriptCheck =
   | { ran: true; droppedPhrases: string[] }
   | { ran: false; reason: string };
 
-/** Run the configured aligner once over the finished video; never throws (advisory). */
+/**
+ * Run the configured aligner once over the finished video; never throws (advisory).
+ * A FAKE_TTS dry run has silent narration, so the aligner is not run at all.
+ */
 export async function runTranscriptCheck(
   videoPath: string, narrations: string[], aligner: string[] | undefined, timeoutSec: number, workDir: string,
+  opts: { fakeTts?: boolean } = {},
 ): Promise<TranscriptCheck> {
   if (!aligner) return { ran: false, reason: "no voice.aligner configured" };
+  if (opts.fakeTts) return { ran: false, reason: "FAKE_TTS: narration is silent" };
   try {
     await mkdir(workDir, { recursive: true });
     const textPath = join(workDir, "transcript-check.txt");

@@ -389,9 +389,12 @@ voice, and the timeout falls back to 600 s.
 Word-pop captions need word timings. They come from, in order: a `{out}.words.json` your command
 writes (`[{"word", "start", "end"}]`, seconds, at most 5 MB), the optional `aligner`, or a
 proportional estimate. If the voice command writes word timings, they win and the aligner is not
-run. The render report records which one each shot used (`narration[].timing`), and the run warns
-when any shot was estimated. A failing command or aligner, a timeout, audio under 0.3 s, or
-timings that match under 60% of the script's words stop the render with the shot and the cause.
+run for caption timing. (When an aligner is configured it still runs once more, over the finished
+`final.mp4`, for the [transcript check](#quality-checks).) The render report records which one each
+shot used (`narration[].timing`), and the run warns when any shot was estimated. During narration
+timing, a failing command or aligner, a timeout, audio under 0.3 s, or timings that match under 60%
+of the script's words stop the render with the shot and the cause. An aligner failure during the
+transcript check never stops the render; the report records the reason instead.
 
 The package ships a reference aligner, `tools/align_whisper.py`. For a global npm install the
 script is at `$(npm root -g)/agent-demo-video/tools/align_whisper.py`; install faster-whisper in a
@@ -401,10 +404,12 @@ python, as in the example above.
 In the aligner, `{audio}` is the narration your command produced, `{text}` is the narration
 file, and `{out}` is the aligner's own output path, which it fills with the same
 `[{"word", "start", "end"}]` JSON. Relative paths resolve from the directory you run the render
-in. `timeoutSec` applies to each command and aligner call separately. The reference aligner
+in. `timeoutSec` applies to each command and aligner call separately, and it also bounds the
+transcript check's single alignment of the whole finished video, so set it long enough for the
+full video length, not just one shot. The reference aligner
 defaults to the English `small.en` model (downloaded on first use); set `ALIGN_MODEL` for other
 languages (for example `small`) and `ALIGN_THREADS` for CPU threads. `FAKE_TTS=1` still gives a
-keyless silent dry run.
+keyless silent dry run; dry runs skip the transcript check, since their narration is silent.
 
 Notes:
 
@@ -471,23 +476,34 @@ a clip shorter than its narration is padded by freezing the last frame, never tr
 
 Three checks and fixes that guard a render against problems the format checks cannot see.
 
-**Transcript check.** When `voice.aligner` is configured, the pipeline runs the aligner once over
-the finished `final.mp4` with the whole narration as its text, after the deliverable is verified.
-Recognized words are matched to the script in order, spelling-insensitively ("A.I." matches "AI",
-"log in" matches "login"). A narration phrase with under 70% of its words heard is a dropped
-phrase. `render-report.json` records `transcriptCheck` as `{ ran: true, droppedPhrases }`, or
+**Transcript check.** When `voice.aligner` is configured, the pipeline runs the aligner once more
+over the finished `final.mp4` with the whole narration as its text, after the deliverable is
+verified. This happens even when the voice command wrote its own word timings. Recognized words
+are matched to the script in order, spelling-insensitively ("A.I." matches "AI", "log in" matches
+"login"). A narration sentence with under 70% of its words heard is a dropped phrase.
+`render-report.json` records `transcriptCheck` as `{ ran: true, droppedPhrases }`, or
 `{ ran: false, reason }` when no aligner is configured or the check could not run, and a warning
-lists at most 5 dropped phrases. The check is advisory and never fails a render: recognizers can
-mishear names and spelled-out numbers, so read the list as a prompt to listen, not a verdict.
+lists at most 5 dropped phrases. The check is advisory and never fails a render: an aligner failure
+here is recorded as the reason and the render still succeeds (only a failure during narration
+timing stops a render). Recognizers can mishear names and spelled-out numbers, so read the list as
+a prompt to listen, not a verdict.
 
-**Headless display isolation.** Every headless browser (capture, live capture and preflight)
-launches without `DISPLAY` and `WAYLAND_DISPLAY`, so a dead desktop display (for example WSLg after
-its compositor crashes) no longer stalls capture. There is nothing to configure. The interactive
-login browser keeps the full environment.
+- The check needs an aligner that transcribes the audio. The bundled `tools/align_whisper.py`
+  transcribes. A forced aligner, which emits a timing for every script word whatever was said,
+  will never report a dropped phrase.
+- `voice.timeoutSec` also bounds this whole-video alignment, so set it for the full video length.
+- `FAKE_TTS=1` dry runs skip the check (`ran: false`): their narration is silent.
+
+**Headless display isolation.** Every headless browser (capture, live capture, preflight, and a
+login configured to run headless) launches without `DISPLAY` and `WAYLAND_DISPLAY`, so a dead
+desktop display (for example WSLg after its compositor crashes) no longer stalls capture. There is
+nothing to configure. The interactive (headed) login browser keeps the full environment.
 
 **Title card hook (`brand.hook`).** An optional line of 1 to 60 characters drawn large on the
 title card's first frame (no fade-in), each line centered, with the product name small beneath it.
-It wraps and shrinks to fit the frame width and half its height.
+It wraps and shrinks to fit the frame width and half its height, down to a minimum size. The fit
+uses an estimate of character widths, so a very long single word, or a hook with no spaces, may
+still overflow at the minimum size.
 
 ```json
 "brand": { "title": "WorkCue", "hook": "Your standup, written for you" }

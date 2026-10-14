@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { matchScriptTokens } from "./word-timing";
 import { runCommand, readWordsFile } from "./command-voice";
@@ -49,6 +49,7 @@ export async function runTranscriptCheck(
     const textPath = join(workDir, "transcript-check.txt");
     const outPath = join(workDir, "transcript-check.words.json");
     await writeFile(textPath, narrations.join(" "), "utf8");
+    await rm(outPath, { force: true }); // never read a previous run's timings
     await runCommand("transcript check", aligner, { audio: videoPath, text: textPath, out: outPath }, timeoutSec);
     const words = await readWordsFile(outPath, "transcript check");
     if (!words) return { ran: false, reason: "aligner wrote no word timings" };

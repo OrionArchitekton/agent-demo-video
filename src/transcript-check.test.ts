@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { splitPhrases, droppedPhrases, runTranscriptCheck } from "./transcript-check";
@@ -54,5 +54,13 @@ describe("runTranscriptCheck", () => {
     const r = await runTranscriptCheck("v.mp4", [huge], [fx("align-hear-all.sh"), "{audio}", "{text}", "{out}"], 60, dir);
     expect(r.ran).toBe(false);
     expect(r).toMatchObject({ reason: expect.stringContaining("too large to align") });
+  });
+  it("ignores a stale words file left by a previous run", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "tcheck-"));
+    await mkdir(dir, { recursive: true });
+    const words = "Hello there.".split(" ").map((word, i) => ({ word, start: i * 0.2, end: i * 0.2 + 0.2 }));
+    await writeFile(join(dir, "transcript-check.words.json"), JSON.stringify(words));
+    const r = await runTranscriptCheck("v.mp4", ["Hello there."], [fx("align-silent.sh"), "{audio}", "{text}", "{out}"], 30, dir);
+    expect(r).toEqual({ ran: false, reason: "aligner wrote no word timings" });
   });
 });

@@ -1250,9 +1250,11 @@ export async function runPipeline(config: DemoConfig, opts: RunPipelineOpts = {}
     join(audioDir, "transcript-check"),
   );
   if (transcriptCheck.ran && transcriptCheck.droppedPhrases.length) {
+    const dropped = transcriptCheck.droppedPhrases;
+    const shown = dropped.slice(0, 5).map((p) => JSON.stringify(p)).join(", ");
+    const more = dropped.length > 5 ? ` and ${dropped.length - 5} more` : "";
     console.warn(
-      `[agent-demo-video] transcript check: ${transcriptCheck.droppedPhrases.length} narration phrase(s) not heard in the render: ` +
-        transcriptCheck.droppedPhrases.map((p) => JSON.stringify(p)).join(", "),
+      `[agent-demo-video] transcript check: ${dropped.length} narration phrase(s) not heard in the render: ${shown}${more} (advisory; the render is unaffected)`,
     );
   }
 

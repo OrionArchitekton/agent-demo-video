@@ -60,7 +60,7 @@ and release preparation. The second covers the self-demo.
    It has read-only tools.
 4. **The README leads with adoption.** In order, the README gives:
    - what the tool does, in one paragraph;
-   - the self-demo poster;
+   - the self-demo poster, which arrives with the self-demo pull request (scenario 9);
    - three ways to install (plugin, `npx`, from source);
    - a quickstart that reaches a silent-pass video with no API key;
    - short feature summaries.
@@ -135,8 +135,8 @@ Seams chosen: the fewest that exercise every scenario.
 3. The skill names the prerequisites, the pinned `npx` command, the six-step order and the three
    voice choices.
 4. The reviewer agent has read-only tools, and its output format lists severity, shot and flag.
-5. The README is about 220 lines or fewer, opens with the four items in scenario 4, and links every
-   guide page. Every guide page exists.
+5. The README is about 220 lines or fewer, opens with the items in scenario 4 (the poster arrives
+   with the self-demo), and links every guide page. Every guide page exists.
 6. The leak test passes on the shipped public files. A planted private string makes it fail.
 7. The changelog has a 0.3.0 section, and the release runbook lists the four maintainer steps with
    exact commands.

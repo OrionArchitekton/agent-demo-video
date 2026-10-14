@@ -33,8 +33,17 @@ export function findRenderLogError(log: string): string | null {
   return null;
 }
 
+/** Default limit for one card render: a first render may download a headless Chrome. */
+export const MOTION_CARD_TIMEOUT_SEC = 900;
+/**
+ * HyperFrames starts Chrome and ffmpeg in their own process groups, which a SIGKILL to the
+ * CLI's group would orphan. On timeout or interrupt it is asked to shut down (SIGTERM) and
+ * given this long to stop them before it is killed.
+ */
+export const MOTION_CARD_GRACEFUL_KILL_MS = 5000;
+
 /** Render one motion card composition to an MP4 with the HyperFrames CLI (no shell, no desktop display). */
-export async function renderMotionCard(hyperframesBin: string, html: string, outPath: string, label: string, timeoutSec = 300, onLog?: (text: string) => void): Promise<void> {
+export async function renderMotionCard(hyperframesBin: string, html: string, outPath: string, label: string, timeoutSec = MOTION_CARD_TIMEOUT_SEC, onLog?: (text: string) => void): Promise<void> {
   const project = await mkdtemp(join(tmpdir(), "motion-card-"));
   const logPath = join(project, "hyperframes.log");
   const name = `motion card (${label})`;
@@ -45,7 +54,7 @@ export async function renderMotionCard(hyperframesBin: string, html: string, out
       [process.execPath, hyperframesBin, "render", project, "-o", outPath, "--no-best-effort", "--no-browser-gpu", "-w", "2", "-q", "standard"],
       {},
       timeoutSec,
-      { env: { ...headlessBrowserEnv(), ...HYPERFRAMES_OPT_OUT_ENV }, logPath },
+      { env: { ...headlessBrowserEnv(), ...HYPERFRAMES_OPT_OUT_ENV }, logPath, gracefulKillMs: MOTION_CARD_GRACEFUL_KILL_MS },
     );
     const log = await readFile(logPath, "utf8").catch(() => "");
     onLog?.(log);

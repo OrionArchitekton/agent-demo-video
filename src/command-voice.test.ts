@@ -86,6 +86,33 @@ describe("runCommand edge cases", () => {
     await waitGone(pid);
     expect(alive(pid)).toBe(false);
   });
+  it("with gracefulKillMs, a timeout asks the command to stop (SIGTERM) before killing it", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "term-"));
+    const marker = join(dir, "marker");
+    await expect(runCommand("v", [fx("term-trap.sh"), marker], {}, 1, { gracefulKillMs: 2000 })).rejects.toThrowError(/^v: timed out after 1s$/);
+    expect(await readFile(marker, "utf8")).toBe("term");
+  });
+  it("with gracefulKillMs, a timeout still kills a command that ignores SIGTERM once the grace has passed", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "term-"));
+    const pidFile = join(dir, "pid");
+    const t0 = Date.now();
+    await expect(runCommand("v", [fx("term-ignore.sh"), pidFile], {}, 1, { gracefulKillMs: 500 })).rejects.toThrowError(/^v: timed out after 1s$/);
+    expect(Date.now() - t0).toBeGreaterThanOrEqual(1400);
+    const pid = await readPid(pidFile);
+    await waitGone(pid);
+    expect(alive(pid)).toBe(false);
+  });
+  it("interrupt cleanup asks a gracefulKillMs command to stop before killing it, and the run does not count as a success", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "term-"));
+    const marker = join(dir, "marker");
+    const pidFile = join(dir, "pid");
+    const run = runCommand("v", [fx("term-trap.sh"), marker, pidFile], {}, 30, { gracefulKillMs: 2000 });
+    const outcome = run.then(() => "resolved", (e: Error) => e.message);
+    await readPid(pidFile);
+    killLiveCommands();
+    expect(await readFile(marker, "utf8")).toBe("term");
+    expect(await outcome).toBe("v: interrupted");
+  });
   it("settles when the command exits, even if a background helper keeps its output open", async () => {
     const dir = await mkdtemp(join(tmpdir(), "bg-"));
     const pidFile = join(dir, "pid");

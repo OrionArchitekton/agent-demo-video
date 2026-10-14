@@ -129,13 +129,13 @@ export function titleCardHtml(o: CardHtmlOpts): string {
   css += `#bar { width: ${barW}px; height: ${barH}px; background: ${accent}; margin-top: ${Math.round(h * 0.02)}px; transform-origin: center; animation: draw ${t(A_BAR)} 1 both; }
 `;
   if (hasHook) {
-    css += `#title { font-size: ${titleSize}px; margin-top: ${Math.round(h * 0.015)}px; opacity: 0; animation: reveal ${t(A_TITLE)} 1 forwards; }
+    css += `#title { white-space: pre; font-size: ${titleSize}px; margin-top: ${Math.round(h * 0.015)}px; opacity: 0; animation: reveal ${t(A_TITLE)} 1 forwards; }
 `;
   } else {
-    css += `#title { font-size: ${titleSize}px; font-weight: bold; animation: settle ${t(A_TITLE)} 1 both; }
+    css += `#title { white-space: pre; font-size: ${titleSize}px; font-weight: bold; animation: settle ${t(A_TITLE)} 1 both; }
 `;
   }
-  css += `#subtitle { font-size: ${subSize}px; color: #b6c2cc; margin-top: ${Math.round(h * 0.015)}px; opacity: 0; animation: reveal ${t(A_SUB)} 1 forwards; }
+  css += `#subtitle { white-space: pre; font-size: ${subSize}px; color: #b6c2cc; margin-top: ${Math.round(h * 0.015)}px; opacity: 0; animation: reveal ${t(A_SUB)} 1 forwards; }
 `;
   const titleHtml = `<div id="title">${escapeHtml(o.title)}</div>\n`;
   const barHtml = `<div id="bar"></div>\n`;
@@ -150,8 +150,8 @@ export function endCardHtml(o: CardHtmlOpts): string {
   const { t, fadeStart } = timing(o.durationSec, [E_TITLE, ...(o.url ? [E_URL] : [])]);
   const accent = color(o.accent);
   const h = o.height;
-  const css = `#title { font-size: ${Math.round(h * 0.05)}px; font-weight: bold; opacity: 0; animation: reveal ${t(E_TITLE)} 1 forwards; }
-#url { font-size: ${Math.round(h * 0.042)}px; color: ${accent}; margin-top: ${Math.round(h * 0.03)}px; opacity: 0; animation: reveal ${t(E_URL)} 1 forwards; }
+  const css = `#title { white-space: pre; font-size: ${Math.round(h * 0.05)}px; font-weight: bold; opacity: 0; animation: reveal ${t(E_TITLE)} 1 forwards; }
+#url { white-space: pre; font-size: ${Math.round(h * 0.042)}px; color: ${accent}; margin-top: ${Math.round(h * 0.03)}px; opacity: 0; animation: reveal ${t(E_URL)} 1 forwards; }
 `;
   let body = `<div id="title">${escapeHtml(o.title)}</div>\n`;
   if (o.url) body += `<div id="url">${escapeHtml(o.url)}</div>\n`;

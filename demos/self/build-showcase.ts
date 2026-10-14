@@ -83,6 +83,7 @@ body:not(:has(section:target)) #script { display: block; }
 h2 { font-size: 44px; margin: 0 0 8px; }
 .sub { color: var(--muted); margin: 0 0 28px; }
 pre { margin: 0; padding: 28px 32px; background: var(--panel); border-radius: 14px; font: 21px/1.55 ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; white-space: pre-wrap; }
+#script pre { font-size: 17px; line-height: 1.4; padding: 20px 28px; }
 #run pre .line { display: block; min-height: 1.55em; opacity: 0; animation: show 0.2s ease forwards; }
 @keyframes show { to { opacity: 1; } }
 .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin-bottom: 28px; }

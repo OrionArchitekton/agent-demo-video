@@ -1,11 +1,12 @@
 import { describe, it, expect } from "vitest";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { loadConfig } from "../src/config";
 import { parseScript } from "../src/parse-script";
 import { resolveSelectorFindings, structuralFindings } from "../src/preflight";
-import { buildShowcase, checksFrom, sanitizeLog } from "../demos/self/build-showcase";
+import { findPrivateStrings } from "./support/distribution";
+import { buildShowcase, checksFrom, committedInputs, sanitizeLog } from "../demos/self/build-showcase";
 
 const root = process.cwd();
 const read = (p: string) => readFileSync(resolve(root, p), "utf8");
@@ -118,8 +119,47 @@ describe("showcase generator", () => {
     expect(short).not.toContain("the last 24 lines");
   });
 
+  it("sets the script smaller so all seven shots fit one frame", () => {
+    const html = buildShowcase({ script: "s", runLog: "x", report, version: "0.3.0" });
+    expect(html).toMatch(/#script pre \{[^}]*font-size: 17px/);
+  });
+
   it("shows the script view when opened with no hash", () => {
     const html = buildShowcase({ script: "s", runLog: "x", report, version: "0.3.0" });
     expect(html).toContain("body:not(:has(section:target)) #script { display: block; }");
+  });
+});
+
+describe("self-demo files", () => {
+  it("the committed showcase is exactly what the generator builds", () => {
+    expect(read("demos/self/showcase.html")).toBe(buildShowcase(committedInputs()));
+    expect(read("demos/self/showcase.html")).toBe(buildShowcase(committedInputs(root)));
+  });
+
+  it("the run log and report name no absolute paths", () => {
+    for (const f of ["demos/self/assets/run.log", "demos/self/assets/report.json"]) {
+      const body = read(f);
+      expect(findPrivateStrings(body), f).toEqual([]);
+      expect(body, f).not.toMatch(/(^|[\s"'(=])\/(home|Users|tmp|mnt|root|var)\//m);
+    }
+  });
+
+  it("both pages work offline", () => {
+    for (const f of ["demos/self/app.html", "demos/self/showcase.html"]) {
+      const body = read(f);
+      expect(body, f).not.toMatch(/(src|href)\s*=\s*["']?(https?:)?\/\//i);
+      expect(body, f).not.toMatch(/@import|url\(\s*["']?(https?:)?\/\//i);
+    }
+  });
+
+  it("the contact sheet asset is small enough to commit", () => {
+    const p = resolve(root, "demos/self/assets/contact-sheet.png");
+    expect(existsSync(p)).toBe(true);
+    expect(statSync(p).size).toBeLessThanOrEqual(600 * 1024);
+  });
+
+  it("has seven shots in order", () => {
+    const ids = [...read("demos/self/DEMO_SCRIPT.md").matchAll(/^### SHOT (\S+)/gm)].map((m) => m[1]);
+    expect(ids).toEqual(["checklist", "name-release", "ship", "script", "run", "checks", "install"]);
   });
 });

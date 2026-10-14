@@ -1,0 +1,260 @@
+{
+  "voice": {
+    "voiceId": "21m00Tcm4TlvDq8ikWAM",
+    "modelId": "eleven_multilingual_v2",
+    "seed": 42,
+    "stability": 0.5,
+    "similarity": 0.75
+  },
+  "ttsMode": "fake",
+  "inputs": {
+    "configHash": "0426f3f937446966",
+    "scriptHash": "f27a219addd132b0",
+    "configSha256": "0426f3f937446966a8fcfc9e6be4ada4a3689f29b3fa8d41a86654968c0bb954",
+    "scriptSha256": "f27a219addd132b03b096bc7c2f1dc8301fcaccb89d329adb7ff222a2bd24059",
+    "clips": []
+  },
+  "renderedOn": "local",
+  "tools": {
+    "ffmpeg": "ffmpeg version 6.1.1-3ubuntu5 Copyright (c) 2000-2023 the FFmpeg developers",
+    "ffprobe": "ffprobe version 6.1.1-3ubuntu5 Copyright (c) 2007-2023 the FFmpeg developers",
+    "playwright": "1.61.1",
+    "node": "v24.13.1"
+  },
+  "timeline": {
+    "entries": [
+      {
+        "shotId": "__card-title",
+        "startSec": 0,
+        "durationSec": 2.2
+      },
+      {
+        "shotId": "checklist",
+        "startSec": 2.2,
+        "durationSec": 7.633333
+      },
+      {
+        "shotId": "name-release",
+        "startSec": 9.833333,
+        "durationSec": 9.9
+      },
+      {
+        "shotId": "ship",
+        "startSec": 19.733333000000002,
+        "durationSec": 5.266667
+      },
+      {
+        "shotId": "script",
+        "startSec": 25,
+        "durationSec": 9.9
+      },
+      {
+        "shotId": "run",
+        "startSec": 34.9,
+        "durationSec": 10.366667
+      },
+      {
+        "shotId": "checks",
+        "startSec": 45.266667,
+        "durationSec": 12.566667
+      },
+      {
+        "shotId": "install",
+        "startSec": 57.833334,
+        "durationSec": 10.666667
+      },
+      {
+        "shotId": "__card-end",
+        "startSec": 68.500001,
+        "durationSec": 3
+      }
+    ],
+    "totalSec": 71.500001
+  },
+  "render": {
+    "totalSec": 71.500001,
+    "segments": 9,
+    "ticks": 4,
+    "parity": {
+      "ok": true,
+      "problems": []
+    },
+    "timeline": {
+      "entries": [
+        {
+          "shotId": "__card-title",
+          "startSec": 0,
+          "durationSec": 2.2
+        },
+        {
+          "shotId": "checklist",
+          "startSec": 2.2,
+          "durationSec": 7.633333
+        },
+        {
+          "shotId": "name-release",
+          "startSec": 9.833333,
+          "durationSec": 9.9
+        },
+        {
+          "shotId": "ship",
+          "startSec": 19.733333000000002,
+          "durationSec": 5.266667
+        },
+        {
+          "shotId": "script",
+          "startSec": 25,
+          "durationSec": 9.9
+        },
+        {
+          "shotId": "run",
+          "startSec": 34.9,
+          "durationSec": 10.366667
+        },
+        {
+          "shotId": "checks",
+          "startSec": 45.266667,
+          "durationSec": 12.566667
+        },
+        {
+          "shotId": "install",
+          "startSec": 57.833334,
+          "durationSec": 10.666667
+        },
+        {
+          "shotId": "__card-end",
+          "startSec": 68.500001,
+          "durationSec": 3
+        }
+      ],
+      "totalSec": 71.500001
+    }
+  },
+  "deliverable": {
+    "ok": true,
+    "problems": [],
+    "probed": {
+      "videoStreams": 1,
+      "audioStreams": 1,
+      "videoCodec": "h264",
+      "pixFmt": "yuv420p",
+      "width": 1920,
+      "height": 1080,
+      "frameRate": "30/1",
+      "avgFrameRate": "30/1",
+      "sampleAspectRatio": "1:1",
+      "audioCodec": "aac",
+      "durationSec": 71.5,
+      "videoDurationSec": 71.5,
+      "audioDurationSec": 71.493991,
+      "audioSampleRate": 44100,
+      "rotationDeg": 0
+    }
+  },
+  "contactSheet": {
+    "path": "contact-sheet.png",
+    "width": 1960,
+    "height": 842,
+    "columns": 4,
+    "rows": 3,
+    "tile": {
+      "width": 480,
+      "height": 270
+    },
+    "stills": [
+      {
+        "shotId": "__card-title",
+        "atSec": 1.1,
+        "path": "contact-sheet/still_000.png"
+      },
+      {
+        "shotId": "checklist",
+        "atSec": 6.016667,
+        "path": "contact-sheet/still_001.png"
+      },
+      {
+        "shotId": "name-release",
+        "atSec": 14.783333,
+        "path": "contact-sheet/still_002.png"
+      },
+      {
+        "shotId": "ship",
+        "atSec": 22.366667,
+        "path": "contact-sheet/still_003.png"
+      },
+      {
+        "shotId": "script",
+        "atSec": 29.95,
+        "path": "contact-sheet/still_004.png"
+      },
+      {
+        "shotId": "run",
+        "atSec": 40.083333,
+        "path": "contact-sheet/still_005.png"
+      },
+      {
+        "shotId": "checks",
+        "atSec": 51.55,
+        "path": "contact-sheet/still_006.png"
+      },
+      {
+        "shotId": "install",
+        "atSec": 63.166668,
+        "path": "contact-sheet/still_007.png"
+      },
+      {
+        "shotId": "__card-end",
+        "atSec": 70.000001,
+        "path": "contact-sheet/still_008.png"
+      }
+    ]
+  },
+  "limits": {
+    "maxDurationSec": 180
+  },
+  "preflight": {
+    "ran": true,
+    "declined": false,
+    "findings": 0,
+    "unverifiedShotIds": []
+  },
+  "narration": [
+    {
+      "shotId": "checklist",
+      "timing": "estimated"
+    },
+    {
+      "shotId": "name-release",
+      "timing": "estimated"
+    },
+    {
+      "shotId": "ship",
+      "timing": "estimated"
+    },
+    {
+      "shotId": "script",
+      "timing": "estimated"
+    },
+    {
+      "shotId": "run",
+      "timing": "estimated"
+    },
+    {
+      "shotId": "checks",
+      "timing": "estimated"
+    },
+    {
+      "shotId": "install",
+      "timing": "estimated"
+    }
+  ],
+  "transcriptCheck": {
+    "ran": false,
+    "reason": "no voice.aligner configured"
+  },
+  "hook": "set",
+  "motionCards": {
+    "renderer": "hyperframes",
+    "version": "0.8.155"
+  }
+}

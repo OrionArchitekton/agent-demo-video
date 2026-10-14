@@ -1,9 +1,9 @@
 
 > agent-demo-video@0.3.0 demo .
-> tsx src/cli.ts "demos/self/demo.config.json"
+> tsx src/cli.ts "<tmp>/self-narrated.json"
 
-[agent-demo-video] shot "checklist": prebaked clip (7.57s) is shorter than its narration (7.60s); froze the last frame to extend it to 7.63s so the voiceover is not truncated.
-[agent-demo-video] shot "script": prebaked clip (9.80s) is shorter than its narration (9.88s); froze the last frame to extend it to 9.90s so the voiceover is not truncated.
-[agent-demo-video] shot "checks": prebaked clip (12.47s) is shorter than its narration (12.54s); froze the last frame to extend it to 12.57s so the voiceover is not truncated.
-[agent-demo-video] shot "install": prebaked clip (10.60s) is shorter than its narration (10.64s); froze the last frame to extend it to 10.67s so the voiceover is not truncated.
-✓ wrote ./demos/self/out/final.mp4 (73.8s, 9 segments)
+[agent-demo-video] shot "checklist": prebaked clip (5.73s) is shorter than its narration (5.76s); froze the last frame to extend it to 5.80s so the voiceover is not truncated.
+[agent-demo-video] shot "script": prebaked clip (6.80s) is shorter than its narration (6.84s); froze the last frame to extend it to 6.87s so the voiceover is not truncated.
+[agent-demo-video] shot "run": prebaked clip (7.87s) is shorter than its narration (7.92s); froze the last frame to extend it to 7.97s so the voiceover is not truncated.
+[agent-demo-video] shot "install": prebaked clip (7.17s) is shorter than its narration (7.20s); froze the last frame to extend it to 7.23s so the voiceover is not truncated.
+✓ wrote <tmp>/final.mp4 (60.3s, 9 segments)

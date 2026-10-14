@@ -1,10 +1,10 @@
 {
-  "ttsMode": "fake",
+  "ttsMode": "real",
   "scriptSha256": "f27a219addd132b03b096bc7c2f1dc8301fcaccb89d329adb7ff222a2bd24059",
   "hook": "set",
   "transcriptCheck": {
-    "ran": false,
-    "reason": "no voice.aligner configured"
+    "ran": true,
+    "droppedPhrases": []
   },
   "deliverable": {
     "ok": true,

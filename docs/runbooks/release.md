@@ -38,6 +38,7 @@ pnpm install --frozen-lockfile
 npm publish --dry-run     # file list: dist, dist-remote, tools, README.md, LICENSE, package.json
 npm publish
 npm view agent-demo-video version     # prints 0.3.0
+git tag -a v0.3.0 -m "agent-demo-video v0.3.0" && git push origin v0.3.0
 ```
 
 ## 3. Create the GitHub release
@@ -46,7 +47,7 @@ Do this once the self-demo video is approved. The video is a release asset and i
 
 ```bash
 awk '/^## 0\.3\.0$/{f=1;next} /^## /{f=0} f' CHANGELOG.md > /tmp/notes-0.3.0.md
-gh release create v0.3.0 --target master --title "agent-demo-video v0.3.0" \
+gh release create v0.3.0 --verify-tag --title "agent-demo-video v0.3.0" \
   --notes-file /tmp/notes-0.3.0.md agent-demo-video-self-demo.mp4
 ```
 
@@ -71,7 +72,12 @@ gh repo edit OrionArchitekton/agent-demo-video \
 
 ## Rollback
 
-- npm: `npm deprecate agent-demo-video@0.3.0 "<reason>"`, then publish a fixed 0.3.1. (npm allows
-  unpublishing only within 72 hours and never lets a version number be reused.)
+- npm: `npm deprecate agent-demo-video@0.3.0 "<reason>"`, then publish a fixed release. A fixed
+  release bumps the version everywhere it is pinned: `package.json`, `.claude-plugin/plugin.json`,
+  the marketplace entry, and the `npx` pins in the skill and the README (the distribution test names
+  any that drift). npm allows unpublishing only in narrow cases and never lets a version number be
+  reused.
 - GitHub release: `gh release delete v0.3.0 --cleanup-tag`.
-- Description and topics: rerun `gh repo edit` with the values recorded before step 4.
+- Description and topics: rerun `gh repo edit` with the description recorded before step 4, and
+  restore the topics with
+  `gh repo edit OrionArchitekton/agent-demo-video --add-topic elevenlabs --remove-topic claude-code --remove-topic claude-code-plugin`.

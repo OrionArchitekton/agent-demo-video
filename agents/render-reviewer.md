@@ -30,7 +30,7 @@ might sit between stills, say so under UNCHECKED and ask for the frame instead o
 ## Checks, in severity order
 
 BLOCKING:
-- Only when the video opens on a title card (the default): the first frame does not show the hook
+- Only when the video opens on a title card (cards exist only when `brand` is set): the first frame does not show the hook
   (or, without a hook, the title) as large, legible text.
 - Two text layers overlap in any still: a caption over a label, a title over app text, a chapter
   card over a highlight.

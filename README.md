@@ -7,8 +7,8 @@ captions, so audio, video and captions stay in sync by construction. Length is c
 
 ## Install
 
-All three ways need Node 18 or newer and ffmpeg plus ffprobe on `PATH`
-(`apt install ffmpeg` or `brew install ffmpeg`).
+All three ways need Node 18 or newer and ffmpeg 5.1 or newer plus ffprobe on `PATH`
+(`apt install ffmpeg` or `brew install ffmpeg`; check with `ffmpeg -version`).
 
 **Claude Code plugin.** Adds a `demo-video` skill that walks Claude through a video, and a
 read-only `render-reviewer` agent that checks the contact sheet before narration is spent:
@@ -88,12 +88,12 @@ For your own app:
   ([third-party tabs](docs/guide/third-party-tabs.md)).
 - **Shorts.** `"platform": "shorts"` renders 9:16, and `brand.hook` puts large text on the first
   frame ([config](docs/guide/config.md)).
-- **Quality checks.** A transcript check compares what the video says with the script, and Shorts
-  without a hook are flagged ([quality checks](docs/guide/quality-checks.md)).
+- **Quality checks.** When `voice.aligner` is configured, a transcript check compares what the
+  video says with the script, and Shorts without a hook are flagged ([quality checks](docs/guide/quality-checks.md)).
 - **Motion cards.** `brand.motion: true` animates the title and end cards with HyperFrames, an
   optional add-on ([motion cards](docs/guide/motion-cards.md)).
 - **Verified output.** Every render probes the delivered `final.mp4` against the configured
-  format, writes a `contact-sheet.png` with one still per shot, and records everything in
+  format, writes a `contact-sheet.png` with one still per segment (title and end cards included), and records everything in
   `render-report.json`.
 
 ## CLI

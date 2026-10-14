@@ -54,9 +54,46 @@ function filesUnder(dir: string): string[] {
   return out.sort();
 }
 
+/** Relative link targets in Markdown, anchor removed; skips URLs with a scheme and pure anchors. */
+export function relativeLinks(md: string): string[] {
+  const out: string[] = [];
+  for (const m of md.matchAll(/\]\(([^)\s]+)\)/g)) {
+    const href = m[1]!;
+    if (/^[a-z][a-z0-9+.-]*:/i.test(href) || href.startsWith("#")) continue;
+    out.push(href.split("#")[0]!);
+  }
+  return out;
+}
+
+/** Repo paths named by absolute links to this repository's files on master, anchor removed. */
+export function repoBlobLinks(md: string): string[] {
+  const out: string[] = [];
+  for (const m of md.matchAll(/https:\/\/github\.com\/OrionArchitekton\/agent-demo-video\/blob\/master\/([^\s)#`>]+)/g)) {
+    out.push(m[1]!);
+  }
+  return out;
+}
+
+const GUIDE_PAGES = [
+  "pipeline",
+  "script-format",
+  "preflight",
+  "authenticated-capture",
+  "config",
+  "voice",
+  "third-party-tabs",
+  "quality-checks",
+  "motion-cards",
+].map((p) => `docs/guide/${p}.md`);
+
 /** Files shipped to the public as documentation or plugin content. Grows as pages are added. */
 function publicFiles(): string[] {
-  return [...filesUnder(".claude-plugin"), ...filesUnder("skills"), ...filesUnder("agents")];
+  return [
+    ...filesUnder(".claude-plugin"),
+    ...filesUnder("skills"),
+    ...filesUnder("agents"),
+    ...filesUnder("docs/guide"),
+  ];
 }
 
 describe("plugin and marketplace manifests", () => {
@@ -199,7 +236,7 @@ describe("public files carry nothing private and no long dashes", () => {
 
   it("scans every public file", () => {
     const files = publicFiles();
-    for (const dir of [".claude-plugin", "skills", "agents"]) {
+    for (const dir of [".claude-plugin", "skills", "agents", "docs/guide"]) {
       expect(files.some((f) => f.startsWith(`${dir}/`)), `${dir} contributes no scanned file`).toBe(true);
     }
     for (const f of files) {
@@ -207,5 +244,49 @@ describe("public files carry nothing private and no long dashes", () => {
       expect(findPrivateStrings(body), f).toEqual([]);
       expect(LONG_DASH.test(body), `${f} has a long dash`).toBe(false);
     }
+  });
+});
+
+describe("guide pages", () => {
+  it("the link helpers extract what they should", () => {
+    expect(relativeLinks("[a](x.md#y) [b](https://e.com/z) [c](#top) [d](../../src/t.ts)")).toEqual(["x.md", "../../src/t.ts"]);
+    expect(
+      repoBlobLinks("[a](https://github.com/OrionArchitekton/agent-demo-video/blob/master/docs/guide/voice.md#x)"),
+    ).toEqual(["docs/guide/voice.md"]);
+  });
+
+  it("all exist, start with a title and end by pointing back to the README", () => {
+    for (const page of GUIDE_PAGES) {
+      expect(existsSync(resolve(root, page)), page).toBe(true);
+      const body = read(page);
+      expect(body.startsWith("# "), `${page} starts with a title`).toBe(true);
+      expect(body.trimEnd().endsWith("Back to the [README](../../README.md)."), page).toBe(true);
+    }
+  });
+
+  it("every relative link in them resolves", () => {
+    for (const page of GUIDE_PAGES) {
+      for (const href of relativeLinks(read(page))) {
+        expect(existsSync(resolve(root, dirname(page), href)), `${page} -> ${href}`).toBe(true);
+      }
+    }
+  });
+
+  it("link to other guide pages, never to README anchors that moved", () => {
+    for (const page of GUIDE_PAGES) {
+      expect(read(page), page).not.toMatch(
+        /\]\(#(authenticated-saas|quality-checks|motion-cards|pre-flight|third-party-tabs)/,
+      );
+    }
+  });
+
+  it("every absolute link to this repository's files points at a file that exists", () => {
+    let skillLinks = 0;
+    for (const f of publicFiles()) {
+      const links = repoBlobLinks(read(f));
+      if (f === "skills/demo-video/SKILL.md") skillLinks = links.length;
+      for (const path of links) expect(existsSync(resolve(root, path)), `${f} -> ${path}`).toBe(true);
+    }
+    expect(skillLinks).toBeGreaterThan(0);
   });
 });

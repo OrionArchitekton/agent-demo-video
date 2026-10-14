@@ -45,11 +45,12 @@
 - Guide pages under `docs/guide/` hold the reference material that used to live in the README. The
   README now leads with install and a keyless quickstart.
 - A maintainer release runbook, `docs/runbooks/release.md`.
-- Command voice provider. `voice.provider: "command"` runs any program you can call from a shell
-  to produce the narration audio, with an optional `aligner` for word-timed captions. A reference
+- Command voice provider. `voice.provider: "command"` runs your own text-to-speech program (an
+  argument list, run without a shell) to produce the narration audio, with an optional `aligner` for word-timed captions. A reference
   aligner ships as `tools/align_whisper.py`. See `docs/guide/voice.md`.
-- Transcript check. When `voice.aligner` is configured, the finished video is transcribed and
-  compared with the script, and phrases the narration dropped are reported in `render-report.json`.
+- Transcript check. When `voice.aligner` is configured, the aligner runs once more over the
+  finished video and the result is compared with the script; phrases the narration dropped are
+  reported in `render-report.json` (this needs an aligner that transcribes, such as the reference one).
   The check is advisory and never fails a render. See `docs/guide/quality-checks.md`.
 - `brand.hook`, an optional line of 1 to 60 characters drawn large on the first frame of the title
   card. A Shorts render with a title card but no hook prints a warning and records it in the report.
@@ -62,9 +63,11 @@
 - Word-pop captions (`theme.captions: "wordpop"`, the default), which pop word by word in sync with
   speech. `"block"` restores the legacy burned-in subtitles.
 - Sound design (`audio.soundDesign`, on by default): a synthesized ambient bed ducked under the
-  narration, click ticks and segment sweeps. `audio.musicPath` swaps in your own track.
+  narration, click ticks and segment sweeps. `audio.musicPath` swaps in your own track
+  (local renders only; it is refused with `--render-host`).
 - Living camera (`motion.livingCamera`, on by default): a continuous camera path with a gentle
-  drift, plus zoom on the element each action targets (`motion.zoomOnAction`).
+  drift, plus zoom on the element a `click`, `type` or `highlight` targets
+  (`motion.zoomOnAction`) under the screencast engine.
 - Remote render. `--render-host <host>` offloads the render stage to another host over ssh. Local
   rendering stays the default.
 - Deliverable verification after every local or remote render: the delivered

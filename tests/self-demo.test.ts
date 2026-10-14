@@ -2,11 +2,12 @@ import { describe, it, expect } from "vitest";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
+import { digestFull } from "../src/provenance";
 import { loadConfig } from "../src/config";
 import { parseScript } from "../src/parse-script";
 import { resolveSelectorFindings, structuralFindings } from "../src/preflight";
 import { filesUnder, findPrivateStrings } from "./support/distribution";
-import { buildShowcase, checksFrom, committedInputs, sanitizeLog, scriptExcerpt, trimReport } from "../demos/self/build-showcase";
+import { buildShowcase, checksFrom, committedInputs, sanitizeLog, parseRefreshArgs, refreshTexts, scriptExcerpt, trimReport } from "../demos/self/build-showcase";
 
 const root = process.cwd();
 const read = (p: string) => readFileSync(resolve(root, p), "utf8");
@@ -208,7 +209,7 @@ describe("committed assets", () => {
 
   it("the report holds only the fields the showcase reads, and never the voice setup", () => {
     const report = JSON.parse(read("demos/self/assets/report.json")) as Record<string, unknown>;
-    const allowed = ["ttsMode", "hook", "transcriptCheck", "deliverable", "motionCards"];
+    const allowed = ["ttsMode", "scriptSha256", "hook", "transcriptCheck", "deliverable", "motionCards"];
     expect(Object.keys(report).filter((k) => !allowed.includes(k))).toEqual([]);
     expect(report).not.toHaveProperty("voice");
     expect(Object.keys(report.deliverable as object).sort()).toEqual(["ok", "problems"]);
@@ -219,19 +220,70 @@ describe("committed assets", () => {
       ttsMode: "real",
       voice: { anything: "configured" },
       hook: "set",
-      transcriptCheck: { ran: false, reason: "r" },
+      transcriptCheck: { ran: false, reason: "no voice.aligner configured" },
       deliverable: { ok: true, problems: [], extra: 1 },
       motionCards: { renderer: "x", version: "1", more: 2 },
       segments: [1],
+      inputs: { scriptSha256: "ab", configSha256: "c" },
     };
     expect(trimReport(full)).toEqual({
       ttsMode: "real",
+      scriptSha256: "ab",
       hook: "set",
-      transcriptCheck: { ran: false, reason: "r" },
+      transcriptCheck: { ran: false, reason: "no voice.aligner configured" },
       deliverable: { ok: true, problems: [] },
       motionCards: { renderer: "x", version: "1" },
     });
     expect(trimReport({ ttsMode: "fake" })).toEqual({ ttsMode: "fake" });
+  });
+
+  it("trimReport never copies aligner output, only fixed reasons or the text before the first colon", () => {
+    const t = (reason: string) => (trimReport({ transcriptCheck: { ran: false, reason } }).transcriptCheck as { reason: string }).reason;
+    expect(t("aligner failed: transcript check: program not found: /x/secret-aligner")).toBe("aligner failed");
+    expect(t("script too long to compare: 9000 words")).toBe("script too long to compare");
+    expect(t("no voice.aligner configured")).toBe("no voice.aligner configured");
+    expect(t("FAKE_TTS: narration is silent")).toBe("FAKE_TTS: narration is silent");
+    expect(t("aligner wrote no word timings")).toBe("aligner wrote no word timings");
+    expect(t("unknown text /x/secret")).toBe("transcript check did not run");
+    expect(
+      trimReport({ transcriptCheck: { ran: true, droppedPhrases: ["a"], extra: "/x/secret" } }).transcriptCheck,
+    ).toEqual({ ran: true, droppedPhrases: ["a"] });
+  });
+
+  it("trimReport keeps the script digest, a hash that is not private", () => {
+    expect(trimReport({ inputs: { scriptSha256: "ab12", configSha256: "x" } }).scriptSha256).toBe("ab12");
+    expect(trimReport({}).scriptSha256).toBeUndefined();
+  });
+
+  it("the committed report's script digest is the one the tool computes for the committed script", () => {
+    const report = JSON.parse(read("demos/self/assets/report.json")) as { scriptSha256?: string };
+    expect(report.scriptSha256).toBe(digestFull(read("demos/self/DEMO_SCRIPT.md")));
+  });
+
+  it("parses the refresh arguments", () => {
+    expect(parseRefreshArgs([])).toEqual({ mode: "build" });
+    expect(parseRefreshArgs(["--refresh", "out", "run.log"])).toEqual({ mode: "refresh", outDir: "out", logFile: "run.log" });
+    expect(() => parseRefreshArgs(["--refresh", "out"])).toThrow(/usage/);
+    expect(() => parseRefreshArgs(["--bogus"])).toThrow(/usage/);
+  });
+
+  it("refreshTexts sanitizes the log and writes the trimmed report", () => {
+    const log = "\u001b[32mok\u001b[0m /repo/x/out/final.mp4 \u2014 done\n";
+    const report = JSON.stringify({
+      ttsMode: "fake",
+      voice: { secret: "/home/u/bin/voice" },
+      inputs: { scriptSha256: "ab" },
+      transcriptCheck: { ran: false, reason: "aligner failed: /home/u/bin/aligner" },
+    });
+    const out = refreshTexts({ log, reportJson: report, repoRoot: "/repo/x", home: "/home/u" });
+    expect(out.log).toBe("ok ./out/final.mp4 - done\n");
+    expect(JSON.parse(out.report)).toEqual({
+      ttsMode: "fake",
+      scriptSha256: "ab",
+      transcriptCheck: { ran: false, reason: "aligner failed" },
+    });
+    expect(out.report.endsWith("}\n")).toBe(true);
+    expect(out.report).not.toContain("/home/u");
   });
 
   it("demos/self contributes exactly the expected public files, never render output", () => {

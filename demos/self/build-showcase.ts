@@ -1,11 +1,14 @@
-import { readFileSync, realpathSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { execFileSync } from "node:child_process";
+import { mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 /** The render report fields the showcase reads. Everything else in the report is ignored. */
 export type ReportLike = {
   ttsMode?: string;
+  /** Digest of the script the render used, so the checks can be tied to that script. */
+  scriptSha256?: string;
   hook?: string;
   transcriptCheck?: { ran: true; droppedPhrases: string[] } | { ran: false; reason: string };
   deliverable?: { ok: boolean; problems: string[] };
@@ -47,6 +50,21 @@ export function sanitizeLog(text: string, repoRoot: string, home: string): strin
   });
 }
 
+/** The only reasons the tool itself writes for a transcript check that did not run. */
+const FIXED_REASONS = ["no voice.aligner configured", "FAKE_TTS: narration is silent", "aligner wrote no word timings"];
+
+/**
+ * Never copy aligner output. A failure reason can carry the aligner program or its error text,
+ * which is private voice setup, so anything but a fixed reason is cut at its first colon.
+ */
+function trimTranscriptCheck(t: any): ReportLike["transcriptCheck"] {
+  if (t.ran === true) return { ran: true, droppedPhrases: [...t.droppedPhrases] };
+  const reason = String(t.reason ?? "");
+  if (FIXED_REASONS.includes(reason)) return { ran: false, reason };
+  const head = reason.includes(":") ? reason.slice(0, reason.indexOf(":")).trim() : "";
+  return { ran: false, reason: head || "transcript check did not run" };
+}
+
 /**
  * Only the report fields the showcase reads. The full report records the voice setup exactly as
  * configured, which must never be committed, so assets are always written through this.
@@ -54,11 +72,30 @@ export function sanitizeLog(text: string, repoRoot: string, home: string): strin
 export function trimReport(r: Record<string, any>): ReportLike {
   const out: ReportLike = {};
   if (r.ttsMode !== undefined) out.ttsMode = r.ttsMode;
+  if (r.inputs?.scriptSha256 !== undefined) out.scriptSha256 = r.inputs.scriptSha256;
   if (r.hook !== undefined) out.hook = r.hook;
-  if (r.transcriptCheck !== undefined) out.transcriptCheck = r.transcriptCheck;
+  if (r.transcriptCheck !== undefined) out.transcriptCheck = trimTranscriptCheck(r.transcriptCheck);
   if (r.deliverable !== undefined) out.deliverable = { ok: r.deliverable.ok, problems: r.deliverable.problems };
   if (r.motionCards !== undefined) out.motionCards = { renderer: r.motionCards.renderer, version: r.motionCards.version };
   return out;
+}
+
+/** The sanitized run log and the trimmed, sanitized report text, ready to commit. */
+export function refreshTexts(i: { log: string; reportJson: string; repoRoot: string; home: string }): {
+  log: string;
+  report: string;
+} {
+  const clean = (t: string): string => sanitizeLog(t, i.repoRoot, i.home).replace(/[\u2013\u2014\u2015]/g, "-");
+  const report = trimReport(JSON.parse(i.reportJson) as Record<string, unknown>);
+  return { log: clean(i.log), report: clean(JSON.stringify(report, null, 2)) + "\n" };
+}
+
+export type CliMode = { mode: "build" } | { mode: "refresh"; outDir: string; logFile: string };
+
+export function parseRefreshArgs(args: string[]): CliMode {
+  if (args.length === 0) return { mode: "build" };
+  if (args[0] === "--refresh" && args.length === 3) return { mode: "refresh", outDir: args[1]!, logFile: args[2]! };
+  throw new Error("usage: build-showcase.ts [--refresh <out-dir> <log-file>]");
 }
 
 export function checksFrom(r: ReportLike): Check[] {
@@ -203,8 +240,27 @@ export function committedInputs(root: string = repoRoot()): ShowcaseInputs {
   };
 }
 
-if (process.argv[1] && realpathSync(resolve(process.argv[1])) === realpathSync(fileURLToPath(import.meta.url))) {
+function main(args: string[]): void {
+  const mode = parseRefreshArgs(args);
   const root = repoRoot();
+  if (mode.mode === "refresh") {
+    const assets = resolve(root, "demos/self/assets");
+    mkdirSync(assets, { recursive: true });
+    const out = refreshTexts({
+      log: readFileSync(resolve(mode.logFile), "utf8"),
+      reportJson: readFileSync(resolve(mode.outDir, "render-report.json"), "utf8"),
+      repoRoot: root,
+      home: homedir(),
+    });
+    writeFileSync(resolve(assets, "run.log"), out.log);
+    writeFileSync(resolve(assets, "report.json"), out.report);
+    execFileSync("ffmpeg", ["-loglevel", "error", "-y", "-i", resolve(mode.outDir, "contact-sheet.png"), "-vf", "scale=1280:-2", resolve(assets, "contact-sheet.png")]);
+    console.log("refreshed demos/self/assets");
+  }
   writeFileSync(resolve(root, "demos/self/showcase.html"), buildShowcase(committedInputs(root)));
   console.log("wrote demos/self/showcase.html");
+}
+
+if (process.argv[1] && realpathSync(resolve(process.argv[1])) === realpathSync(fileURLToPath(import.meta.url))) {
+  main(process.argv.slice(2));
 }

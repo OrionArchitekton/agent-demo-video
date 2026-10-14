@@ -1,5 +1,5 @@
 import { createRequire } from "node:module";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 /** specs/motion-cards-spec.md S5: motion cards need the optional hyperframes package and Node 22.12+. */
@@ -15,7 +15,8 @@ export type MotionRequirements =
 
 interface Probes {
   resolvePackageJson: () => string;
-  readVersion: (packageJsonPath: string) => string;
+  readPackageJson: (packageJsonPath: string) => { version: string; repository?: unknown };
+  fileExists: (path: string) => boolean;
   nodeVersion: string;
 }
 
@@ -23,14 +24,15 @@ const defaultProbes = (): Probes => {
   const require = createRequire(import.meta.url);
   return {
     resolvePackageJson: () => require.resolve("hyperframes/package.json"),
-    readVersion: (p) => JSON.parse(readFileSync(p, "utf8")).version,
+    readPackageJson: (p) => JSON.parse(readFileSync(p, "utf8")),
+    fileExists: existsSync,
     nodeVersion: process.version,
   };
 };
 
 export function checkMotionRequirements(probes: Probes = defaultProbes()): MotionRequirements {
   const problems: string[] = [];
-  const [major, minor] = probes.nodeVersion.replace(/^v/, "").split(".").map(Number);
+  const [major, minor] = probes.nodeVersion.replace(/^v/, "").split(".").map(Number) as [number, number];
   const nodeOk = major > MIN_NODE_MAJOR || (major === MIN_NODE_MAJOR && minor >= MIN_NODE_MINOR);
   if (!nodeOk) problems.push(`brand.motion needs Node ${MIN_NODE_MAJOR}.${MIN_NODE_MINOR} or newer (running ${probes.nodeVersion})`);
   let pkg: string | undefined;
@@ -39,7 +41,16 @@ export function checkMotionRequirements(probes: Probes = defaultProbes()): Motio
   }
   let version: string | undefined;
   if (pkg) {
-    try { version = String(probes.readVersion(pkg)); } catch { version = "an unreadable version"; }
+    let repoUrl = "";
+    try {
+      const json = probes.readPackageJson(pkg);
+      version = String(json.version);
+      const repo = json.repository;
+      repoUrl = typeof repo === "string" ? repo : repo && typeof (repo as { url?: unknown }).url === "string" ? (repo as { url: string }).url : "";
+    } catch { version = "an unreadable version"; }
+    if (!repoUrl.includes("heygen-com/hyperframes") || !probes.fileExists(join(dirname(pkg), "bin", "hyperframes.mjs"))) {
+      problems.push('the installed "hyperframes" package is not the official HeyGen package or is incomplete');
+    }
     if (version !== HYPERFRAMES_VERSION) problems.push(`brand.motion needs hyperframes ${HYPERFRAMES_VERSION} (found ${version}); ${INSTALL_HINT}`);
   }
   if (problems.length || !pkg || version === undefined) return { ok: false, problems };

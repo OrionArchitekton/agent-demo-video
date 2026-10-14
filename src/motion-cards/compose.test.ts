@@ -72,3 +72,51 @@ describe("endCardHtml", () => {
     expect(html).toMatch(/#url\s*\{[^}]*animation:[^;]*reveal/);
   });
 });
+
+describe("numeric validation", () => {
+  it("rejects non-numeric or unsafe geometry, fps and duration", () => {
+    expect(() => titleCardHtml({ ...base, width: "1px;}</style>" as any })).toThrow(/width/);
+    expect(() => titleCardHtml({ ...base, height: 1921 })).toThrow(/height/);
+    expect(() => titleCardHtml({ ...base, fps: '30" onload="x' as any })).toThrow(/fps/);
+    expect(() => titleCardHtml({ ...base, fps: 0 })).toThrow(/fps/);
+    for (const d of [NaN, Infinity, 0, -1, 61]) {
+      expect(() => titleCardHtml({ ...base, durationSec: d })).toThrow(/durationSec/);
+      expect(() => endCardHtml({ ...base, durationSec: d, url: "x.com" })).toThrow(/durationSec/);
+    }
+  });
+});
+
+describe("short cards", () => {
+  const ends = (html: string): number[] =>
+    [...html.matchAll(/animation:\s*(?:settle|reveal|draw)\s+([\d.]+)s\s+ease-out\s+([\d.]+)s/g)].map((m) => Number(m[1]) + Number(m[2]));
+  it("scales a hooked title card so reveals finish when the fade starts", () => {
+    const html = titleCardHtml({ ...base, hook: "Stop pasting", subtitle: "sub", durationSec: 0.5 });
+    const e = ends(html);
+    expect(e.length).toBeGreaterThanOrEqual(4);
+    for (const x of e) expect(x).toBeLessThanOrEqual(0.1 + 0.001);
+    expect(html).toMatch(/fadeout 0\.4s linear 0\.1s/);
+  });
+  it("scales the end card", () => {
+    const html = endCardHtml({ ...base, url: "example.com", durationSec: 1.0 });
+    for (const x of ends(html)) expect(x).toBeLessThanOrEqual(0.6 + 0.001);
+    expect(html).toMatch(/fadeout 0\.4s linear 0\.6s/);
+  });
+  it("leaves timings unchanged at 2.2s", () => {
+    const html = titleCardHtml({ ...base, hook: "Stop", subtitle: "s" });
+    expect(html).toContain("reveal 0.5s ease-out 0.7s");
+    expect(html).toContain("draw 0.4s ease-out 0.3s");
+    expect(html).toContain("fadeout 0.4s linear 1.8s");
+  });
+});
+
+describe("stricter CSS values", () => {
+  it("keeps the font literal and rejects control chars and 5-digit hex", () => {
+    expect(titleCardHtml({ ...base, font: "A&B" })).toContain('"A&B"');
+    expect(() => titleCardHtml({ ...base, font: "A\tB" })).toThrow();
+    expect(() => titleCardHtml({ ...base, accent: "#12345" })).toThrow();
+  });
+  it("treats a whitespace-only hook as no hook", () => {
+    const html = titleCardHtml({ ...base, hook: "   " });
+    expect(html).not.toContain('id="hook"');
+  });
+});

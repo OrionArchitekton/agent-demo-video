@@ -13,6 +13,18 @@ import { headlessBrowserEnv } from "../browser-env";
  */
 const HARD_ERROR = /Unresolved font|PAGEERROR|net::ERR|Failed to load resource|Continuing render despite(?! lint issues)/;
 
+/**
+ * HyperFrames opt-outs, all read as "1" by the 0.8.155 CLI: no usage telemetry, no update
+ * check, and no automatic self-install of a newer version (the pinned version is the one
+ * that was tested). DO_NOT_TRACK is the cross-tool telemetry opt-out it also honors.
+ */
+export const HYPERFRAMES_OPT_OUT_ENV: Readonly<Record<string, string>> = {
+  HYPERFRAMES_NO_TELEMETRY: "1",
+  HYPERFRAMES_NO_UPDATE_CHECK: "1",
+  HYPERFRAMES_NO_AUTO_INSTALL: "1",
+  DO_NOT_TRACK: "1",
+};
+
 /** The first CLI log line that reports a hard render error, or null. */
 export function findRenderLogError(log: string): string | null {
   for (const line of log.split(/\r?\n/)) {
@@ -33,7 +45,7 @@ export async function renderMotionCard(hyperframesBin: string, html: string, out
       [process.execPath, hyperframesBin, "render", project, "-o", outPath, "--no-best-effort", "--no-browser-gpu", "-w", "2", "-q", "standard"],
       {},
       timeoutSec,
-      { env: headlessBrowserEnv(), logPath },
+      { env: { ...headlessBrowserEnv(), ...HYPERFRAMES_OPT_OUT_ENV }, logPath },
     );
     const log = await readFile(logPath, "utf8").catch(() => "");
     onLog?.(log);

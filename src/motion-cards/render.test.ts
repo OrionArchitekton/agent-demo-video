@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { mkdtemp, access } from "node:fs/promises";
+import { mkdtemp, access, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { execFileSync } from "node:child_process";
@@ -26,6 +26,26 @@ describe("renderMotionCard log scan", () => {
     const fake = resolve("tests/fixtures/voice/fake-hyperframes.mjs");
     await expect(renderMotionCard(fake, "<html></html>", out, "logscan", 30)).rejects.toThrowError(/^motion card \(logscan\): PAGEERROR boom$/);
     await expect(access(out)).rejects.toThrow();
+  });
+
+  it("runs HyperFrames with telemetry, update checks and auto-install off, and no desktop display", async () => {
+    const out = join(await mkdtemp(join(tmpdir(), "mc-env-")), "o.mp4");
+    const fake = resolve("tests/fixtures/voice/fake-hyperframes.mjs");
+    const prev = process.env.DISPLAY;
+    process.env.DISPLAY = ":99";
+    try {
+      await expect(renderMotionCard(fake, "<html></html>", out, "env", 30)).rejects.toThrowError(/PAGEERROR boom/);
+    } finally {
+      if (prev === undefined) delete process.env.DISPLAY; else process.env.DISPLAY = prev;
+    }
+    const env = JSON.parse(await readFile(`${out}.env.json`, "utf8"));
+    expect(env).toEqual({
+      HYPERFRAMES_NO_TELEMETRY: "1",
+      HYPERFRAMES_NO_UPDATE_CHECK: "1",
+      HYPERFRAMES_NO_AUTO_INSTALL: "1",
+      DO_NOT_TRACK: "1",
+      DISPLAY: null,
+    });
   });
 });
 

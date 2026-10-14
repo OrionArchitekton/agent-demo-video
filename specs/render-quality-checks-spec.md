@@ -18,10 +18,11 @@ Three gaps showed up while rendering real narrated demos:
 
 - **transcript check**: after a render, the finished video's speech is recognized and compared
   with the script's narration; script phrases the recognizer did not hear are listed.
-- **dropped phrase**: a narration phrase (a sentence or clause) fewer than 70% of whose
-  words were matched, in order, in the recognized speech.
-- **headless capture**: any browser the pipeline launches without a window (all shot capture and
-  preflight). The interactive login flow is not headless and is unaffected.
+- **dropped phrase**: a narration phrase (a sentence) fewer than 70% of whose words were
+  matched, in order, in the recognized speech, under both tie-break directions of the matching.
+- **headless capture**: any browser the pipeline launches without a window (all shot capture,
+  preflight, and a login configured to run headless). The interactive (headed) login flow is not
+  headless and is unaffected.
 - **hook line**: a short line of text, set by the author, shown large on the first frame.
 - **title card**: the existing cold-open card at the start of the video.
 
@@ -29,24 +30,39 @@ Three gaps showed up while rendering real narrated demos:
 
 1. **The render is checked against its script.** When an aligner is configured (the word
    aligner from the command voice provider), after the deliverable is verified the aligner is run
-   once over the finished video's audio with the whole narration as its text. Recognized words
-   are compared with the narration phrase by phrase (so "A.I." matches
-   "AI" and "log in" matches "login"): recognized words are matched to the narration words in
-   order, with the same spelling-insensitive matching used for caption timing; a phrase counts as
-   heard when at least 70% of its words are matched; others are reported as dropped. The render
-   report records the result (`transcriptCheck: { ran, droppedPhrases }`); dropped phrases also print a warning. The check is
-   advisory: it never fails a render. With no aligner configured it records `ran: false` with the
-   reason, and nothing else changes. If the aligner itself fails during the check, the render still
-   succeeds and the report records the failure reason.
+   once over the finished video file (its audio track included) with the whole narration as its
+   text. A timings file left by an earlier run is never reused. The narration is split into
+   phrases at sentence ends (`.`, `!`, `?`), not at clauses. Recognized words are compared with
+   the narration phrase by phrase (so "A.I." matches "AI" and "log in" matches "login"):
+   recognized words are matched to the narration words in order, with the same
+   spelling-insensitive matching used for caption timing; a phrase counts as heard when at least
+   70% of its words are matched. When a later phrase repeats an earlier phrase's words, equally
+   good matchings can credit the heard words to either one, so a phrase is reported as dropped
+   only when it is dropped under both tie-break directions of the in-order matching. The render
+   report records the result (`transcriptCheck: { ran, droppedPhrases }`); dropped phrases also
+   print a warning that names at most 5 phrases, then "and N more". The check is advisory: it
+   never fails a render. With no aligner configured it records `ran: false` with the reason, and
+   nothing else changes. Under FAKE_TTS the narration is silent, so the check does not run and
+   records `ran: false` with the reason. If the aligner itself fails during the check, or the
+   script is too long to compare, the render still succeeds and the report records the reason.
+   The check is only meaningful with an aligner that transcribes the audio: a forced aligner,
+   which emits a timing for every script word whatever was said, will never report a drop.
 2. **Headless capture ignores the desktop display.** Every headless browser the pipeline launches
    (shot capture, live capture, preflight) starts with the desktop display variables removed from
-   its environment, so a dead display can no longer stall capture. The interactive login browser
-   keeps the full environment. The pipeline's own environment is not modified.
-3. **A Shorts render can open on a hook.** A new optional `brand.hook` text (at most 60
-   characters) is drawn large and centered on the title card, with the product name small beneath
-   it, for any platform. When a Shorts render (`platform: "shorts"`) has a title card but no hook,
-   the run prints a warning and the report records `hook: "missing"`; with a hook it records
-   `hook: "set"`. Landscape renders without a hook record nothing and print nothing.
+   its environment, so a dead display can no longer stall capture. A login configured to run
+   headless is isolated the same way; the interactive (headed) login browser keeps the full
+   environment. The pipeline's own environment is not modified.
+3. **A Shorts render can open on a hook.** A new optional `brand.hook` text is trimmed and must
+   be 1 to 60 characters. It is drawn large on the title card for any platform, with the product
+   name small beneath it. A hooked title card shows the hook at full opacity on the first frame
+   (it does not fade in), and each line of the hook is centered on its own. The hook starts large
+   and shrinks in steps until every line fits 90% of the frame width and the whole block fits half
+   the frame height, down to a minimum size; at the minimum a single very long word may still
+   overflow. When a Shorts render (`platform: "shorts"`) has a title card but no hook, the run
+   prints a warning and the report records `hook: "missing"`; with a hook it records
+   `hook: "set"`. A landscape render with a hook also records `hook: "set"`; a landscape render
+   without a hook records nothing and prints nothing. A hook set while the title card is disabled
+   is not shown, and the run prints a warning saying so.
 
 ## Out of scope
 
@@ -64,17 +80,20 @@ Three gaps showed up while rendering real narrated demos:
 - AC2: phrase comparison treats "A.I." and "AI", "Work Cue" and "WorkCue" as heard, and flags a
   phrase whose words are absent.
 - AC3: with `DISPLAY` set to an unreachable display, the existing browser smoke tests pass without
-  the operator unsetting it; the login flow's launch options still carry the full environment.
+  the operator unsetting it; the interactive (headed) login keeps the full environment, and a
+  login configured to run headless is isolated like other headless browsers.
 - AC4: a Shorts render with `brand.hook` shows the hook on the first frame (title card text
   positioned and sized above the product name); a Shorts render without one warns and records
   `hook: "missing"`; a landscape render without one records nothing.
-- AC5: existing configs (no hook, no aligner) render and report exactly as before apart from the
-  new `transcriptCheck: { ran: false, ... }` field.
+- AC5: existing configs (no hook, no aligner) render and report as before apart from the new
+  `transcriptCheck: { ran: false, ... }` field; a Shorts render with a title card and no hook also
+  gains `hook: "missing"` and a warning (as scenario 3 requires); nothing else changes.
 
 ## Test seams
 
-Existing seams only: the pure phrase-comparison function (unit tests), the browser-launch options
-builder (unit tests on the environment passed to headless vs login launches), the title-card
-argument builder (unit tests on drawn text and sizes), and the pipeline smoke test (one end-to-end
-command-voice render with a fixture aligner for the transcript check, and one Shorts render for the
-hook record).
+Existing seams only: the pure phrase-comparison function (unit tests); the headless environment
+builder (unit tests on the environment headless browsers receive) and the dead-display smoke test
+(a full render with the display variables pointing at nothing); the title-card argument builder
+(unit tests on drawn text and sizes); and the pipeline smoke test (one end-to-end command-voice
+render with a fixture aligner for the transcript check, and one Shorts render for the hook
+record).

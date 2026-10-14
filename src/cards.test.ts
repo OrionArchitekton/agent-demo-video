@@ -87,6 +87,21 @@ describe("hookLayout fit guarantee", () => {
     const w = estimateTextWidth("Supercalifragilisticexpialidocious", l.fontSize);
     expect(w <= 0.9 * 1080 || l.fontSize === Math.round(1920 * 0.035)).toBe(true);
   });
+  const ABCDE = "ABCDE ABCDE ABCDE ABCDE ABCDE ABCDE ABCDE ABCDE ABCDE ABCDE";
+  const blockH = (l: { fontSize: number; lines: string[] }) => l.lines.length * Math.round(l.fontSize * 1.2);
+  it("also bounds the block height to half the frame", () => {
+    const l = hookLayout(1080, 1920, ABCDE);
+    expect(blockH(l)).toBeLessThanOrEqual(960);
+    for (const line of l.lines) expect(estimateTextWidth(line, l.fontSize) <= 972 || l.fontSize === Math.round(1920 * 0.035)).toBe(true);
+    const m = hookLayout(1080, 1920, "STOP PASTING YOUR CLIENT SECRETS INTO AI CHATS TODAY 2026 OK");
+    expect(blockH(m)).toBeLessThanOrEqual(960);
+  });
+  it("keeps the title below the tall block inside the frame", () => {
+    const a = titleCardArgs({ ...O, width: 1080, height: 1920, hook: ABCDE }, "/t/o.mp4", { titleFile: "/t/c_t.txt", hookFiles: hookLayout(1080, 1920, ABCDE).lines.map((_, i) => `/t/h${i}.txt`) });
+    const j = a[a.indexOf("-vf") + 1] as string;
+    const m = /c_t\.txt:fontsize=(\d+):[^,]*y=\(h\)\/2\+(\d+)/.exec(j)!;
+    expect(1920 / 2 + Number(m[2]) + Number(m[1])).toBeLessThanOrEqual(0.95 * 1920);
+  });
   it("keeps the base size for ordinary mixed-case text", () => {
     expect(hookLayout(1080, 1920, "Stop pasting client secrets into AI chats").fontSize).toBe(base);
   });

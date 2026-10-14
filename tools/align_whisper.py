@@ -16,17 +16,31 @@ import sys
 from faster_whisper import WhisperModel
 
 
+MAX_WORD = 24
+
+
 def glossary(script, limit=220):
-    """Distinct words of four or more letters, sorted, capped at `limit` characters on a whole word."""
-    seen = {}
-    for w in re.findall(r"[A-Za-z][A-Za-z'-]+", script):
-        if len(w) >= 4 and w.lower() not in seen:
-            seen[w.lower()] = w
-    items = []
-    for w in sorted(seen.values(), key=str.lower):
-        if len("Glossary: " + ", ".join(items + [w])) > limit:
-            break
+    """Distinct words of 4 to 24 characters, sorted, kept while they fit in `limit` characters.
+
+    Words are Unicode letters (accented, Cyrillic and other scripts stay whole); a longer run, such
+    as a CJK clause with no spaces, is skipped so no sentence of the script lands in the prompt.
+    If sorting happens to reproduce the script's own first words, the list is reversed.
+    """
+    eligible, seen = [], set()
+    for w in re.findall(r"[^\W\d_](?:[\w'-]*[^\W_])?", script):
+        if 4 <= len(w) <= MAX_WORD and w.lower() not in seen:
+            seen.add(w.lower())
+            eligible.append(w)
+    words = sorted(eligible, key=str.lower)
+    if len(words) > 1 and [w.lower() for w in words[:3]] == [w.lower() for w in eligible[:3]]:
+        words.reverse()
+    items, size = [], len("Glossary: ")
+    for w in words:
+        add = len(w) + (2 if items else 0)
+        if size + add > limit:
+            continue
         items.append(w)
+        size += add
     return "Glossary: " + ", ".join(items) if items else None
 
 

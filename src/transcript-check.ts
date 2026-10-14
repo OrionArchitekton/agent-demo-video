@@ -1,4 +1,7 @@
+import { mkdir, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { matchScriptTokens } from "./word-timing";
+import { runCommand, readWordsFile } from "./command-voice";
 
 /**
  * Transcript check (specs/render-quality-checks-spec.md S1): did the finished video SAY the script?
@@ -30,4 +33,28 @@ export function droppedPhrases(phrases: string[], heardWords: string[], minHeard
     if (countable > 0 && hit / countable < minHeard) out.push(phrase);
   }
   return out;
+}
+
+export type TranscriptCheck =
+  | { ran: true; droppedPhrases: string[] }
+  | { ran: false; reason: string };
+
+/** Run the configured aligner once over the finished video; never throws (advisory). */
+export async function runTranscriptCheck(
+  videoPath: string, narrations: string[], aligner: string[] | undefined, timeoutSec: number, workDir: string,
+): Promise<TranscriptCheck> {
+  if (!aligner) return { ran: false, reason: "no voice.aligner configured" };
+  try {
+    await mkdir(workDir, { recursive: true });
+    const textPath = join(workDir, "transcript-check.txt");
+    const outPath = join(workDir, "transcript-check.words.json");
+    await writeFile(textPath, narrations.join(" "), "utf8");
+    await runCommand("transcript check", aligner, { audio: videoPath, text: textPath, out: outPath }, timeoutSec);
+    const words = await readWordsFile(outPath, "transcript check");
+    if (!words) return { ran: false, reason: "aligner wrote no word timings" };
+    // droppedPhrases can throw on very long scripts (alignment size cap); it stays inside the try.
+    return { ran: true, droppedPhrases: droppedPhrases(splitPhrases(narrations), words.map((w) => w.word)) };
+  } catch (e) {
+    return { ran: false, reason: `aligner failed: ${(e as Error).message}` };
+  }
 }

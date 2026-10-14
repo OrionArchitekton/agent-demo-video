@@ -1,5 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { splitPhrases, droppedPhrases } from "./transcript-check";
+import { mkdtemp } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import { splitPhrases, droppedPhrases, runTranscriptCheck } from "./transcript-check";
 
 describe("splitPhrases", () => {
   it("splits narration into sentences and trims", () => {
@@ -36,5 +39,20 @@ describe("droppedPhrases", () => {
     const missing = "And this is the second shot.";
     const phrases = [...rep(13), missing, ...rep(14)];
     expect(droppedPhrases(phrases, heard)).toEqual([missing]);
+  });
+});
+
+describe("runTranscriptCheck", () => {
+  const fx = (n: string) => resolve("tests/fixtures/voice", n);
+  it("stays advisory: no aligner configured", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "tcheck-"));
+    expect(await runTranscriptCheck("v.mp4", ["Hello there."], undefined, 30, dir)).toEqual({ ran: false, reason: "no voice.aligner configured" });
+  });
+  it("stays advisory: a script too long to align reports ran:false instead of throwing", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "tcheck-"));
+    const huge = Array.from({ length: 6000 }, (_, i) => `word${i}`).join(" ") + ".";
+    const r = await runTranscriptCheck("v.mp4", [huge], [fx("align-hear-all.sh"), "{audio}", "{text}", "{out}"], 60, dir);
+    expect(r.ran).toBe(false);
+    expect(r).toMatchObject({ reason: expect.stringContaining("too large to align") });
   });
 });

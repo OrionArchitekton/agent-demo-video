@@ -14,6 +14,8 @@ import { tmpdir } from "node:os";
 import { basename, dirname, extname, isAbsolute, join, resolve, win32 } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { DemoConfig, Shot, TtsResult } from "./types";
+import { DEFAULT_VOICE_TIMEOUT_SEC } from "./types";
+import { runTranscriptCheck } from "./transcript-check";
 import { parseScript, deriveSegmentKinds } from "./parse-script";
 import { formatPreflightReport, runPreflight } from "./preflight";
 import { synthShot } from "./tts";
@@ -1240,6 +1242,20 @@ export async function runPipeline(config: DemoConfig, opts: RunPipelineOpts = {}
     planContactSheet(result.report.timeline.entries, config.fps, config.resolution),
   );
 
+  const transcriptCheck = await runTranscriptCheck(
+    result.outPath,
+    shots.map((s) => s.narration).filter(Boolean),
+    config.voice.aligner,
+    config.voice.timeoutSec ?? DEFAULT_VOICE_TIMEOUT_SEC,
+    join(audioDir, "transcript-check"),
+  );
+  if (transcriptCheck.ran && transcriptCheck.droppedPhrases.length) {
+    console.warn(
+      `[agent-demo-video] transcript check: ${transcriptCheck.droppedPhrases.length} narration phrase(s) not heard in the render: ` +
+        transcriptCheck.droppedPhrases.map((p) => JSON.stringify(p)).join(", "),
+    );
+  }
+
   // This is a render gate, not best-effort provenance. If any scoped source
   // changed while the artifact was being made, fail the run before a report
   // can certify the completed bytes.
@@ -1268,6 +1284,7 @@ export async function runPipeline(config: DemoConfig, opts: RunPipelineOpts = {}
       preflight: preflightRecord,
       deliverable,
       contactSheet,
+      transcriptCheck,
       ...(opts.sourceBuild
         ? { sourceBuildAttestation: opts.sourceBuild.attestation }
         : {}),

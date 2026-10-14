@@ -44,6 +44,12 @@ describe("buildRenderReport", () => {
     expect(buildRenderReport(base).transcriptCheck).toBeUndefined();
   });
 
+  it("records motion cards only when they were rendered", () => {
+    const mc = { renderer: "hyperframes" as const, version: "0.8.155" };
+    expect(buildRenderReport({ ...base, motionCards: mc }).motionCards).toEqual(mc);
+    expect("motionCards" in buildRenderReport(base)).toBe(false);
+  });
+
   it("records the resolved voice, so two renders can be compared to explain a runtime change", () => {
     const r = buildRenderReport(base);
     expect(r.voice).toMatchObject({ modelId: "eleven_multilingual_v2", seed: 42 });

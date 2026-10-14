@@ -128,3 +128,14 @@ describe("brand.hook", () => {
     expect(() => DemoConfigSchema.parse({ ...base, brand: { title: "T", hook: "x".repeat(61) } })).toThrowError(/60/);
   });
 });
+
+describe("brand.motion", () => {
+  const base = { script: "x", dashboardBaseUrl: "http://x" };
+  it("parses motion: true", () => {
+    expect(DemoConfigSchema.parse({ ...base, brand: { title: "T", motion: true } }).brand?.motion).toBe(true);
+  });
+  it("has no default: an existing brand parses without a motion key (AC1)", () => {
+    const brand = DemoConfigSchema.parse({ ...base, brand: { title: "T" } }).brand!;
+    expect("motion" in brand).toBe(false);
+  });
+});

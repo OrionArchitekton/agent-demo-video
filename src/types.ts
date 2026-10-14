@@ -259,6 +259,10 @@ export const DemoConfigSchema = z.object({
     endCard: z.boolean().optional(),
     titleSec: z.number().min(0.5).default(2.2),
     endSec: z.number().min(0.5).default(3.0),
+    // Render the title and end cards as animated HTML with HyperFrames. No
+    // default on purpose (AC1): a default would add a key to every existing
+    // config's parsed object and change its hash.
+    motion: z.boolean().optional(),
   }).strict().transform((b) => ({
     ...b,
     titleCard: b.titleCard ?? b.cards,

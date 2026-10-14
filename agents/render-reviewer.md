@@ -17,7 +17,8 @@ The caller gives paths. If one is missing, list it under UNCHECKED; never guess 
   segment's midpoint and tiled in order. Open it.
 - `render-report.json`: tile i is `contactSheet.stills[i].shotId`; cards appear as `__card-title`
   and `__card-end`.
-- `frame0.png`: the first frame of `final.mp4`. Without it, the first-frame checks are UNCHECKED.
+- `frame0.png`: the first frame of `final.mp4`. Without it, the first-frame checks are UNCHECKED
+  and the VERDICT is FIX FIRST.
 - `DEMO_SCRIPT.md`: the shots, their narration and actions.
 - A one-line brief: what the video must show, for whom, and the platform (landscape or Shorts).
 

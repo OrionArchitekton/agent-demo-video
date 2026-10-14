@@ -43,7 +43,10 @@ describe.skipIf(!req.ok)("renderMotionCard (real HyperFrames)", () => {
       title: "Demo", hook: "Stop pasting secrets",
     });
     const t0 = Date.now();
-    await renderMotionCard(req.hyperframesBin, html, out, "title");
+    let log = "";
+    await renderMotionCard(req.hyperframesBin, html, out, "title", 300, (t) => { log = t; });
+    expect(log.length).toBeGreaterThan(0);
+    expect(log).not.toMatch(/from Google Fonts/);
     console.log(`integration render took ${((Date.now() - t0) / 1000).toFixed(1)}s`);
     const p = await probeDeliverable(out);
     expect(p.width).toBe(640);

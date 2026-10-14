@@ -83,6 +83,7 @@ function page(o: CardHtmlOpts, bodyHtml: string, css: string, fadeStart: number)
 <head>
 <meta charset="utf-8">
 <style>
+@font-face { font-family: "${font}"; src: local("${font}"); font-weight: 100 900; }
 html, body { width: ${o.width}px; height: ${o.height}px; margin: 0; overflow: hidden; }
 #root { position: relative; width: ${o.width}px; height: ${o.height}px; overflow: hidden; background: linear-gradient(180deg, ${top}, ${bottom}); font-family: "${font}", sans-serif; color: #ffffff; }
 .clip { position: absolute; left: 0; top: 0; width: ${o.width}px; height: ${o.height}px; }

@@ -22,7 +22,7 @@ export function findRenderLogError(log: string): string | null {
 }
 
 /** Render one motion card composition to an MP4 with the HyperFrames CLI (no shell, no desktop display). */
-export async function renderMotionCard(hyperframesBin: string, html: string, outPath: string, label: string, timeoutSec = 300): Promise<void> {
+export async function renderMotionCard(hyperframesBin: string, html: string, outPath: string, label: string, timeoutSec = 300, onLog?: (text: string) => void): Promise<void> {
   const project = await mkdtemp(join(tmpdir(), "motion-card-"));
   const logPath = join(project, "hyperframes.log");
   const name = `motion card (${label})`;
@@ -35,7 +35,9 @@ export async function renderMotionCard(hyperframesBin: string, html: string, out
       timeoutSec,
       { env: headlessBrowserEnv(), logPath },
     );
-    const bad = findRenderLogError(await readFile(logPath, "utf8").catch(() => ""));
+    const log = await readFile(logPath, "utf8").catch(() => "");
+    onLog?.(log);
+    const bad = findRenderLogError(log);
     if (bad) throw new Error(`${name}: ${bad}`);
   } catch (e) {
     // A failed render must never leave an output a later step could mistake for a good card.

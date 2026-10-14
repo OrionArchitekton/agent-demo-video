@@ -1020,6 +1020,13 @@ export async function runPipeline(config: DemoConfig, opts: RunPipelineOpts = {}
   const configSha256 = digestFull(stableConfig);
   const scriptSha256 = digestFull(md);
 
+  // Motion cards need the optional hyperframes package and Node 22+; fail
+  // before any capture or spend rather than mid-render.
+  let motion: ReturnType<typeof checkMotionRequirements> | undefined;
+  if (config.brand?.motion && (config.brand.titleCard || config.brand.endCard)) {
+    motion = checkMotionRequirements();
+    if (!motion.ok) throw new Error("[agent-demo-video] " + motion.problems.join("; "));
+  }
   // Bind every prebaked pathname before any preflight tool can open it. The
   // preflight manifest points at these private copies, so ffprobe never consumes
   // the mutable operator pathname that the renderer has not yet authenticated.
@@ -1088,13 +1095,6 @@ export async function runPipeline(config: DemoConfig, opts: RunPipelineOpts = {}
   // that legitimately never needed a key.
   const ttsMode = resolveTtsMode(process.env, config.voice.provider);
 
-  // Motion cards need the optional hyperframes package and Node 22+; fail
-  // before any capture or spend rather than mid-render.
-  let motion: ReturnType<typeof checkMotionRequirements> | undefined;
-  if (config.brand?.motion && (config.brand.titleCard || config.brand.endCard)) {
-    motion = checkMotionRequirements();
-    if (!motion.ok) throw new Error("[agent-demo-video] " + motion.problems.join("; "));
-  }
   let motionCards: { renderer: "hyperframes"; version: string } | undefined;
 
   // 3. TTS — sequential to respect ElevenLabs concurrency limits

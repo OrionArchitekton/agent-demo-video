@@ -17,3 +17,5 @@ clips/
 *.playwright-profile/
 storageState*.json
 **/userDataDir/
+
+__pycache__/

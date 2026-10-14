@@ -40,9 +40,45 @@ describe("buildRenderReport", () => {
 
   it("records the resolved voice, so two renders can be compared to explain a runtime change", () => {
     const r = buildRenderReport(base);
-    expect(r.voice.modelId).toBe("eleven_multilingual_v2");
-    expect(r.voice.seed).toBe(42);
+    expect(r.voice).toMatchObject({ modelId: "eleven_multilingual_v2", seed: 42 });
     expect(r.ttsMode).toBe("real");
+  });
+
+  it("keeps a hosted-provider voice exactly as configured", () => {
+    expect(buildRenderReport(base).voice).toEqual(base.voice);
+    const explicit = { ...base.voice, provider: "elevenlabs" as const };
+    expect(buildRenderReport({ ...base, voice: explicit }).voice).toEqual(explicit);
+  });
+
+  it("records a command voice by program name and timeout only, never its full arguments or paths", () => {
+    const voice = {
+      ...base.voice,
+      provider: "command" as const,
+      command: ["/opt/voices/bin/my-tts", "--api-key", "X", "--in", "{text}", "--out", "{out}"],
+      aligner: ["/srv/venv/bin/python", "/srv/tools/align_whisper.py", "{audio}", "{text}", "{out}"],
+      timeoutSec: 120,
+    };
+    const recorded = buildRenderReport({ ...base, voice }).voice;
+    expect(recorded).toEqual({ provider: "command", command: "my-tts", aligner: "python", timeoutSec: 120 });
+    const json = JSON.stringify(recorded);
+    expect(json).not.toContain("/");
+    expect(json).not.toContain("--api-key");
+  });
+
+  it("omits an absent aligner but records the effective 600 s timeout when the config omits it", () => {
+    const voice = { ...base.voice, provider: "command" as const, command: ["/opt/bin/tts", "{text}", "{out}"] };
+    const recorded = buildRenderReport({ ...base, voice }).voice;
+    expect(recorded).toEqual({ provider: "command", command: "tts", timeoutSec: 600 });
+    expect(Object.keys(recorded)).toEqual(["provider", "command", "timeoutSec"]);
+  });
+
+  it("records the caption timing source per shot (specs/command-tts-provider-spec.md)", () => {
+    const r = buildRenderReport({ ...base, narration: [{ shotId: "s1", timing: "aligned" as const }, { shotId: "s2", timing: "estimated" as const }] });
+    expect(r.narration).toEqual([{ shotId: "s1", timing: "aligned" }, { shotId: "s2", timing: "estimated" }]);
+  });
+
+  it("omits narration timing when no shot reported it", () => {
+    expect("narration" in buildRenderReport(base)).toBe(false);
   });
 
   it("records input digests and the per-shot timeline", () => {

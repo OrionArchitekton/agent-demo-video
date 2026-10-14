@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, writeFile } from "node:fs/promises";
 import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -48,5 +48,23 @@ describe.skipIf(!reqs.ok)("motion cards (smoke)", { timeout: 600_000 }, () => {
   it("records no motionCards key when motion is off", async () => {
     const { report } = await render({ title: "Demo Fixture", hook: "Stop pasting secrets" });
     expect("motionCards" in report).toBe(false);
+  });
+});
+
+describe("motion card validation runs before any paid step", { timeout: 180_000 }, () => {
+  let prev: string | undefined;
+  beforeEach(() => { prev = process.env.FAKE_TTS; process.env.FAKE_TTS = "1"; });
+  afterEach(() => { if (prev === undefined) delete process.env.FAKE_TTS; else process.env.FAKE_TTS = prev; });
+
+  it("rejects a fractional frame rate with a brand.motion error before preflight, narration and capture", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "motion-bad-"));
+    const fixture = pathToFileURL(resolve("tests/fixtures/page.html")).href;
+    const scriptPath = join(dir, "demo.md");
+    await writeFile(scriptPath, (await readFile(resolve("tests/fixtures/demo.md"), "utf8")).replaceAll("FIXTURE_URL", fixture));
+    const out = join(dir, "out");
+    const cfg = DemoConfigSchema.parse({ script: scriptPath, dashboardBaseUrl: "http://localhost:3000", out, fps: 29.97, brand: { title: "Demo Fixture", hook: "Stop pasting secrets", motion: true } });
+    await expect(runPipeline(cfg, { requireFreshOut: true })).rejects.toThrowError(/^\[agent-demo-video\] brand\.motion: invalid fps for motion card \(positive integer\): 29\.97$/);
+    // Narration is the first paid step: no audio file means synthesis never ran.
+    expect(await readdir(join(out, "audio")).catch(() => [])).toEqual([]);
   });
 });

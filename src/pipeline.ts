@@ -967,6 +967,43 @@ function assertBundleFresh(bundlePath: string): void {
   }
 }
 
+type BrandConfig = NonNullable<DemoConfig["brand"]>;
+
+/** The values the title and end cards are drawn with, shared by static and motion cards. */
+function brandCardOpts(config: DemoConfig, b: BrandConfig) {
+  const base = {
+    width: config.resolution.width,
+    height: config.resolution.height,
+    fps: config.fps,
+    font: config.theme.captionFont,
+    backdropTop: config.theme.frame.backdropTop,
+    backdropBottom: config.theme.frame.backdropBottom,
+    accent: b.accent,
+    title: b.title,
+    ...(b.subtitle ? { subtitle: b.subtitle } : {}),
+    ...(b.url ? { url: b.url } : {}),
+  };
+  return {
+    title: { ...base, ...(b.hook ? { hook: b.hook } : {}), durationSec: b.titleSec },
+    end: { ...base, durationSec: b.endSec },
+  };
+}
+
+/**
+ * Dry-build the enabled motion cards' HTML from the real config values, so a card the
+ * renderer would reject (a fractional frame rate, an odd canvas size, a card longer than
+ * the limit) stops the run before any browser, voice or capture work.
+ */
+function validateMotionCards(config: DemoConfig, b: BrandConfig): void {
+  const cards = brandCardOpts(config, b);
+  try {
+    if (b.titleCard) titleCardHtml(cards.title);
+    if (b.endCard) endCardHtml(cards.end);
+  } catch (e) {
+    throw new Error(`[agent-demo-video] brand.motion: ${(e as Error).message}`);
+  }
+}
+
 export async function runPipeline(config: DemoConfig, opts: RunPipelineOpts = {}): Promise<RenderResult> {
   if (opts.sourceBuild) {
     if (opts.render) {
@@ -1020,10 +1057,13 @@ export async function runPipeline(config: DemoConfig, opts: RunPipelineOpts = {}
   const configSha256 = digestFull(stableConfig);
   const scriptSha256 = digestFull(md);
 
-  // Motion cards need the optional hyperframes package and Node 22+; fail
-  // before any capture or spend rather than mid-render.
+  // Motion cards need valid card values, the optional hyperframes package at
+  // its pinned version, and Node 22+; fail before any capture or spend rather
+  // than mid-render. The card values are checked first: they depend only on
+  // the config, not on this machine.
   let motion: ReturnType<typeof checkMotionRequirements> | undefined;
   if (config.brand?.motion && (config.brand.titleCard || config.brand.endCard)) {
+    validateMotionCards(config, config.brand);
     motion = checkMotionRequirements();
     if (!motion.ok) throw new Error("[agent-demo-video] " + motion.problems.join("; "));
   }
@@ -1160,18 +1200,7 @@ export async function runPipeline(config: DemoConfig, opts: RunPipelineOpts = {}
   }
   if (config.brand && (config.brand.titleCard || config.brand.endCard)) {
     const b = config.brand;
-    const cardBase = {
-      width: config.resolution.width,
-      height: config.resolution.height,
-      fps: config.fps,
-      font: config.theme.captionFont,
-      backdropTop: config.theme.frame.backdropTop,
-      backdropBottom: config.theme.frame.backdropBottom,
-      accent: b.accent,
-      title: b.title,
-      ...(b.subtitle ? { subtitle: b.subtitle } : {}),
-      ...(b.url ? { url: b.url } : {}),
-    };
+    const cards = brandCardOpts(config, b);
     const silentCard = async (id: string, durationSec: number): Promise<TtsResult> => {
       const audioPath = join(audioDir, `${id}.mp3`);
       await ffmpeg(silentMp3Args(durationSec, audioPath));
@@ -1207,10 +1236,10 @@ export async function runPipeline(config: DemoConfig, opts: RunPipelineOpts = {}
     if (b.titleCard) {
       const titlePath = join(segDir, "card_title.mp4");
       if (motion?.ok) {
-        await renderMotionCard(motion.hyperframesBin, titleCardHtml({ ...cardBase, ...(b.hook ? { hook: b.hook } : {}), durationSec: b.titleSec }), titlePath, "title");
+        await renderMotionCard(motion.hyperframesBin, titleCardHtml(cards.title), titlePath, "title");
         motionCards = { renderer: "hyperframes", version: motion.version };
       } else {
-        await ffmpeg(titleCardArgs({ ...cardBase, ...(b.hook ? { hook: b.hook } : {}), durationSec: b.titleSec }, titlePath, {
+        await ffmpeg(titleCardArgs(cards.title, titlePath, {
           titleFile: titleTextFile,
           ...(hookTextFiles ? { hookFiles: hookTextFiles } : {}),
           ...(subtitleTextFile ? { subtitleFile: subtitleTextFile } : {}),
@@ -1225,10 +1254,10 @@ export async function runPipeline(config: DemoConfig, opts: RunPipelineOpts = {}
     if (b.endCard) {
       const endPath = join(segDir, "card_end.mp4");
       if (motion?.ok) {
-        await renderMotionCard(motion.hyperframesBin, endCardHtml({ ...cardBase, durationSec: b.endSec }), endPath, "end");
+        await renderMotionCard(motion.hyperframesBin, endCardHtml(cards.end), endPath, "end");
         motionCards = { renderer: "hyperframes", version: motion.version };
       } else {
-        await ffmpeg(endCardArgs({ ...cardBase, durationSec: b.endSec }, endPath, {
+        await ffmpeg(endCardArgs(cards.end, endPath, {
           titleFile: titleTextFile,
           ...(urlTextFile ? { urlFile: urlTextFile } : {}),
         }));

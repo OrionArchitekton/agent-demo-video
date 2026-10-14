@@ -1346,7 +1346,7 @@ describe("Factory AI at Work Gate 1 production pack", () => {
     );
     expect(optionRun.status, optionRun.stderr).toBe(0);
     expect(run("--verify", optionTarget).status).toBe(0);
-  });
+  }, 180_000); // measured 60-76 s on a loaded workstation; the suite default (60 s) made it flaky
 
   it("streams the fixed launcher into a verified private detached source snapshot", async () => {
     const direct = spawnSync(

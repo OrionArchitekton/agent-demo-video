@@ -69,6 +69,19 @@ describe("tools/align_whisper.py with a stubbed recognizer", () => {
     for (const w of ["Apples", "bring", "cheer", "daily", "every", "evening"]) expect(prompt).toContain(w);
   });
 
+  it("never starts with the script's first word, even when only the first two sort in order", async () => {
+    const prompt = await promptFor("Alpha bravo zulu charlie delta");
+    expect(prompt.startsWith("Glossary: Alpha")).toBe(false);
+    for (const w of ["Alpha", "bravo", "charlie", "delta", "zulu"]) expect(prompt).toContain(w);
+  });
+
+  it("caps the prompt in UTF-8 bytes, so a non-Latin glossary stays under Whisper's 224-token prompt limit", async () => {
+    const words = Array.from({ length: 60 }, (_, i) => `слово${"абвгдежзиклмнопрстуфхцчшщ"[i % 25]}${"абвгд"[Math.floor(i / 25)]}`);
+    const prompt = await promptFor(words.join(" "));
+    expect(Buffer.byteLength(prompt, "utf8")).toBeLessThanOrEqual(220);
+    expect(prompt.split(", ").length).toBeGreaterThan(3);
+  });
+
   it("caps at 220 characters, skipping a word that does not fit rather than stopping", async () => {
     // 33 four-letter "a..." words fill the prompt to 206 characters; the 20-letter "b..." word no
     // longer fits, but the four-letter "cccc" after it still does.

@@ -3,6 +3,7 @@ import { mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from
 import { homedir, tmpdir } from "node:os";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { digestFull } from "../../src/provenance";
 
 /** The render report fields the showcase reads. Everything else in the report is ignored. */
 export type ReportLike = {
@@ -23,7 +24,8 @@ const esc = (s: string): string =>
 
 const escapeRe = (x: string): string => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 // A path starts after a non-path character and ends at "/", whitespace, a quote or end of text.
-const START = "(?<![\\w.~/-])";
+// A path starts after a non-path character, or right after "file://" (a local file URL).
+const START = "(?:(?<=file://)|(?<![\\w.~/-]))";
 // A path ends at a separator, whitespace, a quote or bracket, list punctuation, or a sentence-final
 // period; a period followed by more path characters ("/home/u.old") is part of the path.
 const END = "(?=$|[/\\s'\"`:,;)\\]}>]|\\.(?:\\s|$))";
@@ -102,6 +104,13 @@ export function refreshTexts(i: { log: string; reportJson: string; repoRoot: str
   const clean = (t: string): string => sanitizeLog(t, i.repoRoot, i.home).replace(/[\u2013\u2014\u2015]/g, "-");
   const report = trimReport(JSON.parse(i.reportJson) as Record<string, unknown>, i.script);
   return { log: clean(i.log), report: clean(JSON.stringify(report, null, 2)) + "\n" };
+}
+
+/** Refuse a render report whose script digest is not the committed script's. */
+export function assertSameScript(report: Record<string, any>, script: string): void {
+  if (report.inputs?.scriptSha256 !== digestFull(script)) {
+    throw new Error("the render report was made from a different script (scriptSha256 mismatch); render this script first");
+  }
 }
 
 export type CliMode = { mode: "build" } | { mode: "refresh"; outDir: string; logFile: string };
@@ -264,9 +273,11 @@ function main(args: string[]): void {
   if (mode.mode === "refresh") {
     const assets = resolve(root, "demos/self/assets");
     mkdirSync(assets, { recursive: true });
+    const reportJson = readFileSync(resolve(mode.outDir, "render-report.json"), "utf8");
+    assertSameScript(JSON.parse(reportJson) as Record<string, unknown>, readFileSync(resolve(root, "demos/self/DEMO_SCRIPT.md"), "utf8"));
     const out = refreshTexts({
       log: readFileSync(resolve(mode.logFile), "utf8"),
-      reportJson: readFileSync(resolve(mode.outDir, "render-report.json"), "utf8"),
+      reportJson,
       repoRoot: root,
       home: homedir(),
       script: readFileSync(resolve(root, "demos/self/DEMO_SCRIPT.md"), "utf8"),

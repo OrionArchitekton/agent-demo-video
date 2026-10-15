@@ -8,7 +8,7 @@ import { loadConfig } from "../src/config";
 import { parseScript } from "../src/parse-script";
 import { resolveSelectorFindings, structuralFindings } from "../src/preflight";
 import { filesUnder, findPrivateStrings } from "./support/distribution";
-import { buildShowcase, checksFrom, committedInputs, sanitizeLog, parseRefreshArgs, refreshTexts, scriptExcerpt, trimReport } from "../demos/self/build-showcase";
+import { buildShowcase, checksFrom, committedInputs, sanitizeLog, parseRefreshArgs, refreshTexts, scriptExcerpt, trimReport, assertSameScript } from "../demos/self/build-showcase";
 
 const root = process.cwd();
 const read = (p: string) => readFileSync(resolve(root, p), "utf8");
@@ -348,5 +348,20 @@ describe("report trimming and card values (review round 2)", () => {
     expect(value({ ttsMode: "fake" }, "check-voice")).toBe("silent draft");
     expect(value({ ttsMode: "partial" }, "check-voice")).toBe("unknown");
     expect(value({}, "check-voice")).toBe("not recorded");
+  });
+});
+
+describe("review round 3", () => {
+  it("cleans local paths inside file:// URLs", () => {
+    expect(sanitizeLog("open file:///home/alice/private/log and file:///repo/x/out", "/repo/x", "/home/alice")).toBe(
+      "open file://~/private/log and file://./out",
+    );
+    expect(sanitizeLog("see file:///tmp/abc/final.mp4", "/repo", "/home/u")).toBe("see file://<tmp>/final.mp4");
+  });
+
+  it("refuses to refresh from a render of a different script", () => {
+    expect(() => assertSameScript({ inputs: { scriptSha256: "0".repeat(64) } }, "### SHOT a")).toThrow(/different script/);
+    const script = read("demos/self/DEMO_SCRIPT.md");
+    expect(() => assertSameScript({ inputs: { scriptSha256: digestFull(script) } }, script)).not.toThrow();
   });
 });

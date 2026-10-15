@@ -12,6 +12,7 @@ import json
 import os
 import re
 import sys
+import unicodedata
 
 from faster_whisper import WhisperModel
 
@@ -24,26 +25,28 @@ def glossary(script, limit=220):
 
     Words are Unicode letters (accented, Cyrillic and other scripts stay whole); a longer run, such
     as a CJK clause with no spaces, is skipped so no sentence of the script lands in the prompt.
-    The glossary never starts with the script's first word: if sorting puts it first, the list is
-    reversed. The cap counts bytes because Whisper limits the prompt to 224 tokens and a token never
-    covers less than one byte, so a non-Latin glossary cannot overflow and be cut by the model.
+    The script's first word is left out: faster-whisper feeds the prompt as the tokens spoken just
+    before the audio, so naming the opening word there invites Whisper to skip it. The cap counts
+    bytes because Whisper limits the prompt to 224 tokens and a token never covers less than one
+    byte, so a non-Latin glossary cannot overflow and be cut by the model.
     """
+    script = unicodedata.normalize("NFC", script)  # combining accents join their letters
     eligible, seen = [], set()
     for w in re.findall(r"[^\W\d_](?:[\w'-]*[^\W_])?", script):
         if 4 <= len(w) <= MAX_WORD and w.lower() not in seen:
             seen.add(w.lower())
             eligible.append(w)
-    words = sorted(eligible, key=str.lower)
-    if len(words) > 1 and words[0].lower() == eligible[0].lower():
-        words.reverse()
-    items, size = [], len(b"Glossary: ")
+    words = sorted(eligible[1:], key=str.lower)
+    # The label must not echo the opening either, if the script happens to start with it.
+    label = "Terms: " if eligible and eligible[0].lower() == "glossary" else "Glossary: "
+    items, size = [], len(label.encode("utf-8"))
     for w in words:
         add = len(w.encode("utf-8")) + (2 if items else 0)
         if size + add > limit:
             continue
         items.append(w)
         size += add
-    return "Glossary: " + ", ".join(items) if items else None
+    return label + ", ".join(items) if items else None
 
 
 if len(sys.argv) != 4:

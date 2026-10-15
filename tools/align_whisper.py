@@ -20,11 +20,13 @@ MAX_WORD = 24
 
 
 def glossary(script, limit=220):
-    """Distinct words of 4 to 24 characters, sorted, kept while they fit in `limit` characters.
+    """Distinct words of 4 to 24 characters, sorted, kept while they fit in `limit` UTF-8 bytes.
 
     Words are Unicode letters (accented, Cyrillic and other scripts stay whole); a longer run, such
     as a CJK clause with no spaces, is skipped so no sentence of the script lands in the prompt.
-    If sorting happens to reproduce the script's own first words, the list is reversed.
+    The glossary never starts with the script's first word: if sorting puts it first, the list is
+    reversed. The cap counts bytes because Whisper limits the prompt to 224 tokens and a token never
+    covers less than one byte, so a non-Latin glossary cannot overflow and be cut by the model.
     """
     eligible, seen = [], set()
     for w in re.findall(r"[^\W\d_](?:[\w'-]*[^\W_])?", script):
@@ -32,11 +34,11 @@ def glossary(script, limit=220):
             seen.add(w.lower())
             eligible.append(w)
     words = sorted(eligible, key=str.lower)
-    if len(words) > 1 and [w.lower() for w in words[:3]] == [w.lower() for w in eligible[:3]]:
+    if len(words) > 1 and words[0].lower() == eligible[0].lower():
         words.reverse()
-    items, size = [], len("Glossary: ")
+    items, size = [], len(b"Glossary: ")
     for w in words:
-        add = len(w) + (2 if items else 0)
+        add = len(w.encode("utf-8")) + (2 if items else 0)
         if size + add > limit:
             continue
         items.append(w)

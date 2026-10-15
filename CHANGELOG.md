@@ -184,6 +184,11 @@
 
 ### Fixed
 
+- The reference aligner (`tools/align_whisper.py`) passes Whisper a sorted glossary of the
+  script's words instead of the script's opening text. Whisper reads its prompt as text already
+  spoken, so it skipped audio that repeated it: on a one-minute narrated render the first 40 words
+  went missing, and the transcript check reported the opening phrases as dropped.
+
 - The final mux no longer drops trailing video frames. Muxing a stream-copied B-frame
   video with `-shortest` against audio even a few ms short ended the video early (2 to
   4 frames measured, up to about 170ms of the closing shot); the audio is now padded

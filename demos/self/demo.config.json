@@ -1,0 +1,21 @@
+{
+  "script": "demos/self/DEMO_SCRIPT.md",
+  "dashboardBaseUrl": "./",
+  "out": "demos/self/out",
+  "resolution": {
+    "width": 1920,
+    "height": 1080
+  },
+  "fps": 30,
+  "maxDurationSec": 180,
+  "brand": {
+    "title": "agent-demo-video",
+    "subtitle": "Narrated demo videos from a script",
+    "hook": "This video made itself",
+    "url": "github.com/OrionArchitekton/agent-demo-video",
+    "motion": true
+  },
+  "motion": {
+    "zoomLevel": 1.15
+  }
+}

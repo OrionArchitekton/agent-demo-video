@@ -92,6 +92,9 @@ describe("showcase generator", () => {
 
   it("ignores empty root or home arguments", () => {
     expect(sanitizeLog("keep /a/b", "", "")).toBe("keep /a/b");
+    expect(sanitizeLog("see /home/u: (/home/u) /home/u, [/home/u] /home/u; end /home/u. keep /home/u.old", "/repo", "/home/u")).toBe(
+      "see ~: (~) ~, [~] ~; end ~. keep /home/u.old",
+    );
   });
 
   it("collapses temp paths to their last segment and strips ANSI color codes", () => {
@@ -241,6 +244,9 @@ describe("committed assets", () => {
   it("trimReport never copies aligner output, only fixed reasons or the text before the first colon", () => {
     const t = (reason: string) => (trimReport({ transcriptCheck: { ran: false, reason } }).transcriptCheck as { reason: string }).reason;
     expect(t("aligner failed: transcript check: program not found: /x/secret-aligner")).toBe("aligner failed");
+    expect(t("sk-voice-token: connection refused")).toBe("transcript check did not run");
+    expect(t("/home/u/bin/aligner: not found")).toBe("transcript check did not run");
+    expect(t("script too long to compare: 5000 words")).toBe("script too long to compare");
     expect(t("script too long to compare: 9000 words")).toBe("script too long to compare");
     expect(t("no voice.aligner configured")).toBe("no voice.aligner configured");
     expect(t("FAKE_TTS: narration is silent")).toBe("FAKE_TTS: narration is silent");

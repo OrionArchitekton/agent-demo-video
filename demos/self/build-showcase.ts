@@ -24,7 +24,9 @@ const esc = (s: string): string =>
 const escapeRe = (x: string): string => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 // A path starts after a non-path character and ends at "/", whitespace, a quote or end of text.
 const START = "(?<![\\w.~/-])";
-const END = "(?=$|[/\\s'\"])";
+// A path ends at a separator, whitespace, a quote or bracket, list punctuation, or a sentence-final
+// period; a period followed by more path characters ("/home/u.old") is part of the path.
+const END = "(?=$|[/\\s'\"`:,;)\\]}>]|\\.(?:\\s|$))";
 
 function replacePath(text: string, path: string, to: string): string {
   const p = path.replace(/\/+$/, "");
@@ -52,6 +54,7 @@ export function sanitizeLog(text: string, repoRoot: string, home: string): strin
 
 /** The only reasons the tool itself writes for a transcript check that did not run. */
 const FIXED_REASONS = ["no voice.aligner configured", "FAKE_TTS: narration is silent", "aligner wrote no word timings"];
+const KNOWN_PREFIXES = ["aligner failed", "script too long to compare"];
 
 /**
  * Never copy aligner output. A failure reason can carry the aligner program or its error text,
@@ -61,8 +64,10 @@ function trimTranscriptCheck(t: any): ReportLike["transcriptCheck"] {
   if (t.ran === true) return { ran: true, droppedPhrases: [...t.droppedPhrases] };
   const reason = String(t.reason ?? "");
   if (FIXED_REASONS.includes(reason)) return { ran: false, reason };
-  const head = reason.includes(":") ? reason.slice(0, reason.indexOf(":")).trim() : "";
-  return { ran: false, reason: head || "transcript check did not run" };
+  // Unknown text may carry a program path, a host or a token before its colon, so only the CLI's
+  // own known prefixes survive; anything else becomes a fixed phrase.
+  const known = KNOWN_PREFIXES.find((p) => reason === p || reason.startsWith(`${p}:`));
+  return { ran: false, reason: known ?? "transcript check did not run" };
 }
 
 /**

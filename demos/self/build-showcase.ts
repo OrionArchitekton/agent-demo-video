@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, realpathSync, renameSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -60,8 +60,14 @@ const KNOWN_PREFIXES = ["aligner failed", "script too long to compare"];
  * Never copy aligner output. A failure reason can carry the aligner program or its error text,
  * which is private voice setup, so anything but a fixed reason is cut at its first colon.
  */
-function trimTranscriptCheck(t: any): ReportLike["transcriptCheck"] {
-  if (t.ran === true) return { ran: true, droppedPhrases: [...t.droppedPhrases] };
+function trimTranscriptCheck(t: any, script: string | undefined): ReportLike["transcriptCheck"] {
+  // Dropped phrases come from the script, so only text the script really contains is kept.
+  if (t.ran === true) {
+    return {
+      ran: true,
+      droppedPhrases: (t.droppedPhrases as string[]).map((p) => (script && p && script.includes(p) ? p : "(phrase not shown)")),
+    };
+  }
   const reason = String(t.reason ?? "");
   if (FIXED_REASONS.includes(reason)) return { ran: false, reason };
   // Unknown text may carry a program path, a host or a token before its colon, so only the CLI's
@@ -74,24 +80,27 @@ function trimTranscriptCheck(t: any): ReportLike["transcriptCheck"] {
  * Only the report fields the showcase reads. The full report records the voice setup exactly as
  * configured, which must never be committed, so assets are always written through this.
  */
-export function trimReport(r: Record<string, any>): ReportLike {
+export function trimReport(r: Record<string, any>, script?: string): ReportLike {
   const out: ReportLike = {};
   if (r.ttsMode !== undefined) out.ttsMode = r.ttsMode;
   if (r.inputs?.scriptSha256 !== undefined) out.scriptSha256 = r.inputs.scriptSha256;
   if (r.hook !== undefined) out.hook = r.hook;
-  if (r.transcriptCheck !== undefined) out.transcriptCheck = trimTranscriptCheck(r.transcriptCheck);
-  if (r.deliverable !== undefined) out.deliverable = { ok: r.deliverable.ok, problems: r.deliverable.problems };
+  if (r.transcriptCheck !== undefined) out.transcriptCheck = trimTranscriptCheck(r.transcriptCheck, script);
+  // Problem text can name files on the rendering machine; the showcase only needs the count.
+  if (r.deliverable !== undefined) {
+    out.deliverable = { ok: r.deliverable.ok, problems: (r.deliverable.problems ?? []).map(() => "(problem not shown)") };
+  }
   if (r.motionCards !== undefined) out.motionCards = { renderer: r.motionCards.renderer, version: r.motionCards.version };
   return out;
 }
 
 /** The sanitized run log and the trimmed, sanitized report text, ready to commit. */
-export function refreshTexts(i: { log: string; reportJson: string; repoRoot: string; home: string }): {
+export function refreshTexts(i: { log: string; reportJson: string; repoRoot: string; home: string; script?: string }): {
   log: string;
   report: string;
 } {
   const clean = (t: string): string => sanitizeLog(t, i.repoRoot, i.home).replace(/[\u2013\u2014\u2015]/g, "-");
-  const report = trimReport(JSON.parse(i.reportJson) as Record<string, unknown>);
+  const report = trimReport(JSON.parse(i.reportJson) as Record<string, unknown>, i.script);
   return { log: clean(i.log), report: clean(JSON.stringify(report, null, 2)) + "\n" };
 }
 
@@ -114,7 +123,7 @@ export function checksFrom(r: ReportLike): Check[] {
       : `not run (${t.reason})`;
   return [
     { testid: "check-transcript", label: "Transcript check", value: transcript },
-    { testid: "check-hook", label: "Hook on the first frame", value: r.hook === undefined ? "not recorded" : r.hook === "missing" ? "missing" : "set" },
+    { testid: "check-hook", label: "Hook on the first frame", value: r.hook === undefined ? "not recorded" : r.hook === "set" || r.hook === "missing" ? r.hook : "unknown" },
     {
       testid: "check-deliverable",
       label: "Video file verified",
@@ -125,7 +134,11 @@ export function checksFrom(r: ReportLike): Check[] {
       label: "Motion cards",
       value: r.motionCards ? `${r.motionCards.renderer} ${r.motionCards.version}` : "off",
     },
-    { testid: "check-voice", label: "Narration", value: r.ttsMode === "real" ? "voiced" : "silent draft" },
+    {
+      testid: "check-voice",
+      label: "Narration",
+      value: r.ttsMode === undefined ? "not recorded" : r.ttsMode === "real" ? "voiced" : r.ttsMode === "fake" ? "silent draft" : "unknown",
+    },
   ];
 }
 
@@ -256,10 +269,14 @@ function main(args: string[]): void {
       reportJson: readFileSync(resolve(mode.outDir, "render-report.json"), "utf8"),
       repoRoot: root,
       home: homedir(),
+      script: readFileSync(resolve(root, "demos/self/DEMO_SCRIPT.md"), "utf8"),
     });
+    // Convert the contact sheet first: if ffmpeg fails, nothing in assets/ has changed yet.
+    const nextSheet = resolve(assets, "contact-sheet.next.png");
+    execFileSync("ffmpeg", ["-loglevel", "error", "-y", "-i", resolve(mode.outDir, "contact-sheet.png"), "-vf", "scale=1280:-2", nextSheet]);
     writeFileSync(resolve(assets, "run.log"), out.log);
     writeFileSync(resolve(assets, "report.json"), out.report);
-    execFileSync("ffmpeg", ["-loglevel", "error", "-y", "-i", resolve(mode.outDir, "contact-sheet.png"), "-vf", "scale=1280:-2", resolve(assets, "contact-sheet.png")]);
+    renameSync(nextSheet, resolve(assets, "contact-sheet.png"));
     console.log("refreshed demos/self/assets");
   }
   writeFileSync(resolve(root, "demos/self/showcase.html"), buildShowcase(committedInputs(root)));

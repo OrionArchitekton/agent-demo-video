@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 
@@ -47,15 +48,15 @@ export const LONG_DASH = new RegExp(`[${String.fromCodePoint(0x2013, 0x2014, 0x2
 export function filesUnder(dir: string): string[] {
   const abs = resolve(root, dir);
   if (!existsSync(abs)) return [];
-  const out: string[] = [];
-  for (const name of readdirSync(abs)) {
-    const p = join(abs, name);
-    // `out` holds git-ignored render output, never public files.
-    if (statSync(p).isDirectory()) {
-      if (name !== "out") out.push(...filesUnder(relative(root, p)));
-    } else if (/\.(md|json|html|log)$/.test(name)) out.push(relative(root, p));
-  }
-  return out.sort();
+  // Tracked and new files only: git-ignored render output (for example demos/self/out) is never public.
+  const listed = execFileSync("git", ["ls-files", "--cached", "--others", "--exclude-standard", "--", dir], {
+    cwd: root,
+    encoding: "utf8",
+  });
+  return listed
+    .split("\n")
+    .filter((f) => f && /\.(md|json|html|log)$/.test(f) && existsSync(resolve(root, f)))
+    .sort();
 }
 
 /** Relative link targets in Markdown, anchor removed; skips URLs with a scheme and pure anchors. */

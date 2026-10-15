@@ -9,7 +9,8 @@ render, and the install line. Both pages work offline.
 
 ## Silent pass
 
-From the repository root:
+The self-demo uses motion cards, so it needs Node 22.12 or newer (the tool itself runs on Node 18
+when motion is off). From the repository root:
 
 ```bash
 FAKE_TTS=1 pnpm demo demos/self/demo.config.json 2>&1 | tee run.log

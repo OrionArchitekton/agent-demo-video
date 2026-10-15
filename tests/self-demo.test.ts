@@ -253,7 +253,7 @@ describe("committed assets", () => {
     expect(t("aligner wrote no word timings")).toBe("aligner wrote no word timings");
     expect(t("unknown text /x/secret")).toBe("transcript check did not run");
     expect(
-      trimReport({ transcriptCheck: { ran: true, droppedPhrases: ["a"], extra: "/x/secret" } }).transcriptCheck,
+      trimReport({ transcriptCheck: { ran: true, droppedPhrases: ["a"], extra: "/x/secret" } }, "a b c").transcriptCheck,
     ).toEqual({ ran: true, droppedPhrases: ["a"] });
   });
 
@@ -320,5 +320,33 @@ describe("self-demo poster", () => {
   it("no video file is tracked", () => {
     const tracked = execFileSync("git", ["ls-files"], { cwd: root, encoding: "utf8" });
     expect(tracked).not.toMatch(/\.(mp4|mov|webm|mkv)$/m);
+  });
+});
+
+describe("report trimming and card values (review round 2)", () => {
+  it("keeps a dropped phrase only if the script says it, and never copies problem text", () => {
+    const r = trimReport(
+      {
+        transcriptCheck: { ran: true, droppedPhrases: ["Watch it get filled in.", "see file:///home/u/x.wav"] },
+        deliverable: { ok: false, problems: ["stream at /home/u/out/final.mp4 is 1919 wide"] },
+      },
+      "Watch it get filled in. More words.",
+    );
+    expect(r.transcriptCheck).toEqual({ ran: true, droppedPhrases: ["Watch it get filled in.", "(phrase not shown)"] });
+    expect(r.deliverable).toEqual({ ok: false, problems: ["(problem not shown)"] });
+  });
+
+  it("without the script, shows no dropped phrase text at all", () => {
+    const r = trimReport({ transcriptCheck: { ran: true, droppedPhrases: ["anything"] } });
+    expect(r.transcriptCheck).toEqual({ ran: true, droppedPhrases: ["(phrase not shown)"] });
+  });
+
+  it("shows unexpected hook and voice values as unknown, never as a pass", () => {
+    const value = (r: object, id: string) => checksFrom(r).find((c) => c.testid === id)!.value;
+    expect(value({ hook: "set" }, "check-hook")).toBe("set");
+    expect(value({ hook: "error" }, "check-hook")).toBe("unknown");
+    expect(value({ ttsMode: "fake" }, "check-voice")).toBe("silent draft");
+    expect(value({ ttsMode: "partial" }, "check-voice")).toBe("unknown");
+    expect(value({}, "check-voice")).toBe("not recorded");
   });
 });

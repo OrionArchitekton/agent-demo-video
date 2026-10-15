@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
@@ -289,11 +290,29 @@ describe("committed assets", () => {
   it("demos/self contributes exactly the expected public files, never render output", () => {
     expect(filesUnder("demos/self")).toEqual([
       "demos/self/DEMO_SCRIPT.md",
+      "demos/self/README.md",
       "demos/self/app.html",
       "demos/self/assets/report.json",
       "demos/self/assets/run.log",
       "demos/self/demo.config.json",
       "demos/self/showcase.html",
     ]);
+  });
+});
+
+describe("self-demo poster", () => {
+  const version = (JSON.parse(read("package.json")) as { version: string }).version;
+  const RELEASE_ASSET = `https://github.com/OrionArchitekton/agent-demo-video/releases/download/v${version}/agent-demo-video-self-demo.mp4`;
+
+  it("is committed, small, and linked from the README to the release asset", () => {
+    const p = resolve(root, "docs/media/self-demo-poster.jpg");
+    expect(existsSync(p)).toBe(true);
+    expect(statSync(p).size).toBeLessThan(300 * 1024);
+    expect(read("README.md")).toContain(`(docs/media/self-demo-poster.jpg)](${RELEASE_ASSET})`);
+  });
+
+  it("no video file is tracked", () => {
+    const tracked = execFileSync("git", ["ls-files"], { cwd: root, encoding: "utf8" });
+    expect(tracked).not.toMatch(/\.(mp4|mov|webm|mkv)$/m);
   });
 });

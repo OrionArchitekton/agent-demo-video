@@ -105,8 +105,8 @@ describe("tools/align_whisper.py with a stubbed recognizer", () => {
     // longer fits, but the four-letter "cccc" after it still does.
     const fill = Array.from({ length: 33 }, (_, i) => `a${String.fromCharCode(97 + Math.floor(i / 26), 97 + (i % 26))}x`);
     const long = "b".repeat(20);
-    // (Spoken order differs from sorted order, so the reversal guard stays out of this test.)
-    const prompt = await promptFor(`${long} cccc ${fill.join(" ")}`);
+    // "zzzz" opens the script, so it is the word left out; the long word and "cccc" are both in play.
+    const prompt = await promptFor(`zzzz ${fill.join(" ")} ${long} cccc`);
     expect(prompt.length).toBeLessThanOrEqual(220);
     for (const w of fill) expect(prompt).toContain(w);
     expect(prompt).not.toContain(long);

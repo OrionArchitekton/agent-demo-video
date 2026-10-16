@@ -5,10 +5,11 @@ repeatable. Narration is generated first and becomes the clock for the screen re
 captions, so audio, video and captions stay in sync by construction. Length is capped by
 `maxDurationSec` (default 300).
 
-[![The self-demo: agent-demo-video rendering a video of itself](docs/media/self-demo-poster.jpg)](https://github.com/OrionArchitekton/agent-demo-video/releases/download/v0.3.0/agent-demo-video-self-demo.mp4)
+[![The self-demo: agent-demo-video rendering a video of itself](docs/media/self-demo-poster.jpg)](https://youtu.be/9Oi9SKoahvs)
 
-Watch the self-demo (one minute): the tool rendered it of a sample app and of its own script, run
-and checks, from [`demos/self/`](demos/self/README.md).
+Watch the self-demo on YouTube (one minute): the tool rendered it of a sample app and of its own
+script, run and checks, from [`demos/self/`](demos/self/README.md). The video file is also on the
+[v0.3.0 release](https://github.com/OrionArchitekton/agent-demo-video/releases/download/v0.3.0/agent-demo-video-self-demo.mp4).
 
 ## Install
 

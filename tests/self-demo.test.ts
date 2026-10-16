@@ -307,14 +307,18 @@ describe("committed assets", () => {
 });
 
 describe("self-demo poster", () => {
-  const version = (JSON.parse(read("package.json")) as { version: string }).version;
-  const RELEASE_ASSET = `https://github.com/OrionArchitekton/agent-demo-video/releases/download/v${version}/agent-demo-video-self-demo.mp4`;
+  // GitHub serves release assets as downloads, so the poster opens the video on YouTube, where it
+  // plays in the browser; the release file stays linked as a download. The asset lives on v0.3.0,
+  // the release that carries it, so this link does not follow later version bumps.
+  const YOUTUBE = "https://youtu.be/9Oi9SKoahvs";
+  const RELEASE_ASSET = "https://github.com/OrionArchitekton/agent-demo-video/releases/download/v0.3.0/agent-demo-video-self-demo.mp4";
 
-  it("is committed, small, and linked from the README to the release asset", () => {
+  it("is committed, small, opens the video on YouTube, and keeps the release download", () => {
     const p = resolve(root, "docs/media/self-demo-poster.jpg");
     expect(existsSync(p)).toBe(true);
     expect(statSync(p).size).toBeLessThan(300 * 1024);
-    expect(read("README.md")).toContain(`(docs/media/self-demo-poster.jpg)](${RELEASE_ASSET})`);
+    expect(read("README.md")).toContain(`(docs/media/self-demo-poster.jpg)](${YOUTUBE})`);
+    expect(read("README.md")).toContain(`](${RELEASE_ASSET})`);
   });
 
   it("no video file is tracked", () => {

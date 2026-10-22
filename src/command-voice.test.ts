@@ -120,6 +120,25 @@ describe("runCommand edge cases", () => {
     try {
       await expect(runCommand("v", [fx("bg-helper.sh"), pidFile], {}, 3)).resolves.toBeUndefined();
       expect(Date.now() - t0).toBeLessThan(2000);
+      const helper = await readPid(pidFile);
+      await waitGone(helper);
+      expect(alive(helper)).toBe(false);
+    } finally {
+      const helper = await readPid(pidFile).catch(() => 0);
+      if (helper) try { process.kill(helper, "SIGKILL"); } catch { /* gone */ }
+    }
+  });
+  it("cleans the completed command's group after an error while preserving its diagnostic", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "bg-error-"));
+    const pidFile = join(dir, "pid");
+    try {
+      await expect(runCommand("v", ["bash", "-c",
+        '"$1" "$2"; echo "fixture diagnostic" >&2; exit 3',
+        "fixture", fx("bg-helper.sh"), pidFile], {}, 3))
+        .rejects.toThrowError(/^v: exited 3: fixture diagnostic$/);
+      const helper = await readPid(pidFile);
+      await waitGone(helper);
+      expect(alive(helper)).toBe(false);
     } finally {
       const helper = await readPid(pidFile).catch(() => 0);
       if (helper) try { process.kill(helper, "SIGKILL"); } catch { /* gone */ }

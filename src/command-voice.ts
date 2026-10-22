@@ -160,8 +160,9 @@ export async function runCommand(label: string, template: string[], vars: Record
     // running would hang until the timeout. stderr stays best-effort: a short
     // grace (ended early by "close") lets an ordinary exit's last output drain.
     child.on("exit", (code, signal) => {
-      // A command that stopped after a timeout's SIGTERM: sweep anything left in its group.
-      if (timedOut && child.pid !== undefined) signalGroup(child.pid, "SIGKILL");
+      // The leader has finished, including ordinary success or failure. Retire
+      // helpers still in its owned group before done() forgets that group.
+      if (child.pid !== undefined) signalGroup(child.pid, "SIGKILL");
       const finish = () => done(() => {
         if (timedOut) return reject(timedOutError());
         if (code === 0 && live.interrupted) return reject(new Error(`${label}: interrupted`));

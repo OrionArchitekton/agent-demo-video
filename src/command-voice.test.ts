@@ -98,6 +98,9 @@ describe("runCommand", () => {
 });
 
 describe("runCommand edge cases", () => {
+  it("does not time out an exited command while its owner drains output", async () => {
+    await expect(runCommand("v", ["sleep", "0.8"], {}, 1)).resolves.toBeUndefined();
+  });
   it("never signals a retired group ID when that number could name unrelated work", async () => {
     const unrelated = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { detached: true, stdio: "ignore" });
     const closed = new Promise<void>((resolve) => unrelated.once("close", () => resolve()));

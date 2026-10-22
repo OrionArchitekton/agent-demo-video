@@ -67,7 +67,8 @@ function report(result) {
   if (!process.connected) return killGroup("SIGKILL");
   process.send({ type: "result", ...result }, (error) => {
     if (error) return killGroup("SIGKILL");
-    setTimeout(() => killGroup("SIGKILL"), ${STDIO_DRAIN_MS});
+    if (terminating) killGroup("SIGKILL");
+    else setTimeout(() => killGroup("SIGKILL"), ${STDIO_DRAIN_MS});
   });
 }
 const [program, ...args] = process.argv.slice(1);
@@ -182,7 +183,13 @@ export async function runCommand(label: string, template: string[], vars: Record
     child.on("message", (message: unknown) => {
       if (!message || typeof message !== "object") return;
       const event = message as CommandResult & { type?: string; code?: number | null };
-      if (event.type === "result") commandResult = event;
+      if (event.type === "result") {
+        commandResult = event;
+        // The command met its deadline. The live owner now performs its own
+        // bounded drain; that cleanup must not turn completion into a timeout.
+        clearTimeout(timer);
+        clearTimeout(grace);
+      }
       if (event.type === "cleanup-warning") {
         console.warn(`[agent-demo-video] command group cleanup could not send SIGKILL: ${String(event.code)}`);
       }

@@ -116,9 +116,9 @@ churn. The unchanged frozen comparison still improves from one of three to three
 of three. The 25 focused lifecycle checks preserve ordinary and failing results,
 late diagnostics, timeout, graceful interruption, and visible cleanup warnings.
 
-Final command source SHA-256:
+Retained-owner revision source SHA-256:
 `0144c97f6c910c0b9283337ee8da57a79405354bc854f6e3c7f131f181117729`.
-Final frozen comparison report SHA-256:
+Retained-owner revision comparison report SHA-256:
 `d3b9d4e01d3c9581db74bf9e131cafab722387c136ab734d48a6e08b85aa28b5`.
 The supervisor adds roughly 250 ms per command for the final drain. This is a
 correctness tradeoff, not a time-saving claim. See the
@@ -126,6 +126,23 @@ correctness tradeoff, not a time-saving claim. See the
 validation and rollback.
 Full validation of retained ownership: 580 tests passed, one optional Whisper
 integration skipped; typecheck and both CLI builds passed.
+
+## Deadline refinement
+
+A final boundary probe found that keeping the owner alive through the drain could
+turn an already-completed command into a timeout. A command that sleeps 0.8 s
+under a 1 s deadline reproduced the failure before correction. Receiving the
+command's result now ends that deadline; the supervisor independently bounds the
+remaining drain. After a graceful termination request, it retires the group as
+soon as the command exits instead of adding a normal drain delay.
+
+The new regression and the existing timeout/interrupt tests pass. Full validation:
+581 tests passed, one optional Whisper integration skipped; typecheck and both
+CLI builds passed. The original
+frozen comparison remains one of three before and three of three after.
+Final command source SHA-256: `9bf8d7e25715a5a388dbccc2d0286ece4bccda0067a1817dd2c4908ac5b85331`.
+Final comparison report SHA-256:
+`91634ca5fd9c73b2a50eaf9ca23811c75b66171199cdcfa8495e9b1120a27187`.
 
 ## Rollout and rollback
 

@@ -1,12 +1,26 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { mkdtemp, writeFile, readFile } from "node:fs/promises";
+import { readFileSync } from "node:fs";
+import { spawn, ChildProcess } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fillArgs, runCommand, readWordsFile, killLiveCommands } from "./command-voice";
 
 const fx = (n: string) => resolve("tests/fixtures/voice", n);
 
-const alive = (pid: number) => { try { process.kill(pid, 0); return true; } catch { return false; } };
+const alive = (pid: number) => {
+  try { process.kill(pid, 0); } catch { return false; }
+  if (process.platform === "linux") {
+    try {
+      const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
+      // A terminated orphan may await init's reap; it is no longer running.
+      return !["Z", "X"].includes(stat.charAt(stat.lastIndexOf(")") + 2));
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+    }
+  }
+  return true;
+};
 async function waitGone(pid: number): Promise<void> {
   for (let i = 0; i < 20 && alive(pid); i++) await new Promise((r) => setTimeout(r, 50));
 }
@@ -35,6 +49,29 @@ describe("runCommand", () => {
   it("names a non-zero exit and keeps the stderr tail", async () => {
     await expect(runCommand("voice command (shot s1)", [fx("fail.sh")], {}, 5)).rejects.toThrowError(/exited 3: voice model not loaded/);
   });
+  it("warns when cleanup is denied without changing the command result", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "cleanup-denied-"));
+    const fault = join(dir, "fault.cjs");
+    // Inject only into the owned supervisor; no elevated credentials are used.
+    await writeFile(fault, `
+      const realKill = process.kill.bind(process);
+      process.kill = (pid, signal) => {
+        if (pid < 0 && signal === "SIGKILL") {
+          throw Object.assign(new Error("permission denied"), { code: "EPERM" });
+        }
+        return realKill(pid, signal);
+      };
+    `);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      await expect(runCommand("v", ["true"], {}, 3, {
+        env: { ...process.env, NODE_OPTIONS: `--require ${fault}` },
+      })).resolves.toBeUndefined();
+      expect(warn).toHaveBeenCalledWith(expect.stringMatching(/command group cleanup.*EPERM/));
+    } finally {
+      warn.mockRestore();
+    }
+  });
   it("passes opts.env to the child instead of the parent environment", async () => {
     const dir = await mkdtemp(join(tmpdir(), "env-"));
     const out = join(dir, "out.txt");
@@ -61,6 +98,58 @@ describe("runCommand", () => {
 });
 
 describe("runCommand edge cases", () => {
+  it("does not time out an exited command while its owner drains output", async () => {
+    await expect(runCommand("v", ["sleep", "0.8"], {}, 1)).resolves.toBeUndefined();
+  });
+  it("cancels over the owned channel without signalling a recycled child-handle PID", async () => {
+    const unrelated = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { detached: true, stdio: "ignore" });
+    const closed = new Promise<void>((resolve) => unrelated.once("close", () => resolve()));
+    const realKill = process.kill.bind(process);
+    const handleKill = ChildProcess.prototype.kill;
+    const kill = vi.spyOn(ChildProcess.prototype, "kill").mockImplementation(function (this: ChildProcess, signal) {
+      if (signal === "SIGUSR2") {
+        // Model a stale handle's PID naming only our disposable control group.
+        try { realKill(-unrelated.pid!, "SIGKILL"); } catch { /* gone */ }
+        return true;
+      }
+      return handleKill.call(this, signal);
+    });
+    const dir = await mkdtemp(join(tmpdir(), "stale-owner-"));
+    const pidFile = join(dir, "pid");
+    const result = runCommand("v", ["bash", "-c", 'echo $$ > "$1"; sleep 0.2', "fixture", pidFile], {}, 3)
+      .then(() => "resolved", (error: Error) => error.message);
+    try {
+      await readPid(pidFile);
+      killLiveCommands();
+      expect(await result).toMatch(/interrupted|killed by signal/);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(alive(unrelated.pid!)).toBe(true);
+      expect(kill).not.toHaveBeenCalled();
+    } finally {
+      kill.mockRestore();
+      await result;
+      try { realKill(-unrelated.pid!, "SIGKILL"); } catch { /* gone */ }
+      await closed;
+    }
+  });
+  it("never signals a retired group ID when that number could name unrelated work", async () => {
+    const unrelated = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { detached: true, stdio: "ignore" });
+    const closed = new Promise<void>((resolve) => unrelated.once("close", () => resolve()));
+    const realKill = process.kill.bind(process);
+    // Model a recycled PGID at the caller's signal boundary. Only this test's
+    // disposable unrelated group can be hit; no host PID churn is required.
+    const kill = vi.spyOn(process, "kill").mockImplementation((pid, signal) =>
+      realKill(pid < 0 && signal === "SIGKILL" ? -unrelated.pid! : pid, signal));
+    try {
+      await expect(runCommand("v", ["true"], {}, 3)).resolves.toBeUndefined();
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(alive(unrelated.pid!)).toBe(true);
+    } finally {
+      kill.mockRestore();
+      try { realKill(-unrelated.pid!, "SIGKILL"); } catch { /* gone */ }
+      await closed;
+    }
+  });
   it("kills the whole process tree on timeout", async () => {
     const dir = await mkdtemp(join(tmpdir(), "gc-"));
     const pidFile = join(dir, "pid");
@@ -120,6 +209,41 @@ describe("runCommand edge cases", () => {
     try {
       await expect(runCommand("v", [fx("bg-helper.sh"), pidFile], {}, 3)).resolves.toBeUndefined();
       expect(Date.now() - t0).toBeLessThan(2000);
+      const helper = await readPid(pidFile);
+      await waitGone(helper);
+      expect(alive(helper)).toBe(false);
+    } finally {
+      const helper = await readPid(pidFile).catch(() => 0);
+      if (helper) try { process.kill(helper, "SIGKILL"); } catch { /* gone */ }
+    }
+  });
+  it("cleans the completed command's group after an error while preserving its diagnostic", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "bg-error-"));
+    const pidFile = join(dir, "pid");
+    try {
+      await expect(runCommand("v", ["bash", "-c",
+        '"$1" "$2"; echo "fixture diagnostic" >&2; exit 3',
+        "fixture", fx("bg-helper.sh"), pidFile], {}, 3))
+        .rejects.toThrowError(/^v: exited 3: fixture diagnostic$/);
+      const helper = await readPid(pidFile);
+      await waitGone(helper);
+      expect(alive(helper)).toBe(false);
+    } finally {
+      const helper = await readPid(pidFile).catch(() => 0);
+      if (helper) try { process.kill(helper, "SIGKILL"); } catch { /* gone */ }
+    }
+  });
+  it("drains a helper's final diagnostic before retiring the completed command's group", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "bg-drain-"));
+    const pidFile = join(dir, "pid");
+    try {
+      await expect(runCommand("v", ["bash", "-c",
+        '(sleep 0.08; echo "late helper diagnostic" >&2; sleep 20) & echo $! > "$1"; exit 3',
+        "fixture", pidFile], {}, 3))
+        .rejects.toThrowError(/^v: exited 3: late helper diagnostic$/);
+      const helper = await readPid(pidFile);
+      await waitGone(helper);
+      expect(alive(helper)).toBe(false);
     } finally {
       const helper = await readPid(pidFile).catch(() => 0);
       if (helper) try { process.kill(helper, "SIGKILL"); } catch { /* gone */ }

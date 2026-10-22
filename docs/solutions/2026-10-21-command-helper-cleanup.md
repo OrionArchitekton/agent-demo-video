@@ -140,9 +140,28 @@ The new regression and the existing timeout/interrupt tests pass. Full validatio
 581 tests passed, one optional Whisper integration skipped; typecheck and both
 CLI builds passed. The original
 frozen comparison remains one of three before and three of three after.
-Final command source SHA-256: `9bf8d7e25715a5a388dbccc2d0286ece4bccda0067a1817dd2c4908ac5b85331`.
-Final comparison report SHA-256:
+Deadline revision source SHA-256: `9bf8d7e25715a5a388dbccc2d0286ece4bccda0067a1817dd2c4908ac5b85331`.
+Deadline revision comparison report SHA-256:
 `91634ca5fd9c73b2a50eaf9ca23811c75b66171199cdcfa8495e9b1120a27187`.
+
+## Cancellation identity
+
+Review also caught that a Node child handle still sends signals by numeric PID.
+Cancellation now travels over the owned IPC channel; only the live supervisor
+signals its own group. A closed channel has no numeric-signal fallback. Parent
+disconnection retains the supervisor's cleanup behavior.
+
+A regression substitutes an independently owned control process at the stale
+child-handle signal boundary. It fails before the IPC change and passes after:
+the command is cancelled, the control survives, and no child-handle kill is used.
+This models identity reuse without creating system-wide PID churn.
+The unchanged frozen comparison remains one of three before and three of three
+after. Source SHA-256:
+`d9f8b7a95e251b1951c7b7435c050df73c516c4d5cf9d18bb625a13a6c67d591`.
+Comparison report SHA-256:
+`06e02408795991f20c115b10664fa8abe6b2332f0cfba5fe801bdb122994320a`.
+Final validation: 582 tests passed, one optional Whisper integration skipped;
+typecheck and both CLI builds passed.
 
 ## Rollout and rollback
 

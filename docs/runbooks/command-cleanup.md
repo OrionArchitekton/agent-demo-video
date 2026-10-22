@@ -14,8 +14,9 @@ references:
 Each invocation has a temporary Node supervisor owning its POSIX process group.
 The provider runs in that group. The supervisor reports the provider's result,
 allows 250 ms for final helper output, then kills its own group while its identity
-is still live. The caller holds the supervisor's child handle and never sends a
-cleanup signal to a retired numeric group ID. The supervisor is embedded in the
+is still live. The caller sends cleanup requests over the supervisor's owned IPC
+channel and never signals a numeric child PID or retired group ID. A closed
+channel never falls back to PID signalling. The supervisor is embedded in the
 CLI; deployment requires the normal build, with no separate install or service.
 
 After adopting a revision, run a local command-provider demo whose provider
@@ -30,7 +31,7 @@ The CLI asks each live supervisor to retire its group. Avoid independently
 SIGKILLing the supervisor: forced external termination can prevent it from
 cleaning its members. Parent IPC disconnection also triggers group cleanup.
 
-A cleanup warning means the OS rejected a signal. The original command result
+A cleanup warning means a signal or cleanup request failed. The original command result
 remains intact. Providers own the retirement of helpers whose credentials they
 change or which they move into another process group/session. Group signalling
 does not certify that privileged or escaped processes have stopped.

@@ -27,19 +27,22 @@ const armedSignals = new Set<NodeJS.Signals>();
 let exitHooked = false;
 
 function signalGroup(owner: ChildProcess, signal: NodeJS.Signals): void {
-  // Ask the still-owned child to signal its own group. Never signal a numeric
-  // PGID from the caller after the group owner may have been reaped.
-  try { owner.kill(signal === "SIGKILL" ? "SIGUSR2" : signal); } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code;
-    if (code !== "ESRCH") {
-      console.warn(`[agent-demo-video] command group cleanup could not send ${signal}: ${code ?? "unknown error"}`);
+  // IPC retains the specific owner's identity even if its numeric PID is reused.
+  // A closed channel means the owner has gone; never fall back to PID signalling.
+  if (!owner.connected) return;
+  const report = (error: Error | null) => {
+    const code = (error as NodeJS.ErrnoException | null)?.code;
+    if (error && code !== "ERR_IPC_CHANNEL_CLOSED" && code !== "EPIPE") {
+      console.warn(`[agent-demo-video] command cleanup request could not send ${signal}: ${code ?? "unknown error"}`);
     }
-  }
+  };
+  try { owner.send({ type: "cleanup", signal }, report); }
+  catch (error) { report(error as Error); }
 }
 
 /** The group owner stays alive until the command's bounded drain has finished.
  * Inline CommonJS keeps the supervisor available in both source and bundled CLIs.
- * Only this live owner uses a negative PID; the caller retains its child handle.
+ * Only this live owner signals its group; the caller uses the owned IPC channel.
  */
 const COMMAND_SUPERVISOR = String.raw`
 const { spawn } = require("node:child_process");
@@ -53,11 +56,16 @@ function killGroup(signal) {
     } else process.exit(1);
   }
 }
-process.on("SIGUSR2", () => killGroup("SIGKILL"));
-process.on("SIGTERM", () => {
+function terminate() {
   if (terminating) return;
   terminating = true;
   killGroup("SIGTERM");
+}
+process.on("SIGTERM", terminate);
+process.on("message", (message) => {
+  if (!message || message.type !== "cleanup") return;
+  if (message.signal === "SIGKILL") killGroup("SIGKILL");
+  else if (message.signal === "SIGTERM") terminate();
 });
 process.on("disconnect", () => killGroup("SIGKILL"));
 process.on("exit", () => { try { process.kill(-process.pid, "SIGKILL"); } catch {} });

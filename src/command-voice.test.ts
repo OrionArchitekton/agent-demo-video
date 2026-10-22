@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { mkdtemp, writeFile, readFile } from "node:fs/promises";
 import { readFileSync } from "node:fs";
-import { spawn } from "node:child_process";
+import { spawn, ChildProcess } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fillArgs, runCommand, readWordsFile, killLiveCommands } from "./command-voice";
@@ -100,6 +100,37 @@ describe("runCommand", () => {
 describe("runCommand edge cases", () => {
   it("does not time out an exited command while its owner drains output", async () => {
     await expect(runCommand("v", ["sleep", "0.8"], {}, 1)).resolves.toBeUndefined();
+  });
+  it("cancels over the owned channel without signalling a recycled child-handle PID", async () => {
+    const unrelated = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { detached: true, stdio: "ignore" });
+    const closed = new Promise<void>((resolve) => unrelated.once("close", () => resolve()));
+    const realKill = process.kill.bind(process);
+    const handleKill = ChildProcess.prototype.kill;
+    const kill = vi.spyOn(ChildProcess.prototype, "kill").mockImplementation(function (this: ChildProcess, signal) {
+      if (signal === "SIGUSR2") {
+        // Model a stale handle's PID naming only our disposable control group.
+        try { realKill(-unrelated.pid!, "SIGKILL"); } catch { /* gone */ }
+        return true;
+      }
+      return handleKill.call(this, signal);
+    });
+    const dir = await mkdtemp(join(tmpdir(), "stale-owner-"));
+    const pidFile = join(dir, "pid");
+    const result = runCommand("v", ["bash", "-c", 'echo $$ > "$1"; sleep 0.2', "fixture", pidFile], {}, 3)
+      .then(() => "resolved", (error: Error) => error.message);
+    try {
+      await readPid(pidFile);
+      killLiveCommands();
+      expect(await result).toMatch(/interrupted|killed by signal/);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(alive(unrelated.pid!)).toBe(true);
+      expect(kill).not.toHaveBeenCalled();
+    } finally {
+      kill.mockRestore();
+      await result;
+      try { realKill(-unrelated.pid!, "SIGKILL"); } catch { /* gone */ }
+      await closed;
+    }
   });
   it("never signals a retired group ID when that number could name unrelated work", async () => {
     const unrelated = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { detached: true, stdio: "ignore" });

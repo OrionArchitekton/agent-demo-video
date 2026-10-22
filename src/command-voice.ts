@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
 import { readFile, stat } from "node:fs/promises";
 import type { TimedWord } from "./word-timing";
@@ -20,19 +20,66 @@ interface LiveCommand {
   /** Set when interrupt cleanup stopped the command, so a clean exit is not a success. */
   interrupted: boolean;
 }
-const liveGroups = new Map<number, LiveCommand>();
+const liveGroups = new Map<ChildProcess, LiveCommand>();
 /** How long an exited command's stdio may keep draining before it is settled anyway. */
 const STDIO_DRAIN_MS = 250;
 const armedSignals = new Set<NodeJS.Signals>();
 let exitHooked = false;
 
-function signalGroup(pid: number, signal: NodeJS.Signals): void {
-  try { process.kill(-pid, signal); } catch (error) {
+function signalGroup(owner: ChildProcess, signal: NodeJS.Signals): void {
+  // Ask the still-owned child to signal its own group. Never signal a numeric
+  // PGID from the caller after the group owner may have been reaped.
+  try { owner.kill(signal === "SIGKILL" ? "SIGUSR2" : signal); } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
     if (code !== "ESRCH") {
       console.warn(`[agent-demo-video] command group cleanup could not send ${signal}: ${code ?? "unknown error"}`);
     }
   }
+}
+
+/** The group owner stays alive until the command's bounded drain has finished.
+ * Inline CommonJS keeps the supervisor available in both source and bundled CLIs.
+ * Only this live owner uses a negative PID; the caller retains its child handle.
+ */
+const COMMAND_SUPERVISOR = String.raw`
+const { spawn } = require("node:child_process");
+let reported = false;
+let terminating = false;
+function killGroup(signal) {
+  try { process.kill(-process.pid, signal); }
+  catch (error) {
+    if (error.code !== "ESRCH" && process.connected) {
+      process.send({ type: "cleanup-warning", code: error.code || "unknown error" }, () => process.exit(1));
+    } else process.exit(1);
+  }
+}
+process.on("SIGUSR2", () => killGroup("SIGKILL"));
+process.on("SIGTERM", () => {
+  if (terminating) return;
+  terminating = true;
+  killGroup("SIGTERM");
+});
+process.on("disconnect", () => killGroup("SIGKILL"));
+process.on("exit", () => { try { process.kill(-process.pid, "SIGKILL"); } catch {} });
+function report(result) {
+  if (reported) return;
+  reported = true;
+  if (!process.connected) return killGroup("SIGKILL");
+  process.send({ type: "result", ...result }, (error) => {
+    if (error) return killGroup("SIGKILL");
+    setTimeout(() => killGroup("SIGKILL"), ${STDIO_DRAIN_MS});
+  });
+}
+const [program, ...args] = process.argv.slice(1);
+const command = spawn(program, args, { stdio: ["ignore", "inherit", "inherit"] });
+command.on("error", (error) => report({ error: { code: error.code, message: error.message } }));
+command.on("exit", (code, signal) => report({ code, signal }));
+`;
+
+interface CommandResult {
+  code?: number | null;
+  signal?: NodeJS.Signals | null;
+  error?: { code?: string; message: string };
 }
 
 /** Block this thread; used only by interrupt cleanup, which may run inside the exit hook. */
@@ -65,10 +112,10 @@ function leaderExited(pid: number): boolean {
 export function killLiveCommands(): void {
   const graceful = [...liveGroups].filter(([, c]) => c.gracefulKillMs > 0);
   for (const c of liveGroups.values()) c.interrupted = true;
-  for (const [pid] of graceful) signalGroup(pid, "SIGTERM");
+  for (const [owner] of graceful) signalGroup(owner, "SIGTERM");
   const deadline = Date.now() + Math.max(0, ...graceful.map(([, c]) => c.gracefulKillMs));
-  while (graceful.some(([pid]) => !leaderExited(pid)) && Date.now() < deadline) sleepSync(25);
-  for (const pid of liveGroups.keys()) signalGroup(pid, "SIGKILL");
+  while (graceful.some(([owner]) => owner.pid !== undefined && !leaderExited(owner.pid)) && Date.now() < deadline) sleepSync(25);
+  for (const owner of liveGroups.keys()) signalGroup(owner, "SIGKILL");
 }
 
 function onTerminatingSignal(signal: NodeJS.Signals): void {
@@ -112,6 +159,7 @@ export async function runCommand(label: string, template: string[], vars: Record
     let timedOut = false;
     let drain: NodeJS.Timeout | undefined;
     let grace: NodeJS.Timeout | undefined;
+    let commandResult: CommandResult | undefined;
     const live: LiveCommand = { gracefulKillMs, interrupted: false };
     const timedOutError = () => new Error(`${label}: timed out after ${timeoutSec}s`);
     const done = (fn: () => void) => {
@@ -120,7 +168,7 @@ export async function runCommand(label: string, template: string[], vars: Record
       clearTimeout(timer);
       clearTimeout(drain);
       clearTimeout(grace);
-      if (child.pid !== undefined) liveGroups.delete(child.pid);
+      liveGroups.delete(child);
       // A helper the command left behind may still hold these pipes; let go of
       // them so it cannot keep this process alive.
       child.stdout?.destroy();
@@ -128,7 +176,17 @@ export async function runCommand(label: string, template: string[], vars: Record
       fn();
     };
     armCleanup();
-    const child = spawn(prog, args, { detached: true, stdio: ["ignore", "pipe", "pipe"], env: opts?.env ?? process.env });
+    const child = spawn(process.execPath, ["--input-type=commonjs", "-e", COMMAND_SUPERVISOR, "--", prog, ...args], {
+      detached: true, stdio: ["ignore", "pipe", "pipe", "ipc"], env: opts?.env ?? process.env,
+    });
+    child.on("message", (message: unknown) => {
+      if (!message || typeof message !== "object") return;
+      const event = message as CommandResult & { type?: string; code?: number | null };
+      if (event.type === "result") commandResult = event;
+      if (event.type === "cleanup-warning") {
+        console.warn(`[agent-demo-video] command group cleanup could not send SIGKILL: ${String(event.code)}`);
+      }
+    });
     const tee = (d: Buffer | string) => {
       if (!opts?.logPath) return;
       try { appendFileSync(opts.logPath, d); } catch { /* the log is best-effort */ }
@@ -136,7 +194,7 @@ export async function runCommand(label: string, template: string[], vars: Record
     if (opts?.logPath) {
       try { writeFileSync(opts.logPath, ""); } catch { /* the log is best-effort */ }
     }
-    if (child.pid !== undefined) liveGroups.set(child.pid, live);
+    if (child.pid !== undefined) liveGroups.set(child, live);
     let stderrTail = "";
     child.stdout!.on("data", tee);
     child.stderr!.setEncoding("utf8");
@@ -145,15 +203,15 @@ export async function runCommand(label: string, template: string[], vars: Record
       timedOut = true;
       if (gracefulKillMs > 0) {
         // Ask first; the exit handler settles if the command stops within the grace.
-        signalGroup(child.pid!, "SIGTERM");
+        signalGroup(child, "SIGTERM");
         grace = setTimeout(() => {
-          signalGroup(child.pid!, "SIGKILL");
+          signalGroup(child, "SIGKILL");
           done(() => reject(timedOutError()));
         }, gracefulKillMs);
         grace.unref();
         return;
       }
-      signalGroup(child.pid!, "SIGKILL");
+      signalGroup(child, "SIGKILL");
       done(() => reject(timedOutError()));
     }, timeoutSec * 1000);
     timer.unref();
@@ -164,16 +222,22 @@ export async function runCommand(label: string, template: string[], vars: Record
     // output pipes, so a command that exits but leaves a background helper
     // running would hang until the timeout. stderr stays best-effort: a short
     // grace (ended early by "close") lets an ordinary exit's last output drain.
-    child.on("exit", (code, signal) => {
+    child.on("exit", (_ownerCode, ownerSignal) => {
       if (settled) return;
-      // Timeout cleanup remains immediate; ordinary completion retains the
-      // bounded drain so a helper can flush its final diagnostic first.
-      if (timedOut && child.pid !== undefined) signalGroup(child.pid, "SIGKILL");
+      // The live supervisor already drained and retired its group. Its PID may
+      // now be recycled, so no cleanup signal is sent from this exit path.
       const finish = () => {
         if (settled) return;
-        if (!timedOut && child.pid !== undefined) signalGroup(child.pid, "SIGKILL");
         done(() => {
           if (timedOut) return reject(timedOutError());
+          if (commandResult?.error) {
+            const e = commandResult.error;
+            return reject(new Error(e.code === "ENOENT" ? `${label}: program not found: ${prog}` : `${label}: could not start ${prog}: ${e.message}`));
+          }
+          if (!commandResult) return reject(new Error(ownerSignal
+            ? `${label}: killed by signal ${ownerSignal}`
+            : `${label}: command supervisor stopped before reporting a result`));
+          const { code, signal } = commandResult;
           if (code === 0 && live.interrupted) return reject(new Error(`${label}: interrupted`));
           if (code === 0) return resolveRun();
           if (signal) return reject(new Error(`${label}: killed by signal ${signal}`));

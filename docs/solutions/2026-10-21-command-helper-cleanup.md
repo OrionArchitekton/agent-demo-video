@@ -100,6 +100,33 @@ for review of adjacent compatibility behavior.
 Revised validation: 579 tests passed, one optional Whisper integration skipped;
 typecheck and build passed.
 
+## Retained group ownership
+
+Independent adversarial review confirmed that cleanup from a delayed callback
+after the group leader was reaped could target a recycled numeric group ID.
+The final repair keeps a temporary Node supervisor alive through the drain and
+lets that live owner signal its own group. The caller retains a child handle;
+its post-exit path sends no group signal. Timeout and interrupt requests go to
+the supervisor, which handles group retirement while still alive.
+
+A native regression models a recycled group ID at the caller signal boundary
+using an independently owned disposable process. It fails on `4e96d33` and passes
+with retained ownership. This is fault injection, not forced system-wide PID
+churn. The unchanged frozen comparison still improves from one of three to three
+of three. The 25 focused lifecycle checks preserve ordinary and failing results,
+late diagnostics, timeout, graceful interruption, and visible cleanup warnings.
+
+Final command source SHA-256:
+`0144c97f6c910c0b9283337ee8da57a79405354bc854f6e3c7f131f181117729`.
+Final frozen comparison report SHA-256:
+`d3b9d4e01d3c9581db74bf9e131cafab722387c136ab734d48a6e08b85aa28b5`.
+The supervisor adds roughly 250 ms per command for the final drain. This is a
+correctness tradeoff, not a time-saving claim. See the
+[cleanup runbook](../runbooks/command-cleanup.md) for cancellation, limitations,
+validation and rollback.
+Full validation of retained ownership: 580 tests passed, one optional Whisper
+integration skipped; typecheck and both CLI builds passed.
+
 ## Rollout and rollback
 
 This repair is source-only until reviewed and merged. Run `pnpm test`,

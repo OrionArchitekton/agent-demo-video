@@ -1,6 +1,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { mkdtemp, writeFile, readFile } from "node:fs/promises";
 import { readFileSync } from "node:fs";
+import { spawn } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fillArgs, runCommand, readWordsFile, killLiveCommands } from "./command-voice";
@@ -49,19 +50,25 @@ describe("runCommand", () => {
     await expect(runCommand("voice command (shot s1)", [fx("fail.sh")], {}, 5)).rejects.toThrowError(/exited 3: voice model not loaded/);
   });
   it("warns when cleanup is denied without changing the command result", async () => {
-    const realKill = process.kill.bind(process);
-    const kill = vi.spyOn(process, "kill").mockImplementation((pid, signal) => {
-      if (pid < 0 && signal === "SIGKILL") {
-        throw Object.assign(new Error("permission denied"), { code: "EPERM" });
-      }
-      return realKill(pid, signal);
-    });
+    const dir = await mkdtemp(join(tmpdir(), "cleanup-denied-"));
+    const fault = join(dir, "fault.cjs");
+    // Inject only into the owned supervisor; no elevated credentials are used.
+    await writeFile(fault, `
+      const realKill = process.kill.bind(process);
+      process.kill = (pid, signal) => {
+        if (pid < 0 && signal === "SIGKILL") {
+          throw Object.assign(new Error("permission denied"), { code: "EPERM" });
+        }
+        return realKill(pid, signal);
+      };
+    `);
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
     try {
-      await expect(runCommand("v", ["true"], {}, 3)).resolves.toBeUndefined();
+      await expect(runCommand("v", ["true"], {}, 3, {
+        env: { ...process.env, NODE_OPTIONS: `--require ${fault}` },
+      })).resolves.toBeUndefined();
       expect(warn).toHaveBeenCalledWith(expect.stringMatching(/command group cleanup.*EPERM/));
     } finally {
-      kill.mockRestore();
       warn.mockRestore();
     }
   });
@@ -91,6 +98,24 @@ describe("runCommand", () => {
 });
 
 describe("runCommand edge cases", () => {
+  it("never signals a retired group ID when that number could name unrelated work", async () => {
+    const unrelated = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { detached: true, stdio: "ignore" });
+    const closed = new Promise<void>((resolve) => unrelated.once("close", () => resolve()));
+    const realKill = process.kill.bind(process);
+    // Model a recycled PGID at the caller's signal boundary. Only this test's
+    // disposable unrelated group can be hit; no host PID churn is required.
+    const kill = vi.spyOn(process, "kill").mockImplementation((pid, signal) =>
+      realKill(pid < 0 && signal === "SIGKILL" ? -unrelated.pid! : pid, signal));
+    try {
+      await expect(runCommand("v", ["true"], {}, 3)).resolves.toBeUndefined();
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      expect(alive(unrelated.pid!)).toBe(true);
+    } finally {
+      kill.mockRestore();
+      try { realKill(-unrelated.pid!, "SIGKILL"); } catch { /* gone */ }
+      await closed;
+    }
+  });
   it("kills the whole process tree on timeout", async () => {
     const dir = await mkdtemp(join(tmpdir(), "gc-"));
     const pidFile = join(dir, "pid");

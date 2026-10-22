@@ -52,6 +52,8 @@ Notes:
   Commands must also stop helpers whose changed credentials prevent the CLI from signalling
   them. Reported signal failures other than an already-absent group produce a cleanup
   warning; the command's original result is preserved.
+  A short-lived Node supervisor owns the group through cleanup, so cleanup never targets
+  a retired group ID. Allow approximately 250 ms per invocation for the final output drain.
 - The last lines of a failing command's stderr appear in the error message and the logs, so
   voice commands must not print secrets.
 

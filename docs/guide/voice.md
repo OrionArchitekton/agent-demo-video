@@ -43,11 +43,15 @@ keyless silent dry run; dry runs skip the transcript check, since their narratio
 Notes:
 
 - Commands run without a shell, in their own process group. On timeout the whole group is
-  killed. When the command exits, successfully or with an error, any helpers remaining in
-  that group are also killed; a completed command must not leave background work running.
+  killed. When the command exits, successfully or with an error, helpers remaining in
+  that group are killed after the bounded output drain (at most 250 ms); a completed
+  command must not leave background work running.
   This relies on POSIX process groups (Linux and macOS; not supported on Windows).
   Helpers that create a separate session or process group are outside this cleanup scope;
   the command must stop those helpers itself before exiting.
+  Commands must also stop helpers whose changed credentials prevent the CLI from signalling
+  them. Reported signal failures other than an already-absent group produce a cleanup
+  warning; the command's original result is preserved.
 - The last lines of a failing command's stderr appear in the error message and the logs, so
   voice commands must not print secrets.
 

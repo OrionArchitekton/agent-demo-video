@@ -73,6 +73,33 @@ test cleanup, and preserve the failing command's diagnostic. Repository
 validation: 577 tests passed, one optional Whisper integration check skipped;
 typecheck and build passed. Existing command-voice render smokes also passed.
 
+## Review refinement
+
+Review of the first repair (`af8f5b8`) exposed a compatibility gap in its timing:
+a helper that wrote a diagnostic 80 ms after its leader exited was killed before
+the existing 250 ms output drain could collect that text. The same native probe
+passed against the pre-repair source and failed against the first repair.
+Ordinary completion now retires helpers at the end of that bounded drain;
+timeout cleanup remains immediate. Already-settled callbacks do not signal again.
+
+A fault-injection probe also showed that a cleanup permission error was silent.
+Signal errors other than an absent group now warn without replacing the command's
+original result. Commands remain responsible for helpers whose changed credentials
+prevent signalling, including partial-permission groups. The Linux test probe
+distinguishes terminated zombies from running helpers instead of relying solely
+on signal zero.
+
+Both new regressions passed after failing before these refinements. The original
+frozen comparison was repeated unchanged: baseline one of three, revised source
+three of three, with the unrelated-process controls preserved. Revised source
+SHA-256: `2bfc6ebd04daeb8b08c0dbd61899415147cea718fd3b05a1fc20c965ae2423c6`.
+Revised comparison report SHA-256:
+`dfad677a4327dd9e93e00b042029dbfd8c2032a82b93b920b32989e01545eef1`.
+This refinement demonstrates why a passing narrow comparison does not substitute
+for review of adjacent compatibility behavior.
+Revised validation: 579 tests passed, one optional Whisper integration skipped;
+typecheck and build passed.
+
 ## Rollout and rollback
 
 This repair is source-only until reviewed and merged. Run `pnpm test`,

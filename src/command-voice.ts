@@ -27,7 +27,12 @@ const armedSignals = new Set<NodeJS.Signals>();
 let exitHooked = false;
 
 function signalGroup(pid: number, signal: NodeJS.Signals): void {
-  try { process.kill(-pid, signal); } catch { /* already gone */ }
+  try { process.kill(-pid, signal); } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code !== "ESRCH") {
+      console.warn(`[agent-demo-video] command group cleanup could not send ${signal}: ${code ?? "unknown error"}`);
+    }
+  }
 }
 
 /** Block this thread; used only by interrupt cleanup, which may run inside the exit hook. */
@@ -160,16 +165,21 @@ export async function runCommand(label: string, template: string[], vars: Record
     // running would hang until the timeout. stderr stays best-effort: a short
     // grace (ended early by "close") lets an ordinary exit's last output drain.
     child.on("exit", (code, signal) => {
-      // The leader has finished, including ordinary success or failure. Retire
-      // helpers still in its owned group before done() forgets that group.
-      if (child.pid !== undefined) signalGroup(child.pid, "SIGKILL");
-      const finish = () => done(() => {
-        if (timedOut) return reject(timedOutError());
-        if (code === 0 && live.interrupted) return reject(new Error(`${label}: interrupted`));
-        if (code === 0) return resolveRun();
-        if (signal) return reject(new Error(`${label}: killed by signal ${signal}`));
-        reject(new Error(`${label}: exited ${code}: ${stderrTail.trim().slice(-400)}`));
-      });
+      if (settled) return;
+      // Timeout cleanup remains immediate; ordinary completion retains the
+      // bounded drain so a helper can flush its final diagnostic first.
+      if (timedOut && child.pid !== undefined) signalGroup(child.pid, "SIGKILL");
+      const finish = () => {
+        if (settled) return;
+        if (!timedOut && child.pid !== undefined) signalGroup(child.pid, "SIGKILL");
+        done(() => {
+          if (timedOut) return reject(timedOutError());
+          if (code === 0 && live.interrupted) return reject(new Error(`${label}: interrupted`));
+          if (code === 0) return resolveRun();
+          if (signal) return reject(new Error(`${label}: killed by signal ${signal}`));
+          reject(new Error(`${label}: exited ${code}: ${stderrTail.trim().slice(-400)}`));
+        });
+      };
       child.once("close", finish);
       drain = setTimeout(finish, STDIO_DRAIN_MS);
       drain.unref();

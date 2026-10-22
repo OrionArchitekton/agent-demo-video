@@ -1,12 +1,25 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { mkdtemp, writeFile, readFile } from "node:fs/promises";
+import { readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fillArgs, runCommand, readWordsFile, killLiveCommands } from "./command-voice";
 
 const fx = (n: string) => resolve("tests/fixtures/voice", n);
 
-const alive = (pid: number) => { try { process.kill(pid, 0); return true; } catch { return false; } };
+const alive = (pid: number) => {
+  try { process.kill(pid, 0); } catch { return false; }
+  if (process.platform === "linux") {
+    try {
+      const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
+      // A terminated orphan may await init's reap; it is no longer running.
+      return !["Z", "X"].includes(stat.charAt(stat.lastIndexOf(")") + 2));
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+    }
+  }
+  return true;
+};
 async function waitGone(pid: number): Promise<void> {
   for (let i = 0; i < 20 && alive(pid); i++) await new Promise((r) => setTimeout(r, 50));
 }
@@ -34,6 +47,23 @@ describe("runCommand", () => {
   });
   it("names a non-zero exit and keeps the stderr tail", async () => {
     await expect(runCommand("voice command (shot s1)", [fx("fail.sh")], {}, 5)).rejects.toThrowError(/exited 3: voice model not loaded/);
+  });
+  it("warns when cleanup is denied without changing the command result", async () => {
+    const realKill = process.kill.bind(process);
+    const kill = vi.spyOn(process, "kill").mockImplementation((pid, signal) => {
+      if (pid < 0 && signal === "SIGKILL") {
+        throw Object.assign(new Error("permission denied"), { code: "EPERM" });
+      }
+      return realKill(pid, signal);
+    });
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      await expect(runCommand("v", ["true"], {}, 3)).resolves.toBeUndefined();
+      expect(warn).toHaveBeenCalledWith(expect.stringMatching(/command group cleanup.*EPERM/));
+    } finally {
+      kill.mockRestore();
+      warn.mockRestore();
+    }
   });
   it("passes opts.env to the child instead of the parent environment", async () => {
     const dir = await mkdtemp(join(tmpdir(), "env-"));
@@ -136,6 +166,22 @@ describe("runCommand edge cases", () => {
         '"$1" "$2"; echo "fixture diagnostic" >&2; exit 3',
         "fixture", fx("bg-helper.sh"), pidFile], {}, 3))
         .rejects.toThrowError(/^v: exited 3: fixture diagnostic$/);
+      const helper = await readPid(pidFile);
+      await waitGone(helper);
+      expect(alive(helper)).toBe(false);
+    } finally {
+      const helper = await readPid(pidFile).catch(() => 0);
+      if (helper) try { process.kill(helper, "SIGKILL"); } catch { /* gone */ }
+    }
+  });
+  it("drains a helper's final diagnostic before retiring the completed command's group", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "bg-drain-"));
+    const pidFile = join(dir, "pid");
+    try {
+      await expect(runCommand("v", ["bash", "-c",
+        '(sleep 0.08; echo "late helper diagnostic" >&2; sleep 20) & echo $! > "$1"; exit 3',
+        "fixture", pidFile], {}, 3))
+        .rejects.toThrowError(/^v: exited 3: late helper diagnostic$/);
       const helper = await readPid(pidFile);
       await waitGone(helper);
       expect(alive(helper)).toBe(false);

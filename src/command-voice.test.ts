@@ -270,6 +270,24 @@ describe("runCommand edge cases", () => {
 });
 
 describe("readWordsFile", () => {
+  it("preserves ordered overlapping and equal timestamps", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "words-"));
+    const p = join(dir, "w.json");
+    const words = [{ word: "a", start: 0, end: 0.5 },
+      { word: "b", start: 0.4, end: 0.8 }, { word: "c", start: 0.4, end: 0.8 }];
+    await writeFile(p, JSON.stringify(words));
+    expect(await readWordsFile(p, "x")).toEqual(words);
+  });
+  it.each([
+    [{ word: "a", start: 0.5, end: 0.6 }, { word: "b", start: 0.4, end: 0.8 }],
+    [{ word: "a", start: 0.1, end: 0.7 }, { word: "b", start: 0.2, end: 0.6 }],
+  ])("rejects regressive word timestamps before alignment can clamp them", async (a, b) => {
+    const dir = await mkdtemp(join(tmpdir(), "words-"));
+    const p = join(dir, "w.json");
+    await writeFile(p, JSON.stringify([a, b]));
+    await expect(readWordsFile(p, "voice command (shot s1)"))
+      .rejects.toThrowError(/voice command \(shot s1\): word timings regress at index 1/);
+  });
   it("rejects a path that is not a regular file", async () => {
     const dir = await mkdtemp(join(tmpdir(), "words-"));
     await expect(readWordsFile(dir, "x")).rejects.toThrowError(new RegExp(`^x: word timings path ${dir} is not a regular file`));

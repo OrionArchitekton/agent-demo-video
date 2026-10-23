@@ -58,6 +58,19 @@ describe("synthShot with a command voice", () => {
     synthShot(shot, cfgWith(voice), await mkdtemp(join(tmpdir(), "cmdtts-")));
   beforeEach(() => { delete process.env.FAKE_TTS; });
 
+  it("rejects regressive provider timings without falling through to an aligner", async () => {
+    await expect(run({
+      command: ["bash", fx("regressive-words.sh"), "voice", "{text}", "{out}"],
+      aligner: [fx("fail.sh"), "{audio}", "{text}", "{out}"],
+    })).rejects.toThrowError(/^voice command \(shot s1\): word timings regress at index 1/);
+  });
+  it("rejects regressive aligner timings without estimating captions", async () => {
+    await expect(run({
+      command: [fx("tone.sh"), "--text-file", "{text}", "--out", "{out}"],
+      aligner: ["bash", fx("regressive-words.sh"), "{audio}", "{text}", "{out}"],
+    })).rejects.toThrowError(/^aligner \(shot s1\): word timings regress at index 1/);
+  });
+
   it("uses the command's audio and estimates timing when no words and no aligner", async () => {
     const r = await run({ command: [fx("tone.sh"), "--text-file", "{text}", "--out", "{out}"] });
     expect(r.timing).toBe("estimated");

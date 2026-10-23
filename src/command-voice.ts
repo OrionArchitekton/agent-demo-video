@@ -290,5 +290,14 @@ export async function readWordsFile(path: string, label: string): Promise<TimedW
   const ok = Array.isArray(data) && data.every((w) =>
     w && typeof w.word === "string" && Number.isFinite(w.start) && Number.isFinite(w.end) && w.start >= 0 && w.end >= w.start);
   if (!ok) throw new Error(`${label}: malformed word timings in ${path} (need [{word, start, end}] with 0 <= start <= end)`);
-  return data as TimedWord[];
+  const words = data as TimedWord[];
+  for (let i = 1; i < words.length; i++) {
+    const word = words[i]!;
+    const previous = words[i - 1]!;
+    // Recognizers may overlap words; only backward starts or ends are invalid.
+    if (word.start < previous.start || word.end < previous.end) {
+      throw new Error(`${label}: word timings regress at index ${i} in ${path}`);
+    }
+  }
+  return words;
 }

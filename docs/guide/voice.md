@@ -15,11 +15,12 @@ must write audio (any format ffmpeg reads). No shell is involved.
 
 `voice.provider` and `voice.timeoutSec` are optional: leaving the provider out selects ElevenLabs, and the timeout falls back to 600 s.
 
-Word timings must keep both start and end timestamps nondecreasing in the supplied
+Per-shot word timings must keep both start and end timestamps nondecreasing in the supplied
 word order. Equal timestamps and overlapping words are accepted. A backward start
 or end stops the render and identifies the provider and zero-based word index;
 the renderer does not sort, silently clamp, or substitute estimated timings for
-malformed input.
+malformed input. The final-video transcript check remains advisory, including
+when its aligner supplies backward timestamps.
 
 If you see `word timings regress at index 1`, inspect the second word and the
 word immediately before it in the provider's JSON. For example, starts of
@@ -27,7 +28,7 @@ word immediately before it in the provider's JSON. For example, starts of
 increase. Fix the timestamps in the voice command or aligner while keeping the
 spoken word sequence. Ordinary overlap, such as `[0.0, 0.5]` followed by
 `[0.4, 0.8]`, is valid and needs no repair. Malformed provider timings stop before
-the configured aligner; malformed aligner timings stop before estimation.
+the configured caption aligner; malformed per-shot aligner timings stop before estimation.
 
 Word-pop captions need word timings. They come from, in order: a `{out}.words.json` your command
 writes (`[{"word", "start", "end"}]`, seconds, at most 5 MB), the optional `aligner`, or a

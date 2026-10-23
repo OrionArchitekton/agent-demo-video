@@ -20,10 +20,11 @@ tags: [command-provider, captions, word-timings, contrastive-refinement]
 
 At `6bc6582`, the timing reader checked finite nonnegative intervals with
 `end >= start`, but accepted sequences with a backward start or end. The repair
-checks both sequences independently before alignment can normalize the data.
+checks both sequences independently before per-shot alignment can normalize the data.
 It names the provider and zero-based offending index. Malformed provider data
 does not fall through to an aligner; malformed aligner data does not fall through
-to estimated timings. Missing timing data keeps its existing fallback.
+to estimated timings. Missing timing data keeps its existing fallback. The
+finished-video transcript check retains its existing advisory error contract.
 
 Do not require the next start to be greater than the previous end. Ordered
 overlaps and equal timestamps are legitimate. Do not sort words to hide a
@@ -54,7 +55,9 @@ page. This establishes pipeline behavior, not narration or creative quality.
 The provider guide reused the same lesson to explain both failure and valid
 overlap cases. Two fresh reader contexts received the same five questions and
 one draft each. The original supported zero answers; the revised guide supported
-all five, adding 140 words. This measures answer coverage for that guide, not
+all five, adding 140 words in the first revision. A subsequent reader recheck
+confirmed all five answers and clear advisory transcript-check scope after review
+clarification. This measures answer coverage for that guide, not
 general writing quality or authoring efficiency.
 
 Task elapsed time, tokens and cost were not measured. The effort record retains

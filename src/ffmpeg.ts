@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import type { Readable } from "node:stream";
 import type { DeliverableProbe } from "./verify";
 
 const BASE = ["-y", "-hide_banner", "-loglevel", "error"];
@@ -137,6 +138,48 @@ export function run(bin: string, args: string[]): Promise<void> {
 }
 
 export const ffmpeg = (args: string[]) => run("ffmpeg", args);
+
+/** Feed a pinned input through stdin; cache:pipe:0 gives MP4 a seekable input
+ * without making the encoder reopen an untrusted staged pathname. */
+export function ffmpegWithInput(args: string[], input: Readable): Promise<void> {
+  return new Promise((resolveRun, reject) => {
+    const child = spawn("ffmpeg", args, { stdio: ["pipe", "ignore", "pipe"] });
+    let stderr = "";
+    let failure: Error | undefined;
+    let settled = false;
+    let force: NodeJS.Timeout | undefined;
+    child.stderr.on("data", (chunk) => { stderr = (stderr + chunk).slice(-4000); });
+    const fail = (error: Error) => {
+      if (settled || failure) return;
+      failure = error;
+      input.unpipe(child.stdin);
+      child.stdin.destroy();
+      if (child.pid !== undefined && child.exitCode === null && child.signalCode === null) {
+        child.kill("SIGTERM");
+        force = setTimeout(() => { if (!settled) child.kill("SIGKILL"); }, 5000);
+        force.unref();
+      }
+    };
+    child.on("error", fail);
+    input.on("error", fail);
+    input.once("close", () => {
+      if (!input.readableEnded) fail(input.errored ?? new Error("ffmpeg input closed before ending"));
+      input.off("error", fail);
+    });
+    child.stdin.on("error", (error: NodeJS.ErrnoException) => { if (error.code !== "EPIPE") fail(error); });
+    child.on("close", (code) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(force);
+      input.unpipe(child.stdin);
+      if (failure) reject(failure);
+      else if (code === 0) resolveRun();
+      else reject(new Error(`ffmpeg exited ${code}: ${stderr.slice(-800)}`));
+    });
+    if (input.destroyed && !input.readableEnded) fail(input.errored ?? new Error("ffmpeg input closed before ending"));
+    else input.pipe(child.stdin);
+  });
+}
 
 /** First video stream's square-pixel DISPLAY WxH, feeding the framed-aspect
  *  guard: coded size with any 90/270 display rotation (matrix side data or

@@ -3,6 +3,7 @@ import { basename, join, resolve } from "node:path";
 import type { DemoConfig, TtsResult } from "./types";
 import {
   ffmpeg,
+  ffmpegWithInput,
   normalizeArgs,
   concatArgs,
   concatListContent,
@@ -14,7 +15,9 @@ import {
   extendVideoArgs,
   probeDurationSec,
   probeSizePx,
+  x264Args, X264,
 } from "./ffmpeg";
+import { verifyIntro, withVerifiedIntro, type PreparedIntro, type IntroRecord } from "./optional-intro";
 import { toSrt, toWordAss, captionStyle } from "./captions";
 import { buildTimeline, reconcileSegmentDuration } from "./timeline";
 import { verifyParity } from "./verify";
@@ -47,6 +50,7 @@ export interface RenderInputs {
    *  window's aspect when it differs from the canvas (a shorts render). Absent
    *  (legacy callers/manifests): canvas-shaped window, exactly as before. */
   contentSize?: { width: number; height: number };
+  optionalIntro?: PreparedIntro;
 }
 
 export interface RenderResult {
@@ -60,6 +64,7 @@ export interface RenderResult {
      *  Distinct from the narration timeline: comparing two renders needs the
      *  durations the video really has, or "which shot grew?" is unanswerable. */
     timeline: { entries: { shotId: string; startSec: number; durationSec: number }[]; totalSec: number };
+    optionalIntro?: IntroRecord;
   };
 }
 
@@ -78,6 +83,7 @@ const EXTEND_EPS_SEC = 1e-6;
  */
 export async function renderVideo(inputs: RenderInputs): Promise<RenderResult> {
   const { rawSegments, tts, config } = inputs;
+  await verifyIntro(inputs.optionalIntro, rawSegments[0]!);
   const out = resolve(config.out);
   const audioDir = join(out, "audio");
   const segDir = join(out, "seg");
@@ -161,7 +167,16 @@ export async function renderVideo(inputs: RenderInputs): Promise<RenderResult> {
         }),
       );
     }
-    segMp4s.push(segMp4);
+    if (i === 0 && inputs.optionalIntro?.asset) {
+      const intro = inputs.optionalIntro.asset;
+      const substituted = join(segDir, "seg_0.intro.mp4");
+      // Replace pixels only; the established first shot supplies the duration.
+      await withVerifiedIntro(intro, (input) => ffmpegWithInput(["-y", "-hide_banner", "-loglevel", "error", "-i", segMp4,
+        "-read_ahead_limit", "-1", "-i", "cache:pipe:0",
+        "-filter_complex", `[0:v:0][1:v:0]overlay=eof_action=pass:repeatlast=0:enable='lt(t,${intro.durationSec})'[v]`,
+        "-map", "[v]", ...x264Args(X264.crfComposite), "-pix_fmt", "yuv420p", "-an", substituted], input));
+      segMp4s.push(substituted);
+    } else segMp4s.push(segMp4);
   }
 
   // 6. Reconcile each segment duration against its narration window; extend a
@@ -310,6 +325,8 @@ export async function renderVideo(inputs: RenderInputs): Promise<RenderResult> {
     maxSec: config.maxDurationSec ?? 300,
   });
   if (!parity.ok) throw new Error("parity failed: " + parity.problems.join("; "));
+  await verifyIntro(inputs.optionalIntro, rawSegments[0]!);
 
-  return { outPath: finalPath, report: { totalSec: timeline.totalSec, segments: segMp4s.length, ticks: tickCount, parity, timeline } };
+  return { outPath: finalPath, report: { totalSec: timeline.totalSec, segments: segMp4s.length, ticks: tickCount, parity, timeline,
+    ...(inputs.optionalIntro ? { optionalIntro: inputs.optionalIntro.record } : {}) } };
 }

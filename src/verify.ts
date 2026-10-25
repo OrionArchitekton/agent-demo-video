@@ -93,10 +93,10 @@ const AAC_FRAME_SAMPLES = 1024;
 
 export type DeliverableCheck = { ok: boolean; problems: string[]; probed: DeliverableProbe };
 
-const FRAME_RATE_EPSILON = 1e-3;
+export const FRAME_RATE_EPSILON = 1e-3;
 const DURATION_FLOAT_EPSILON = 1e-6;
 
-function frameRateValue(rate: string | null): number | null {
+export function frameRateValue(rate: string | null): number | null {
   const m = /^(\d+)\/(\d+)$/.exec(rate ?? "");
   if (!m) return null;
   const den = Number(m[2]);

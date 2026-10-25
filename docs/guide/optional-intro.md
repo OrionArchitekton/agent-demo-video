@@ -152,3 +152,5 @@ image route remains available. Motion percentages do not apply to stills.
 See the [operator runbook](../runbooks/optional-intro.md) for rehearsal,
 monitoring and rollback. Shared laptop presets and optional surrounding plates
 remain separate scene-tool work; this package does not generate them itself.
+
+Back to the [README](../../README.md).

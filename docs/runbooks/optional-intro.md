@@ -9,6 +9,7 @@ references:
   - src/manifest.ts
   - src/render.ts
   - src/ffmpeg.ts
+  - src/command-voice.ts
   - docs/guide/optional-intro.md
 ---
 
@@ -50,14 +51,18 @@ public media release each follow their existing separate approval.
 `title_card_enabled` and `source_too_short` mean the scene tool was skipped.
 `missing_renderer` means no asset or command was selected.
 `renderer_unavailable`, `renderer_timeout` and `invalid_candidate` select the
-original first shot. Read the retained receipt/request and candidate under
+original first shot. `source_too_large` skips sources over 512 MiB;
+`asset_too_large` rejects or cancels an oversized candidate. Copy/hash loops
+check the preparation deadline. These limits do not sandbox operator programs.
+Read the retained receipt/request and candidate under
 `optional-intro/attempt-*`; do not reuse an earlier successful command output.
 
 Transport, staged hash/path, main-render, source-attestation and output-ownership
 errors remain fatal. Reconcile those errors before starting another attempt.
 Source mutations during preparation remain fatal even if the scene command
 fails. Staged symbolic links are rejected, and the encoder consumes the verified
-open file. The optional input uses ffmpeg's standard `cache` and `pipe` protocols;
+open file and checks the actual encoded input stream's checksum. The optional
+input uses ffmpeg's standard `cache` and `pipe` protocols;
 check `ffmpeg -protocols` if a custom ffmpeg build rejects that input.
 There is no automatic renderer or main-render retry. Preparation is local; any
 future remote adapter needs explicit deadline and cancellation receipts before

@@ -20,7 +20,11 @@ programs; the public package requires no private repository.
    the original first shot in use and records the reason. An enabled title card
    or short first capture bypasses preparation entirely. Every external tool
    has a bounded deadline (intro default 1800 seconds, range 1 to 3600), followed
-   by up to five seconds of graceful owned-process cleanup. No retries occur.
+   by up to five seconds of graceful owned-process cleanup. Copying and hashing
+   check that deadline. Optional sources and candidates are limited to 512 MiB;
+   oversized candidates cancel the attempt and sources above that limit skip
+   the scene. These acceptance limits do not sandbox operator programs.
+   No retries occur.
    Remote preparation adapters are outside this first public slice; operators
    must supply a locally prepared asset. No implicit SSH or credential transfer.
 4. **Portable, verified input.** Local and remote rendering consume the same

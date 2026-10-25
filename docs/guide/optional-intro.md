@@ -89,7 +89,11 @@ adapter or retry protocol; preparation runs locally before either render path.
 Do not detach work into another session or submit an uncancellable remote job.
 
 The deadline covers external preparation, defaults to 1800 seconds, and accepts
-1-3600 seconds. The existing owned-process runner sends TERM to the attempt's
+1-3600 seconds. Copying and hashing check the same deadline. Optional sources
+and candidates are limited to 512 MiB each; oversized sources skip the scene,
+and oversized candidate outputs cancel that renderer attempt before copying.
+This is an acceptance limit, not a filesystem sandbox for operator programs.
+The existing owned-process runner sends TERM to the attempt's
 group and allows five seconds before KILL through its live supervisor. It does
 not signal unrelated renderers. No renderer retry occurs. An unavailable tool,
 invalid candidate or timeout records a fallback and preserves the original

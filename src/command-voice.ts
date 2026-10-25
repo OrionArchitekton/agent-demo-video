@@ -156,27 +156,32 @@ export interface RunCommandOpts {
    * encoder) in their own process groups, which a group SIGKILL would orphan.
    */
   gracefulKillMs?: number;
+  /** Cancel this owned command group with the same cleanup as a timeout. */
+  signal?: AbortSignal;
 }
 
 /** Run an operator-supplied program WITHOUT a shell; every failure names `label` and its cause. */
 export async function runCommand(label: string, template: string[], vars: Record<string, string>, timeoutSec: number, opts?: RunCommandOpts): Promise<void> {
   const [prog, ...args] = fillArgs(template, vars);
   if (!prog) throw new Error(`${label}: empty command`);
+  if (opts?.signal?.aborted) throw new Error(`${label}: cancelled`);
   const gracefulKillMs = Math.max(0, opts?.gracefulKillMs ?? 0);
   await new Promise<void>((resolveRun, reject) => {
     let settled = false;
     let timedOut = false;
+    let cancelled = false;
     let drain: NodeJS.Timeout | undefined;
     let grace: NodeJS.Timeout | undefined;
     let commandResult: CommandResult | undefined;
     const live: LiveCommand = { gracefulKillMs, interrupted: false };
-    const timedOutError = () => new Error(`${label}: timed out after ${timeoutSec}s`);
+    const timedOutError = () => new Error(cancelled ? `${label}: cancelled` : `${label}: timed out after ${timeoutSec}s`);
     const done = (fn: () => void) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
       clearTimeout(drain);
       clearTimeout(grace);
+      opts?.signal?.removeEventListener("abort", abort);
       liveGroups.delete(child);
       // A helper the command left behind may still hold these pipes; let go of
       // them so it cannot keep this process alive.
@@ -214,7 +219,8 @@ export async function runCommand(label: string, template: string[], vars: Record
     child.stdout!.on("data", tee);
     child.stderr!.setEncoding("utf8");
     child.stderr!.on("data", (d: string) => { stderrTail = (stderrTail + d).slice(-4000); tee(d); });
-    const timer = setTimeout(() => {
+    const stop = () => {
+      if (settled || timedOut) return;
       timedOut = true;
       if (gracefulKillMs > 0) {
         // Ask first; the exit handler settles if the command stops within the grace.
@@ -228,8 +234,12 @@ export async function runCommand(label: string, template: string[], vars: Record
       }
       signalGroup(child, "SIGKILL");
       done(() => reject(timedOutError()));
-    }, timeoutSec * 1000);
+    };
+    const timer = setTimeout(stop, timeoutSec * 1000);
     timer.unref();
+    const abort = () => { cancelled = true; stop(); };
+    opts?.signal?.addEventListener("abort", abort, { once: true });
+    if (opts?.signal?.aborted) abort();
     child.on("error", (e: NodeJS.ErrnoException) => {
       done(() => reject(new Error(e.code === "ENOENT" ? `${label}: program not found: ${prog}` : `${label}: could not start ${prog}: ${e.message}`)));
     });

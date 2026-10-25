@@ -1,13 +1,14 @@
 import { constants } from "node:fs";
 import { createHash } from "node:crypto";
-import { chmod, mkdir, mkdtemp, open, readFile, realpath, stat, writeFile, type FileHandle } from "node:fs/promises";
-import type { Readable } from "node:stream";
+import { chmod, lstat, mkdir, mkdtemp, open, readFile, realpath, stat, writeFile, type FileHandle } from "node:fs/promises";
+import { Readable } from "node:stream";
 import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { z } from "zod";
 import type { DemoConfig } from "./types";
-import { digestFile } from "./provenance";
-import { parseDeliverableProbe, probeDurationSec } from "./ffmpeg";
+import { parseDeliverableProbe } from "./ffmpeg";
 import { runCommand } from "./command-voice";
+
+const MAX_INTRO_BYTES = 512 * 1024 * 1024;
 
 const sha256 = z.string().regex(/^[a-f0-9]{64}$/);
 const receiptSchema = z.object({
@@ -40,7 +41,7 @@ export interface PreparedIntro {
 }
 
 const assetIdentitySchema = z.object({
-  byteLength: z.number().int().positive().safe(), sha256, sourceSha256: sha256,
+  byteLength: z.number().int().positive().safe().max(MAX_INTRO_BYTES), sha256, sourceSha256: sha256,
   durationSec: z.number().min(3).max(4), recipeId: receiptSchema.shape.recipeId,
 });
 export const portableIntroSchema = z.object({
@@ -56,9 +57,38 @@ class SourceIntegrityError extends Error {
   constructor(cause?: unknown) { super("optional intro source integrity failure", { cause }); }
 }
 
+class PreparationLimitError extends Error {
+  constructor(readonly reason: "renderer_timeout" | "asset_too_large") { super(reason); }
+}
+
+function checkDeadline(deadline: number): void {
+  if (Date.now() >= deadline) throw new PreparationLimitError("renderer_timeout");
+}
+
+async function hashWithBudget(path: string, deadline = Infinity): Promise<string> {
+  const input = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+  try {
+    const info = await input.stat();
+    if (!info.isFile()) throw new Error("intro input is not a regular file");
+    if (info.size > MAX_INTRO_BYTES) throw new PreparationLimitError("asset_too_large");
+    const hash = createHash("sha256"), buffer = Buffer.alloc(1024 * 1024);
+    let bytes = 0;
+    for (;;) {
+      checkDeadline(deadline);
+      const { bytesRead } = await input.read(buffer, 0, buffer.length, bytes);
+      checkDeadline(deadline);
+      if (!bytesRead) break;
+      bytes += bytesRead;
+      if (bytes > MAX_INTRO_BYTES) throw new PreparationLimitError("asset_too_large");
+      hash.update(buffer.subarray(0, bytesRead));
+    }
+    return hash.digest("hex");
+  } finally { await input.close(); }
+}
+
 async function assertSourceIdentity(path: string, expected: string): Promise<void> {
   try {
-    if (await digestFile(path) !== expected) throw new SourceIntegrityError();
+    if (await hashWithBudget(path) !== expected) throw new SourceIntegrityError();
   } catch (error) { throw error instanceof SourceIntegrityError ? error : new SourceIntegrityError(error); }
 }
 
@@ -75,21 +105,28 @@ export async function containedIntroPath(root: string, path: string): Promise<st
 }
 
 /** Snapshot through an opened regular file, never a FIFO, directory or symlink. */
-async function snapshot(source: string, dest: string, maxBytes = Infinity): Promise<void> {
+async function snapshot(source: string, dest: string, maxBytes = MAX_INTRO_BYTES, deadline = Infinity): Promise<void> {
+  checkDeadline(deadline);
   const input = await open(source, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   try {
     const info = await input.stat();
-    if (!info.isFile() || info.size > maxBytes) throw new Error("optional intro input is not an eligible regular file");
+    if (!info.isFile()) throw new Error("optional intro input is not an eligible regular file");
+    if (info.size > maxBytes) throw new PreparationLimitError("asset_too_large");
     const output = await open(dest, "wx", 0o600);
     try {
       const buffer = Buffer.alloc(1024 * 1024);
       let offset = 0;
       for (;;) {
+        checkDeadline(deadline);
         const { bytesRead } = await input.read(buffer, 0, buffer.length, offset);
+        checkDeadline(deadline);
         if (!bytesRead) break;
-        if (offset + bytesRead > maxBytes) throw new Error("optional intro input exceeds size limit");
+        if (offset + bytesRead > maxBytes) throw new PreparationLimitError("asset_too_large");
         let written = 0;
-        while (written < bytesRead) written += (await output.write(buffer, written, bytesRead - written)).bytesWritten;
+        while (written < bytesRead) {
+          checkDeadline(deadline);
+          written += (await output.write(buffer, written, bytesRead - written)).bytesWritten;
+        }
         offset += bytesRead;
       }
     } finally { await output.close(); }
@@ -111,24 +148,44 @@ export async function prepareIntro(config: DemoConfig, source: string): Promise<
     requested: true, used: false, fallbackReason, ...(sourceSha256 ? { sourceSha256 } : {}),
   } });
   if (config.brand?.titleCard) return persist(skipped("title_card_enabled"));
+  const deadline = Date.now() + choice.timeoutSec * 1000;
+  const remainingSec = () => Math.max(0.001, (deadline - Date.now()) / 1000);
+  const sourceInfo = await lstat(source);
+  if (!sourceInfo.isFile()) throw new SourceIntegrityError();
+  if (sourceInfo.size > MAX_INTRO_BYTES) return persist(skipped("source_too_large"));
   // Source failures are ordinary capture/integrity failures, outside optional fallback.
-  const sourceDuration = await probeDurationSec(source);
-  if (!Number.isFinite(sourceDuration)) throw new Error("invalid first capture duration");
-  const sourceSha256 = await digestFile(source);
+  let sourceDuration: number;
+  try {
+    const sourceProbe = join(inputRoot, "source-probe.json");
+    await runCommand("optional intro source probe", ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "json", "{source}"],
+      { source }, remainingSec(), { gracefulKillMs: 5000, env: optionalToolEnv(), logPath: sourceProbe });
+    sourceDuration = Number(JSON.parse(await readFile(sourceProbe, "utf8")).format?.duration);
+    if (!Number.isFinite(sourceDuration) || sourceDuration <= 0) throw new SourceIntegrityError();
+  } catch (error) {
+    if ((error as Error).message.includes("timed out")) return persist(skipped("renderer_timeout"));
+    throw new SourceIntegrityError(error);
+  }
+  let sourceSha256: string;
+  try { sourceSha256 = await hashWithBudget(source, deadline); }
+  catch (error) {
+    if (error instanceof PreparationLimitError) return persist(skipped(error.reason));
+    throw new SourceIntegrityError(error);
+  }
   if (sourceDuration + 1e-6 < choice.durationSec) return persist(skipped("source_too_short", sourceSha256));
   if (!choice.asset && !choice.renderer) return persist(skipped("missing_renderer", sourceSha256));
   const path = join(inputRoot, "intro.mp4");
-  const deadline = Date.now() + choice.timeoutSec * 1000;
-  const remainingSec = () => Math.max(0.001, (deadline - Date.now()) / 1000);
   const renderer = choice.renderer ? basename(choice.renderer[0]!) : "prepared_asset";
   const sourceCopy = join(inputRoot, "source.mp4");
   if (choice.renderer) {
     // Source snapshot failures are fatal, before optional candidate preparation.
     try {
-      await snapshot(source, sourceCopy);
+      await snapshot(source, sourceCopy, MAX_INTRO_BYTES, deadline);
       await assertSourceIdentity(sourceCopy, sourceSha256);
       await chmod(sourceCopy, 0o400);
-    } catch (error) { throw new SourceIntegrityError(error); }
+    } catch (error) {
+      if (error instanceof PreparationLimitError) return persist(skipped(error.reason, sourceSha256));
+      throw new SourceIntegrityError(error);
+    }
   }
   let prepared: PreparedIntro;
   try {
@@ -140,22 +197,35 @@ export async function prepareIntro(config: DemoConfig, source: string): Promise<
       const request = join(inputRoot, "request.json");
       await writeFile(request, JSON.stringify({ version: 1, sourceSha256, sourceStartSec: 0,
         durationSec: choice.durationSec, ...config.resolution, fps: config.fps }));
+      const controller = new AbortController();
+      let oversized = false, checking = false;
+      const monitor = setInterval(() => {
+        if (checking) return;
+        checking = true;
+        void lstat(candidate).then((info) => {
+          if (info.isFile() && info.size > MAX_INTRO_BYTES) { oversized = true; controller.abort(); }
+        }).catch(() => {}).finally(() => { checking = false; });
+      }, 100);
+      monitor.unref();
       try {
         await runCommand("optional intro renderer", choice.renderer, {
           source: sourceCopy, out: candidate, receipt: receiptPath, request,
           duration: String(choice.durationSec), width: String(config.resolution.width),
           height: String(config.resolution.height), fps: String(config.fps),
-        }, remainingSec(), { gracefulKillMs: 5000, env: optionalToolEnv() });
-      } finally { await assertSourceIdentity(sourceCopy, sourceSha256); }
+        }, remainingSec(), { gracefulKillMs: 5000, env: optionalToolEnv(), signal: controller.signal });
+      } catch (error) {
+        if (oversized) throw new PreparationLimitError("asset_too_large");
+        throw error;
+      } finally { clearInterval(monitor); await assertSourceIdentity(sourceCopy, sourceSha256); }
     } else {
       candidate = resolve(config.configDir ?? process.cwd(), choice.asset!);
       receiptPath = resolve(config.configDir ?? process.cwd(), choice.receipt ?? `${choice.asset}.json`);
     }
-    await snapshot(candidate, path);
+    await snapshot(candidate, path, MAX_INTRO_BYTES, deadline);
     const receiptCopy = join(inputRoot, "receipt.json");
-    await snapshot(receiptPath, receiptCopy, 16384);
+    await snapshot(receiptPath, receiptCopy, 16384, deadline);
     const receipt = receiptSchema.parse(JSON.parse(await readFile(receiptCopy, "utf8")));
-    const hash = await digestFile(path);
+    const hash = await hashWithBudget(path, deadline);
     const probeLog = join(inputRoot, "probe.json");
     await runCommand("optional intro probe", ["ffprobe", "-v", "error", "-show_streams", "-show_format", "-of", "json", "{video}"],
       { video: path }, remainingSec(), { gracefulKillMs: 5000, env: optionalToolEnv(), logPath: probeLog });
@@ -181,7 +251,7 @@ export async function prepareIntro(config: DemoConfig, source: string): Promise<
   } catch (error) {
     if (error instanceof SourceIntegrityError) throw error;
     const msg = (error as Error).message;
-    const reason = msg.includes("timed out") ? "renderer_timeout" :
+    const reason = error instanceof PreparationLimitError ? error.reason : msg.includes("timed out") ? "renderer_timeout" :
       msg.includes("program not found") ? "renderer_unavailable" : "invalid_candidate";
     prepared = { record: { ...skipped(reason, sourceSha256).record, renderer } };
   }
@@ -209,6 +279,7 @@ async function openVerifiedIntro(asset: IntroAsset): Promise<FileHandle> {
       if (!bytesRead) break;
       hash.update(buffer.subarray(0, bytesRead));
       offset += bytesRead;
+      if (offset > asset.byteLength) throw new Error("optional intro staged input integrity failure");
     }
     if (offset !== asset.byteLength || hash.digest("hex") !== asset.sha256) throw new Error("optional intro staged input integrity failure");
     return handle;
@@ -218,9 +289,27 @@ async function openVerifiedIntro(asset: IntroAsset): Promise<FileHandle> {
 /** Consumers read the verified inode, never reopen its mutable staged name. */
 export async function withVerifiedIntro<T>(asset: IntroAsset, consume: (input: Readable) => Promise<T>): Promise<T> {
   const handle = await openVerifiedIntro(asset);
-  const input = handle.createReadStream({ start: 0, autoClose: false });
-  try { return await consume(input); }
-  finally { input.destroy(); await handle.close(); }
+  const source = handle.createReadStream({ start: 0, autoClose: false });
+  const hash = createHash("sha256");
+  let bytes = 0;
+  const input = Readable.from((async function* () {
+    for await (const chunk of source) {
+      bytes += chunk.length;
+      if (bytes > asset.byteLength) throw new Error("optional intro streamed input integrity failure");
+      hash.update(chunk);
+      yield chunk;
+    }
+  })(), { objectMode: false });
+  try {
+    const result = await consume(input);
+    // A decoder may finish before container padding. Drain that suffix through
+    // the same verifier, without reopening the name or discarding prefix hashes.
+    for await (const _ of input) { /* finish the verified stream */ }
+    if (bytes !== asset.byteLength || hash.digest("hex") !== asset.sha256) {
+      throw new Error("optional intro streamed input integrity failure");
+    }
+    return result;
+  } finally { input.destroy(); source.destroy(); await handle.close(); }
 }
 
 /** A changed or symbolic local name cannot ship unchecked bytes to a host. */

@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
-import { chmod, cp, mkdir, mkdtemp, readFile, writeFile, symlink, unlink } from "node:fs/promises";
+import { chmod, cp, mkdir, mkdtemp, open, readFile, readdir, writeFile, symlink, unlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ffmpeg, probeDeliverable } from "../src/ffmpeg";
@@ -251,4 +251,40 @@ it("rejects staged symlinks and consumes the verified inode if the name changes 
     for await (const chunk of input) captured.push(Buffer.from(chunk));
   });
   expect(Buffer.concat(captured)).toEqual(await readFile(asset));
+});
+
+it("rejects changed streamed bytes even when the original inode contents are restored", async () => {
+  const intro = (await prepareIntro(config(join(root, "stream-content")), source))!;
+  const original = await readFile(intro.asset!.path);
+  const changed = Buffer.from(original);
+  changed[changed.length - 1] = changed[changed.length - 1]! ^ 1;
+  await expect(withVerifiedIntro(intro.asset!, async (input) => {
+    await chmod(intro.asset!.path, 0o600);
+    await writeFile(intro.asset!.path, changed);
+    for await (const _ of input) { /* consume the changed bytes */ }
+    await writeFile(intro.asset!.path, original);
+  })).rejects.toThrow(/integrity/);
+});
+
+it("cancels an oversized renderer output before snapshotting it", async () => {
+  const program = join(root, "oversized.mjs");
+  await writeFile(program, `import {open} from 'node:fs/promises';
+    const f=await open(process.argv[3],'w');await f.truncate(513*1024*1024);await f.close();setInterval(()=>{},1000);`);
+  const cfg = config(join(root, "oversized-renderer"), {
+    renderer: [process.execPath, program, "{source}", "{out}", "{receipt}"], timeoutSec: 2,
+  });
+  const result = await prepareIntro(cfg, source);
+  expect(result?.record).toMatchObject({ used: false, fallbackReason: "asset_too_large" });
+});
+
+it("skips oversized sources and rejects oversized prepared assets without copying them", async () => {
+  const huge = join(root, "oversized-input.mp4");
+  const file = await open(huge, "wx");
+  await file.truncate(513 * 1024 * 1024); // Sparse fixture: no large allocation.
+  await file.close();
+  expect((await prepareIntro(config(join(root, "source-limit")), huge))?.record.fallbackReason).toBe("source_too_large");
+  const cfg = config(join(root, "candidate-limit"), { asset: huge });
+  expect((await prepareIntro(cfg, source))?.record.fallbackReason).toBe("asset_too_large");
+  const attempts = await readdir(join(cfg.out, "optional-intro"));
+  await expect(readFile(join(cfg.out, "optional-intro", attempts[0]!, "intro.mp4"))).rejects.toThrow(/ENOENT/);
 });

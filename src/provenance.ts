@@ -11,6 +11,8 @@ import type { SourceBuildAttestation } from "./source-build";
 import type { DeliverableCheck } from "./verify";
 import type { ContactSheetPlan } from "./contact-sheet";
 import type { TranscriptCheck } from "./transcript-check";
+import type { IntroRecord } from "./optional-intro";
+import type { LookResult } from "./look-check";
 
 const exec = promisify(execFile);
 
@@ -102,6 +104,8 @@ export type RenderReport = {
   hook?: "set" | "missing";
   /** Present only when brand.motion rendered the title/end cards (specs/motion-cards-spec.md). */
   motionCards?: { renderer: "hyperframes"; version: string };
+  optionalIntro?: IntroRecord;
+  lookCheck?: LookResult;
 };
 
 /** Short stable content digest retained for report compatibility and scanning. */
@@ -154,6 +158,8 @@ export function buildRenderReport(o: {
   transcriptCheck?: TranscriptCheck;
   hook?: "set" | "missing";
   motionCards?: { renderer: "hyperframes"; version: string };
+  optionalIntro?: IntroRecord;
+  lookCheck?: LookResult;
 }): RenderReport {
   return {
     voice: reportVoice(o.voice),
@@ -178,6 +184,8 @@ export function buildRenderReport(o: {
     ...(o.transcriptCheck ? { transcriptCheck: o.transcriptCheck } : {}),
     ...(o.hook ? { hook: o.hook } : {}),
     ...(o.motionCards ? { motionCards: o.motionCards } : {}),
+    ...(o.optionalIntro ? { optionalIntro: o.optionalIntro } : {}),
+    ...(o.lookCheck ? { lookCheck: o.lookCheck } : {}),
   };
 }
 

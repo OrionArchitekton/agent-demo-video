@@ -1,9 +1,11 @@
 import { cp, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, posix } from "node:path";
+import { isDeepStrictEqual } from "node:util";
 import type { RenderInputs, RenderResult } from "./render";
 import { buildManifest } from "./manifest";
 import { LocalTransport, type Transport } from "./transport";
+import { verifyIntro } from "./optional-intro";
 
 export interface RemoteRenderOpts {
   /** How to reach the render host (LocalTransport or SshTransport). */
@@ -49,6 +51,7 @@ async function assertFontParity(transport: Transport, font: string): Promise<voi
  * the remote work dir is always cleaned up so captured media is never left behind.
  */
 export async function renderRemote(inputs: RenderInputs, opts: RemoteRenderOpts): Promise<RenderResult> {
+  await verifyIntro(inputs.optionalIntro, inputs.rawSegments[0]!);
   const ownsStage = !opts.stageDir;
   const stage = opts.stageDir ?? (await mkdtemp(join(tmpdir(), "adv-stage-")));
   let workDirCreated = false;
@@ -64,6 +67,10 @@ export async function renderRemote(inputs: RenderInputs, opts: RemoteRenderOpts)
     // w.r.t. the originals; collision-free even if two sources share a basename).
     for (let i = 0; i < inputs.rawSegments.length; i++) await cp(inputs.rawSegments[i]!, join(stageSeg, manifest.segments[i]!));
     for (let i = 0; i < inputs.tts.length; i++) await cp(inputs.tts[i]!.audioPath, join(stageAudio, manifest.audio[i]!.file));
+    if (inputs.optionalIntro?.asset) {
+      await mkdir(join(stage, "optional"), { recursive: true });
+      await cp(inputs.optionalIntro.asset.path, join(stage, "optional", "intro.mp4"));
+    }
     await writeFile(join(stage, "manifest.json"), JSON.stringify(manifest), "utf8");
     await cp(opts.bundlePath, join(stage, "remote-entry.js"));
     // Mark the staged dir as an ES module so the ESM bundle runs as a module even
@@ -94,6 +101,9 @@ export async function renderRemote(inputs: RenderInputs, opts: RemoteRenderOpts)
     }
     if (!remote?.report) {
       throw new Error("[remote-render] could not parse render result from host stdout: " + stdout.slice(0, 400));
+    }
+    if (!isDeepStrictEqual(remote.report.optionalIntro, inputs.optionalIntro?.record)) {
+      throw new Error("[remote-render] optional intro report does not match dispatched input");
     }
     return { outPath: opts.outPath, report: remote.report };
   } finally {

@@ -167,6 +167,28 @@ export const DemoConfigSchema = z.object({
   // it; a clip path that carries its own directory resolves against the config
   // file's directory. Relative clipsDir resolves against the config dir too.
   clipsDir: z.string().default("clips/prebaked"),
+  // Optional visual substitution; absent preserves existing config identities.
+  optionalIntro: z.object({
+    asset: z.string().min(1).optional(),
+    receipt: z.string().min(1).optional(),
+    renderer: z.array(z.string().min(1)).min(1).optional(),
+    durationSec: z.number().min(3).max(4).default(4),
+    timeoutSec: z.number().min(1).max(3600).default(1800),
+  }).strict().superRefine((v, ctx) => {
+    if (v.asset && v.renderer) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "choose an asset or a renderer" });
+    if (v.receipt && !v.asset) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "receipt requires an asset" });
+    if (v.renderer) for (const h of ["{source}", "{out}", "{receipt}"]) {
+      if (!v.renderer.some((a) => a.includes(h))) ctx.addIssue({ code: z.ZodIssueCode.custom, message: `renderer needs ${h}` });
+    }
+  }).optional(),
+  lookCheck: z.object({
+    command: z.array(z.string().min(1)).min(1),
+    timeoutSec: z.number().min(1).max(3600).default(120),
+  }).strict().superRefine((v, ctx) => {
+    for (const h of ["{video}", "{start}", "{duration}", "{profile}"]) {
+      if (!v.command.some((a) => a.includes(h))) ctx.addIssue({ code: z.ZodIssueCode.custom, message: `look checker needs ${h}` });
+    }
+  }).optional(),
   // Absolute directory of the config file. SET BY loadConfig, not authored by
   // hand — it is what makes prebaked clip resolution independent of the process
   // CWD. Machine-local, so it is excluded from the provenance config hash the
@@ -274,7 +296,13 @@ export const DemoConfigSchema = z.object({
   // otherwise makes the browser scale the page down, producing a "breathing"
   // zoom between shots).
   captureCss: z.string().optional(),
-}).strict().transform((c) => ({
+}).strict().superRefine((c, ctx) => {
+  if (c.optionalIntro && (!Number.isFinite(c.fps) || c.fps <= 0 ||
+      Math.abs(c.optionalIntro.durationSec * c.fps - Math.round(c.optionalIntro.durationSec * c.fps)) > 1e-6)) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["optionalIntro", "durationSec"],
+      message: "optional intro duration must select a whole number of frames at the configured fps" });
+  }
+}).transform((c) => ({
   // Fill the canvas from the platform preset so resolution is always concrete
   // downstream; an explicit resolution wins (spec AC1).
   ...c,

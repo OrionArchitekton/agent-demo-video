@@ -1,6 +1,8 @@
 import { extname, join } from "node:path";
 import type { Alignment } from "./types";
 import type { RenderInputs, RenderConfig } from "./render";
+import { portableIntroSchema } from "./optional-intro";
+import type { z } from "zod";
 
 /**
  * The portable, host-independent form of RenderInputs. File references are
@@ -19,6 +21,7 @@ export interface RenderManifest {
   contentSize?: { width: number; height: number };
   audio: { file: string; durationSec: number; alignment: Alignment; shotId: string }[];
   config: Omit<RenderConfig, "out">;
+  optionalIntro?: z.infer<typeof portableIntroSchema>;
 }
 
 export function buildManifest(inputs: RenderInputs): RenderManifest {
@@ -27,6 +30,13 @@ export function buildManifest(inputs: RenderInputs): RenderManifest {
     ...(inputs.segmentKinds ? { segmentKinds: inputs.segmentKinds } : {}),
     ...(inputs.clickOffsets ? { clickOffsets: inputs.clickOffsets } : {}),
     ...(inputs.contentSize ? { contentSize: inputs.contentSize } : {}),
+    ...(inputs.optionalIntro ? { optionalIntro: {
+      record: inputs.optionalIntro.record,
+      ...(inputs.optionalIntro.asset ? { asset: (() => {
+        const { path: _path, inputRoot: _root, ...identity } = inputs.optionalIntro!.asset!;
+        return { ...identity, file: "optional/intro.mp4" as const };
+      })() } : {}),
+    } } : {}),
     audio: inputs.tts.map((t, i) => ({
       file: `aud_${i}${extname(t.audioPath)}`,
       durationSec: t.durationSec,
@@ -47,7 +57,14 @@ export function buildManifest(inputs: RenderInputs): RenderManifest {
 }
 
 export function loadManifest(manifest: RenderManifest, baseDir: string): RenderInputs {
+  const intro = manifest.optionalIntro ? portableIntroSchema.parse(manifest.optionalIntro) : undefined;
   return {
+    ...(intro ? { optionalIntro: { record: intro.record,
+      ...(intro.asset ? { asset: (() => {
+        const { file, ...identity } = intro.asset;
+        return { ...identity, path: join(baseDir, file), inputRoot: baseDir };
+      })() } : {}),
+    } } : {}),
     rawSegments: manifest.segments.map((f) => join(baseDir, "seg", f)),
     ...(manifest.segmentKinds ? { segmentKinds: manifest.segmentKinds } : {}),
     ...(manifest.clickOffsets ? { clickOffsets: manifest.clickOffsets } : {}),

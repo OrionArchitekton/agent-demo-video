@@ -30,6 +30,8 @@ import { checkDeliverable, checkTimelineBinding } from "./verify";
 import { buildContactSheet, planContactSheet } from "./contact-sheet";
 import { renderVideo, type RenderResult } from "./render";
 import { renderRemote } from "./remote-render";
+import { prepareIntro } from "./optional-intro";
+import { runLookCheck } from "./look-check";
 import type { Transport } from "./transport";
 import {
   buildRenderReport,
@@ -1018,7 +1020,7 @@ export async function runPipeline(config: DemoConfig, opts: RunPipelineOpts = {}
   }
   const receiptConfig = config;
   const requestedOut = resolve(config.out);
-  const freshClaim = opts.requireFreshOut
+  const freshClaim = (opts.requireFreshOut || config.optionalIntro)
     ? await claimFreshOutputDir(requestedOut)
     : undefined;
   const out = freshClaim?.boundPath ?? requestedOut;
@@ -1273,7 +1275,9 @@ export async function runPipeline(config: DemoConfig, opts: RunPipelineOpts = {}
   //       code path runs there). A remote failure rejects loudly (no silent local fallback).
   // Raw shot segments are captured at the VIEWPORT geometry; the render frames
   // them into the canvas, keeping the viewport aspect for the window.
-  const inputs = { rawSegments, tts: ttsResults, config, segmentKinds, clickOffsets, contentSize: captureViewport(config) };
+  const optionalIntro = await prepareIntro(config, rawSegments[0]!);
+  const inputs = { rawSegments, tts: ttsResults, config, segmentKinds, clickOffsets, contentSize: captureViewport(config),
+    ...(optionalIntro ? { optionalIntro } : {}) };
   let result: RenderResult;
   if (opts.render) {
     const bundlePath = opts.render.bundlePath ?? defaultBundlePath();
@@ -1332,6 +1336,11 @@ export async function runPipeline(config: DemoConfig, opts: RunPipelineOpts = {}
     );
   }
 
+  const lookCheck = config.optionalIntro || config.lookCheck
+    ? await runLookCheck(result.outPath, config, result.report.timeline.totalSec,
+      optionalIntro?.asset?.durationSec, out)
+    : undefined;
+
   // This is a render gate, not best-effort provenance. If any scoped source
   // changed while the artifact was being made, fail the run before a report
   // can certify the completed bytes.
@@ -1363,6 +1372,8 @@ export async function runPipeline(config: DemoConfig, opts: RunPipelineOpts = {}
       transcriptCheck,
       ...(hookStatus ? { hook: hookStatus } : {}),
       ...(motionCards ? { motionCards } : {}),
+      ...(result.report.optionalIntro ? { optionalIntro: result.report.optionalIntro } : {}),
+      ...(lookCheck ? { lookCheck } : {}),
       ...(opts.sourceBuild
         ? { sourceBuildAttestation: opts.sourceBuild.attestation }
         : {}),

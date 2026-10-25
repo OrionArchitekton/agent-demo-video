@@ -1,5 +1,9 @@
 # agent-demo-video
 
+Optional prepared opening scenes and external scene renderers are documented in
+[Optional opening scene](docs/guide/optional-intro.md). They are off by default,
+preserve narration and timing, and require no Blender or private scene library.
+
 Turn a `DEMO_SCRIPT.md` and a running web app into a finished, narrated, captioned MP4, headless and
 repeatable. Narration is generated first and becomes the clock for the screen recording and the
 captions, so audio, video and captions stay in sync by construction. Length is capped by

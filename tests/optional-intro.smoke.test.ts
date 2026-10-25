@@ -205,3 +205,20 @@ it("uses a bounded argv renderer and retains a timeout fallback without touching
     expect(process.kill(unrelated.pid!, 0)).toBe(true);
   } finally { unrelated.kill(); }
 });
+
+it("substitutes a portrait scene while preserving the landscape capture's aspect guard", async () => {
+  const portrait = join(root, "portrait.mp4");
+  await ffmpeg(["-y", "-i", source, "-t", "4", "-vf", "scale=128:72,pad=180:320:26:124:color=white", "-c:v", "libx264", portrait]);
+  const receipt = JSON.parse(await readFile(`${asset}.json`, "utf8"));
+  await writeFile(`${portrait}.json`, JSON.stringify({ ...receipt, assetSha256: await digestFile(portrait), width: 180, height: 320 }));
+  const cfg = config(join(root, "portrait-out"), { asset: portrait });
+  cfg.platform = "shorts";
+  cfg.resolution = { width: 180, height: 320 };
+  cfg.capture.viewport = { width: 320, height: 180 };
+  cfg.theme.frame.enabled = true;
+  const result = await runPipeline(cfg);
+  expect(result.report.optionalIntro?.used).toBe(true);
+  expect(await probeDeliverable(result.outPath)).toMatchObject({ width: 180, height: 320, frameRate: "15/1" });
+  const control = await runPipeline({ ...cfg, optionalIntro: undefined, out: join(root, "portrait-control") });
+  expect(result.report.timeline).toEqual(control.report.timeline);
+});

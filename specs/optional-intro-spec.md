@@ -38,6 +38,8 @@ programs; the public package requires no private repository.
    motion, 100 contrast and 50 brightness. Unavailable/malformed checker output
    is unavailable; a nonzero verdict is failure. Neither changes technical
    acceptance or publishes anything. Missing tools never fabricate a pass.
+   The checker receives a separate copy; altered analysis input cannot supply
+   passing metrics. Changes to the actual delivered video remain fatal.
 6. **Thumbnail candidate.** Thumbnail art remains a separate, operator-run
    workflow using reviewed scene stills and the existing editable-title image
    workflow. Ordinary video rendering emits no thumbnail and invokes no image

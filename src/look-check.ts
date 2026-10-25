@@ -1,9 +1,10 @@
-import { mkdir, mkdtemp, readFile } from "node:fs/promises";
+import { chmod, copyFile, lstat, mkdir, mkdtemp, readFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { z } from "zod";
 import { runCommand } from "./command-voice";
 import { optionalToolEnv } from "./optional-intro";
 import type { DemoConfig } from "./types";
+import { digestFile } from "./provenance";
 
 type State = "pass" | "fail" | "unavailable";
 export interface LookWindow {
@@ -27,7 +28,7 @@ const resultSchema = z.object({
     secs_measured: z.number().finite().positive() }),
 });
 
-/** Read-only diagnostics on the delivered MP4. Every failure stays advisory. */
+/** Measurement failures stay advisory; a changed deliverable remains fatal. */
 export async function runLookCheck(video: string, config: DemoConfig, totalSec: number,
   introSec: number | undefined, out: string): Promise<LookResult> {
   const result: LookResult = { profile: "motion", state: "unavailable", windows: [] };
@@ -44,25 +45,50 @@ export async function runLookCheck(video: string, config: DemoConfig, totalSec: 
     return result;
   }
   result.checker = basename(choice.command[0]!);
+  const deliveredHash = await digestFile(video);
+  const assertDeliveredUnchanged = async () => {
+    try {
+      if (!(await lstat(video)).isFile() || await digestFile(video) !== deliveredHash) throw new Error("changed bytes");
+    } catch (cause) { throw new Error("delivered video changed during look check", { cause }); }
+  };
   const parent = join(out, "look-check");
   let root: string;
+  let snapshot: string;
   try {
     await mkdir(parent, { recursive: true });
     root = await mkdtemp(join(parent, "attempt-"));
+    snapshot = join(root, "input.mp4");
+    await copyFile(video, snapshot);
+    await chmod(snapshot, 0o400);
+    if (await digestFile(snapshot) !== deliveredHash) throw new Error("snapshot changed");
   }
-  catch { return { ...result, windows: windows.map((w) => ({ ...w, state: "unavailable", reason: "diagnostics_unavailable" })) }; }
+  catch {
+    await assertDeliveredUnchanged();
+    return { ...result, windows: windows.map((w) => ({ ...w, state: "unavailable", reason: "diagnostics_unavailable" })) };
+  }
+  let snapshotUsable = true;
   for (const w of windows) {
     const log = join(root, `${w.name}.log`);
     const current: LookWindow = { ...w, state: "unavailable" };
+    if (!snapshotUsable) {
+      result.windows.push({ ...current, reason: "checker_modified_input" });
+      continue;
+    }
     let commandFailed = false;
     let unavailable = false;
     try {
-      await runCommand("advisory look checker", choice.command, { video, start: String(w.startSec),
+      await runCommand("advisory look checker", choice.command, { video: snapshot, start: String(w.startSec),
         duration: String(w.durationSec), profile: "motion" }, choice.timeoutSec,
       { gracefulKillMs: 5000, env: optionalToolEnv(), logPath: log });
     } catch (error) {
       commandFailed = true;
       unavailable = /program not found|could not start|timed out/.test((error as Error).message);
+    }
+    await assertDeliveredUnchanged();
+    snapshotUsable = await digestFile(snapshot).then((hash) => hash === deliveredHash).catch(() => false);
+    if (!snapshotUsable) {
+      result.windows.push({ ...current, reason: "checker_modified_input" });
+      continue;
     }
     try {
       const lines = (await readFile(log, "utf8")).trim().split("\n").reverse();
@@ -83,5 +109,6 @@ export async function runLookCheck(video: string, config: DemoConfig, totalSec: 
   }
   result.state = result.windows.some((w) => w.state === "fail") ? "fail" :
     result.windows.every((w) => w.state === "pass") ? "pass" : "unavailable";
+  await assertDeliveredUnchanged();
   return result;
 }

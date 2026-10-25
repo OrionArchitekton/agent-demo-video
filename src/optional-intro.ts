@@ -7,6 +7,7 @@ import { z } from "zod";
 import type { DemoConfig } from "./types";
 import { parseDeliverableProbe } from "./ffmpeg";
 import { runCommand } from "./command-voice";
+import { FRAME_RATE_EPSILON, frameRateValue } from "./verify";
 
 const MAX_INTRO_BYTES = 512 * 1024 * 1024;
 
@@ -66,6 +67,7 @@ function checkDeadline(deadline: number): void {
 }
 
 async function hashWithBudget(path: string, deadline = Infinity): Promise<string> {
+  checkDeadline(deadline);
   const input = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   try {
     const info = await input.stat();
@@ -86,10 +88,13 @@ async function hashWithBudget(path: string, deadline = Infinity): Promise<string
   } finally { await input.close(); }
 }
 
-async function assertSourceIdentity(path: string, expected: string): Promise<void> {
+async function assertSourceIdentity(path: string, expected: string, deadline = Infinity): Promise<void> {
   try {
-    if (await hashWithBudget(path) !== expected) throw new SourceIntegrityError();
-  } catch (error) { throw error instanceof SourceIntegrityError ? error : new SourceIntegrityError(error); }
+    if (await hashWithBudget(path, deadline) !== expected) throw new SourceIntegrityError();
+  } catch (error) {
+    if (error instanceof PreparationLimitError && error.reason === "renderer_timeout") throw error;
+    throw error instanceof SourceIntegrityError ? error : new SourceIntegrityError(error);
+  }
 }
 
 /** Resolve both lexical and real paths; symlinks cannot escape staged inputs. */
@@ -180,7 +185,7 @@ export async function prepareIntro(config: DemoConfig, source: string): Promise<
     // Source snapshot failures are fatal, before optional candidate preparation.
     try {
       await snapshot(source, sourceCopy, MAX_INTRO_BYTES, deadline);
-      await assertSourceIdentity(sourceCopy, sourceSha256);
+      await assertSourceIdentity(sourceCopy, sourceSha256, deadline);
       await chmod(sourceCopy, 0o400);
     } catch (error) {
       if (error instanceof PreparationLimitError) return persist(skipped(error.reason, sourceSha256));
@@ -216,7 +221,7 @@ export async function prepareIntro(config: DemoConfig, source: string): Promise<
       } catch (error) {
         if (oversized) throw new PreparationLimitError("asset_too_large");
         throw error;
-      } finally { clearInterval(monitor); await assertSourceIdentity(sourceCopy, sourceSha256); }
+      } finally { clearInterval(monitor); await assertSourceIdentity(sourceCopy, sourceSha256, deadline); }
     } else {
       candidate = resolve(config.configDir ?? process.cwd(), choice.asset!);
       receiptPath = resolve(config.configDir ?? process.cwd(), choice.receipt ?? `${choice.asset}.json`);
@@ -230,14 +235,14 @@ export async function prepareIntro(config: DemoConfig, source: string): Promise<
     await runCommand("optional intro probe", ["ffprobe", "-v", "error", "-show_streams", "-show_format", "-of", "json", "{video}"],
       { video: path }, remainingSec(), { gracefulKillMs: 5000, env: optionalToolEnv(), logPath: probeLog });
     const probe = parseDeliverableProbe(JSON.parse(await readFile(probeLog, "utf8")));
-    const rate = (probe.frameRate ?? "").split("/").map(Number);
-    const fps = rate[0]! / rate[1]!;
+    const rates = [frameRateValue(probe.frameRate), frameRateValue(probe.avgFrameRate), receipt.fps];
     if (receipt.sourceSha256 !== sourceSha256 || receipt.assetSha256 !== hash ||
         receipt.durationSec !== choice.durationSec || receipt.width !== config.resolution.width ||
-        receipt.height !== config.resolution.height || receipt.fps !== config.fps ||
+        receipt.height !== config.resolution.height ||
         probe.width !== config.resolution.width || probe.height !== config.resolution.height ||
         probe.sampleAspectRatio !== "1:1" || probe.rotationDeg !== 0 ||
-        probe.videoStreams !== 1 || probe.audioStreams !== 0 || fps !== config.fps ||
+        probe.videoStreams !== 1 || probe.audioStreams !== 0 ||
+        rates.some((rate) => rate === null || !Number.isFinite(rate) || Math.abs(rate - config.fps) > FRAME_RATE_EPSILON) ||
         probe.videoDurationSec === null || Math.abs(probe.videoDurationSec - choice.durationSec) > 0.5 / config.fps) {
       throw new Error("intro candidate or receipt does not match source, interval, canvas or frame rate");
     }
@@ -255,7 +260,11 @@ export async function prepareIntro(config: DemoConfig, source: string): Promise<
       msg.includes("program not found") ? "renderer_unavailable" : "invalid_candidate";
     prepared = { record: { ...skipped(reason, sourceSha256).record, renderer } };
   }
-  await assertSourceIdentity(source, sourceSha256);
+  try { await assertSourceIdentity(source, sourceSha256, deadline); }
+  catch (error) {
+    if (!(error instanceof PreparationLimitError)) throw error;
+    prepared = { record: { ...skipped(error.reason, sourceSha256).record, renderer } };
+  }
   return persist(prepared);
 }
 

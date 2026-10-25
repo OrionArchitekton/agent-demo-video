@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import { chmod, cp, mkdir, mkdtemp, open, readFile, readdir, writeFile, symlink, unlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { ffmpeg, probeDeliverable } from "../src/ffmpeg";
 import { digestFile } from "../src/provenance";
@@ -287,4 +288,45 @@ it("skips oversized sources and rejects oversized prepared assets without copyin
   expect((await prepareIntro(cfg, source))?.record.fallbackReason).toBe("asset_too_large");
   const attempts = await readdir(join(cfg.out, "optional-intro"));
   await expect(readFile(join(cfg.out, "optional-intro", attempts[0]!, "intro.mp4"))).rejects.toThrow(/ENOENT/);
+});
+
+it("does not continue source hashing after the preparation deadline", async () => {
+  const marker = join(root, "deadline-expired");
+  const program = join(root, "expire-after-render.mjs");
+  await writeFile(program, `import {copyFile,readFile,writeFile} from 'node:fs/promises';
+    import {createHash} from 'node:crypto';
+    const [source,out,receipt,request,candidate,marker]=process.argv.slice(2);
+    const r=JSON.parse(await readFile(request,'utf8'));await copyFile(candidate,out);
+    await writeFile(receipt,JSON.stringify({...r,assetSha256:createHash('sha256').update(await readFile(out)).digest('hex'),recipeId:'deadline-test'}));
+    await writeFile(marker,'expired');`);
+  const handle = await open(source, "r");
+  const prototype = Object.getPrototypeOf(handle);
+  const read = prototype.read;
+  await handle.close();
+  const now = Date.now.bind(Date), start = now();
+  let readsAfterDeadline = 0;
+  const clock = vi.spyOn(Date, "now").mockImplementation(() => existsSync(marker) ? start + 20_000 : now());
+  const reader = vi.spyOn(prototype, "read").mockImplementation(function (this: any, ...args: any[]) {
+    if (existsSync(marker)) readsAfterDeadline++;
+    return read.apply(this, args);
+  });
+  try {
+    const result = await prepareIntro(config(join(root, "deadline-source"), {
+      renderer: [process.execPath, program, "{source}", "{out}", "{receipt}", "{request}", asset, marker], timeoutSec: 10,
+    }), source);
+    expect(result?.record.fallbackReason).toBe("renderer_timeout");
+    expect(readsAfterDeadline).toBe(0);
+  } finally { reader.mockRestore(); clock.mockRestore(); }
+});
+
+it("accepts an NTSC clip for a frame-aligned 29.97 fps request", async () => {
+  const ntsc = join(root, "ntsc.mp4"), durationSec = 90 / 29.97;
+  await ffmpeg(["-y", "-i", source, "-r", "30000/1001", "-frames:v", "90", "-an", "-c:v", "libx264", ntsc]);
+  const receipt = JSON.parse(await readFile(`${asset}.json`, "utf8"));
+  await writeFile(`${ntsc}.json`, JSON.stringify({ ...receipt, assetSha256: await digestFile(ntsc), fps: 30000 / 1001, durationSec }));
+  const cfg = DemoConfigSchema.parse({ ...config(join(root, "ntsc-out")), fps: 29.97,
+    optionalIntro: { asset: ntsc, durationSec } });
+  const result = await runPipeline(cfg);
+  expect(result.report.optionalIntro?.used).toBe(true);
+  expect(result.report.parity.ok).toBe(true);
 });

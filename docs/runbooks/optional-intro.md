@@ -71,6 +71,9 @@ its retries can be admitted. Never terminate shared GPU work to make room.
 Checker absence or incomplete metrics is `unavailable`; a measured threshold or
 checker-verdict failure is `fail`. Both are advisory. Do not lower the motion
 profile floors or treat a passing intro as complete-film acceptance.
+The checker reads a separate snapshot under its attempt directory. A modified
+snapshot invalidates its metrics. A modified or missing delivered MP4 is fatal;
+the output checksum and format are checked after analysis.
 
 ## Validation and rollback
 

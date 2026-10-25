@@ -27,6 +27,8 @@ The asset must contain one silent video stream, square pixels, the exact output
 canvas and configured frame rate, and the selected duration within half a frame.
 Landscape and portrait canvases are both supported. Choose a duration that is a
 whole number of frames. Do not stretch desktop proof into a portrait screen.
+Nominal, average and receipt frame rates use the deliverable's 0.001 fps
+tolerance, so standard NTSC equivalents are accepted.
 
 Provide a JSON receipt beside the clip as `art/opening.mp4.json` (or set
 `optionalIntro.receipt` to another path):
@@ -136,6 +138,9 @@ the existing deliverable, parity, transcript and contact-sheet diagnostics.
 Raw checker output remains under `look-check/`. All look results are advisory.
 An unavailable checker never becomes a pass. An attractive four-second opening
 does not establish that the complete demonstration passes.
+The checker receives a separate read-only copy. Changed checker input makes
+its metrics unavailable. The delivered MP4 is checked again afterward;
+changing or deleting that deliverable is a fatal integrity error.
 
 ## Optional thumbnail workflow
 

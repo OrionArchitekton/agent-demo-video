@@ -1340,6 +1340,13 @@ export async function runPipeline(config: DemoConfig, opts: RunPipelineOpts = {}
     ? await runLookCheck(result.outPath, config, result.report.timeline.totalSec,
       optionalIntro?.asset?.durationSec, out)
     : undefined;
+  if (config.lookCheck) {
+    const afterLook = checkDeliverable(await probeDeliverable(result.outPath), {
+      width: config.resolution.width, height: config.resolution.height,
+      fps: config.fps, totalSec: result.report.timeline.totalSec,
+    });
+    if (!afterLook.ok) throw new Error(`deliverable contract failed after look checker: ${afterLook.problems.join("; ")}`);
+  }
 
   // This is a render gate, not best-effort provenance. If any scoped source
   // changed while the artifact was being made, fail the run before a report

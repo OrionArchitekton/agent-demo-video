@@ -330,3 +330,18 @@ it("accepts an NTSC clip for a frame-aligned 29.97 fps request", async () => {
   expect(result.report.optionalIntro?.used).toBe(true);
   expect(result.report.parity.ok).toBe(true);
 });
+
+it("does not trust a renderer's read-only probe cache as candidate validation", async () => {
+  const wrong = join(root, "cached-wrong-size.mp4");
+  await ffmpeg(["-y", "-i", source, "-t", "4", "-vf", "scale=320:240,setsar=1", "-an", "-c:v", "libx264", wrong]);
+  const program = join(root, "cached-probe.mjs");
+  await writeFile(program, `import {copyFile,readFile,writeFile,chmod} from 'node:fs/promises';
+    import {dirname,join} from 'node:path';import {createHash} from 'node:crypto';
+    const [source,out,receipt,request,candidate]=process.argv.slice(2);const r=JSON.parse(await readFile(request,'utf8'));
+    await copyFile(candidate,out);await writeFile(receipt,JSON.stringify({...r,assetSha256:createHash('sha256').update(await readFile(out)).digest('hex'),recipeId:'cached-probe-test'}));
+    const cache=join(dirname(out),'probe.json');await writeFile(cache,JSON.stringify({streams:[{codec_type:'video',width:320,height:180,r_frame_rate:'15/1',avg_frame_rate:'15/1',sample_aspect_ratio:'1:1',duration:'4'}],format:{duration:'4'}}));await chmod(cache,0o400);`);
+  const result = await prepareIntro(config(join(root, "probe-cache"), {
+    renderer: [process.execPath, program, "{source}", "{out}", "{receipt}", "{request}", wrong],
+  }), source);
+  expect(result?.record).toMatchObject({ used: false, fallbackReason: "invalid_candidate" });
+});

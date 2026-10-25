@@ -231,7 +231,7 @@ export async function prepareIntro(config: DemoConfig, source: string): Promise<
     await snapshot(receiptPath, receiptCopy, 16384, deadline);
     const receipt = receiptSchema.parse(JSON.parse(await readFile(receiptCopy, "utf8")));
     const hash = await hashWithBudget(path, deadline);
-    const probeLog = join(inputRoot, "probe.json");
+    const probeLog = join(await mkdtemp(join(inputRoot, "probe-")), "metrics.json");
     await runCommand("optional intro probe", ["ffprobe", "-v", "error", "-show_streams", "-show_format", "-of", "json", "{video}"],
       { video: path }, remainingSec(), { gracefulKillMs: 5000, env: optionalToolEnv(), logPath: probeLog });
     const probe = parseDeliverableProbe(JSON.parse(await readFile(probeLog, "utf8")));

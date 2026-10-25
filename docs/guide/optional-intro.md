@@ -165,5 +165,8 @@ image route remains available. Motion percentages do not apply to stills.
 See the [operator runbook](../runbooks/optional-intro.md) for rehearsal,
 monitoring and rollback. Shared laptop presets and optional surrounding plates
 remain separate scene-tool work; this package does not generate them itself.
+Opening eligibility uses the first video stream's duration. Longer audio does
+not qualify a short visual capture; unavailable stream duration records
+`source_duration_unavailable` and preserves the ordinary first shot.
 
 Back to the [README](../../README.md).

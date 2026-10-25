@@ -377,3 +377,21 @@ it("keeps irrelevant candidate metadata out of bounded probe output", async () =
   const probeDir = (await readdir(prepared!.asset!.inputRoot)).find((name) => name.startsWith("probe-"))!;
   expect((await readFile(join(prepared!.asset!.inputRoot, probeDir, "metrics.json"))).length).toBeLessThanOrEqual(1024 * 1024);
 });
+
+it("skips a short visual capture even when its audio makes the container long enough", async () => {
+  const mixed = join(root, "short-video-long-audio.mp4"), hero = join(root, "mixed-hero.mp4");
+  await ffmpeg(["-y", "-t", "1", "-i", source, "-f", "lavfi", "-i", "sine=frequency=300:duration=6",
+    "-map", "0:v:0", "-map", "1:a:0", "-c:v", "copy", "-c:a", "aac", mixed]);
+  await cp(asset, hero);
+  const receipt = JSON.parse(await readFile(`${asset}.json`, "utf8"));
+  await writeFile(`${hero}.json`, JSON.stringify({ ...receipt, sourceSha256: await digestFile(mixed) }));
+  const result = await prepareIntro(config(join(root, "short-visual"), { asset: hero }), mixed);
+  expect(result?.record).toMatchObject({ used: false, fallbackReason: "source_too_short" });
+});
+
+it("keeps the ordinary shot when a readable source has no stream duration", async () => {
+  const unmeasured = join(root, "duration-unavailable.mkv");
+  await ffmpeg(["-y", "-i", source, "-c", "copy", unmeasured]);
+  const result = await prepareIntro(config(join(root, "unmeasured-source"), { asset }), unmeasured);
+  expect(result?.record).toMatchObject({ used: false, fallbackReason: "source_duration_unavailable" });
+});

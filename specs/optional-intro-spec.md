@@ -20,7 +20,10 @@ programs; the public package requires no private repository.
    the original capture during preparation is fatal.
 3. **Optional preparation failure.** A missing tool or invalid candidate leaves
    the original first shot in use and records the reason. An enabled title card
-   or short first capture bypasses preparation entirely. Every external tool
+   or short first visual capture bypasses preparation entirely. Eligibility uses
+   the first video stream's duration; a longer audio track cannot qualify it.
+   An unavailable video duration skips the scene without inventing an interval.
+   Every external tool
    has a bounded deadline (intro default 1800 seconds, range 1 to 3600), followed
    by up to five seconds of graceful owned-process cleanup. Copying and hashing
    check that deadline. Optional sources and candidates are limited to 512 MiB;
@@ -36,6 +39,7 @@ programs; the public package requires no private repository.
    escaping staged input is fatal. Source-attestation, output ownership,
    transport, aspect, duration and main-render failures remain fatal and never
    initiate a fallback render. Opted-in pipeline attempts require fresh outputs.
+   A failed asset stream stops its encoder before the render reports failure.
 5. **Advisory look review.** After final encoding and existing diagnostics,
    optionally invoke an operator-selected checker on the complete film, intro
    and remaining demonstration. Record motion-profile floors of 30 percent

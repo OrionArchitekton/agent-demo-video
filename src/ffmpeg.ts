@@ -145,20 +145,39 @@ export function ffmpegWithInput(args: string[], input: Readable): Promise<void> 
   return new Promise((resolveRun, reject) => {
     const child = spawn("ffmpeg", args, { stdio: ["pipe", "ignore", "pipe"] });
     let stderr = "";
+    let failure: Error | undefined;
+    let settled = false;
+    let force: NodeJS.Timeout | undefined;
     child.stderr.on("data", (chunk) => { stderr = (stderr + chunk).slice(-4000); });
     const fail = (error: Error) => {
-      if (child.exitCode === null && child.signalCode === null) child.kill("SIGTERM");
-      reject(error);
+      if (settled || failure) return;
+      failure = error;
+      input.unpipe(child.stdin);
+      child.stdin.destroy();
+      if (child.pid !== undefined && child.exitCode === null && child.signalCode === null) {
+        child.kill("SIGTERM");
+        force = setTimeout(() => { if (!settled) child.kill("SIGKILL"); }, 5000);
+        force.unref();
+      }
     };
     child.on("error", fail);
     input.on("error", fail);
+    input.once("close", () => {
+      if (!input.readableEnded) fail(input.errored ?? new Error("ffmpeg input closed before ending"));
+      input.off("error", fail);
+    });
     child.stdin.on("error", (error: NodeJS.ErrnoException) => { if (error.code !== "EPIPE") fail(error); });
     child.on("close", (code) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(force);
       input.unpipe(child.stdin);
-      if (code === 0) resolveRun();
+      if (failure) reject(failure);
+      else if (code === 0) resolveRun();
       else reject(new Error(`ffmpeg exited ${code}: ${stderr.slice(-800)}`));
     });
-    input.pipe(child.stdin);
+    if (input.destroyed && !input.readableEnded) fail(input.errored ?? new Error("ffmpeg input closed before ending"));
+    else input.pipe(child.stdin);
   });
 }
 

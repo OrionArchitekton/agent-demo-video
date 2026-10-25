@@ -176,12 +176,18 @@ export async function prepareIntro(config: DemoConfig, source: string): Promise<
   let sourceDuration: number;
   try {
     const sourceProbe = join(inputRoot, "source-probe.json");
-    await runCommand("optional intro source probe", ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "json", "{source}"],
+    await runCommand("optional intro source probe", ["ffprobe", "-v", "error", "-select_streams", "v:0",
+      "-show_entries", "stream=duration", "-of", "json", "{source}"],
       { source: sourceCopy }, remainingSec(), { gracefulKillMs: 5000, env: optionalToolEnv(), logPath: sourceProbe,
         maxOutputBytes: MAX_PROBE_OUTPUT_BYTES });
-    sourceDuration = Number(JSON.parse(await readFile(sourceProbe, "utf8")).format?.duration);
-    if (!Number.isFinite(sourceDuration) || sourceDuration <= 0) throw new SourceIntegrityError();
+    const video = JSON.parse(await readFile(sourceProbe, "utf8")).streams?.[0];
+    if (!video) throw new SourceIntegrityError();
     await assertSourceIdentity(source, sourceSha256, deadline);
+    if (video.duration === undefined || video.duration === "N/A") {
+      return persist(skipped("source_duration_unavailable", sourceSha256));
+    }
+    sourceDuration = Number(video.duration);
+    if (!Number.isFinite(sourceDuration) || sourceDuration <= 0) throw new SourceIntegrityError();
   } catch (error) {
     if (error instanceof PreparationLimitError || (error as Error).message.includes("timed out")) {
       return persist(skipped("renderer_timeout", sourceSha256));

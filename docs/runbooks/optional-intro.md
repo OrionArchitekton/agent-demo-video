@@ -49,6 +49,9 @@ public media release each follow their existing separate approval.
 ## Failure diagnosis
 
 `title_card_enabled` and `source_too_short` mean the scene tool was skipped.
+Only the first video stream qualifies the opening interval; longer audio does
+not extend it. `source_duration_unavailable` preserves the ordinary shot when
+a readable source does not expose a verifiable video-stream duration.
 `missing_renderer` means no asset or command was selected.
 `renderer_unavailable`, `renderer_timeout` and `invalid_candidate` select the
 original first shot. `source_too_large` skips sources over 512 MiB;
@@ -67,6 +70,8 @@ Staged symbolic links are rejected, and the encoder consumes the verified
 open file and checks the actual encoded input stream's checksum. The optional
 input uses ffmpeg's standard `cache` and `pipe` protocols;
 check `ffmpeg -protocols` if a custom ffmpeg build rejects that input.
+If the verified input stream fails, the encoder is stopped before failure is
+reported, with up to five seconds of grace before forced child termination.
 There is no automatic renderer or main-render retry. Preparation is local; any
 future remote adapter needs explicit deadline and cancellation receipts before
 its retries can be admitted. Never terminate shared GPU work to make room.

@@ -3,6 +3,7 @@ import { basename, join, resolve } from "node:path";
 import type { DemoConfig, TtsResult } from "./types";
 import {
   ffmpeg,
+  ffmpegWithInput,
   normalizeArgs,
   concatArgs,
   concatListContent,
@@ -16,7 +17,7 @@ import {
   probeSizePx,
   x264Args, X264,
 } from "./ffmpeg";
-import { verifyIntro, type PreparedIntro, type IntroRecord } from "./optional-intro";
+import { verifyIntro, withVerifiedIntro, type PreparedIntro, type IntroRecord } from "./optional-intro";
 import { toSrt, toWordAss, captionStyle } from "./captions";
 import { buildTimeline, reconcileSegmentDuration } from "./timeline";
 import { verifyParity } from "./verify";
@@ -170,9 +171,10 @@ export async function renderVideo(inputs: RenderInputs): Promise<RenderResult> {
       const intro = inputs.optionalIntro.asset;
       const substituted = join(segDir, "seg_0.intro.mp4");
       // Replace pixels only; the established first shot supplies the duration.
-      await ffmpeg(["-y", "-hide_banner", "-loglevel", "error", "-i", segMp4, "-i", intro.path,
+      await withVerifiedIntro(intro, (input) => ffmpegWithInput(["-y", "-hide_banner", "-loglevel", "error", "-i", segMp4,
+        "-read_ahead_limit", "-1", "-i", "cache:pipe:0",
         "-filter_complex", `[0:v:0][1:v:0]overlay=eof_action=pass:repeatlast=0:enable='lt(t,${intro.durationSec})'[v]`,
-        "-map", "[v]", ...x264Args(X264.crfComposite), "-pix_fmt", "yuv420p", "-an", substituted]);
+        "-map", "[v]", ...x264Args(X264.crfComposite), "-pix_fmt", "yuv420p", "-an", substituted], input));
       segMp4s.push(substituted);
     } else segMp4s.push(segMp4);
   }

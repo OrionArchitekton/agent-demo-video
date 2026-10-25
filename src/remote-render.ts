@@ -5,7 +5,7 @@ import { isDeepStrictEqual } from "node:util";
 import type { RenderInputs, RenderResult } from "./render";
 import { buildManifest } from "./manifest";
 import { LocalTransport, type Transport } from "./transport";
-import { verifyIntro } from "./optional-intro";
+import { stageIntroAsset, verifyIntro } from "./optional-intro";
 
 export interface RemoteRenderOpts {
   /** How to reach the render host (LocalTransport or SshTransport). */
@@ -69,7 +69,7 @@ export async function renderRemote(inputs: RenderInputs, opts: RemoteRenderOpts)
     for (let i = 0; i < inputs.tts.length; i++) await cp(inputs.tts[i]!.audioPath, join(stageAudio, manifest.audio[i]!.file));
     if (inputs.optionalIntro?.asset) {
       await mkdir(join(stage, "optional"), { recursive: true });
-      await cp(inputs.optionalIntro.asset.path, join(stage, "optional", "intro.mp4"));
+      await stageIntroAsset(inputs.optionalIntro.asset, join(stage, "optional", "intro.mp4"), stage);
     }
     await writeFile(join(stage, "manifest.json"), JSON.stringify(manifest), "utf8");
     await cp(opts.bundlePath, join(stage, "remote-entry.js"));

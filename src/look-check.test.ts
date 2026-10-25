@@ -47,3 +47,18 @@ it("never reuses a previous checker result when the current attempt emits no met
     command: [process.execPath, program, "{video}", "{start}", "{duration}", "{profile}"] } });
   expect((await runLookCheck("x.mp4", cfg, 5, undefined, dir)).state).toBe("unavailable");
 });
+
+it("binds metrics to the requested window and preserves a complete failure on timeout", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "adv-look-window-"));
+  for (const [name, metrics, passed, hang, expected] of [
+    ["wrong-window", { motion_pct: 100, contrast: 200, luma_mean: 100, secs_measured: 10 }, true, false, "unavailable"],
+    ["below-floors", { motion_pct: 29, contrast: 99, luma_mean: 49, secs_measured: 5 }, true, false, "fail"],
+    ["timeout-verdict", { motion_pct: 0, contrast: 0, luma_mean: 0, secs_measured: 5 }, false, true, "fail"],
+  ] as const) {
+    const program = join(dir, `${name}.mjs`);
+    await writeFile(program, `console.log(${JSON.stringify(JSON.stringify({ profile: "motion", passed, metrics }))});${hang ? "setInterval(()=>{},1000);" : ""}`);
+    const cfg = DemoConfigSchema.parse({ script: "x", dashboardBaseUrl: "x", lookCheck: {
+      command: [process.execPath, program, "{video}", "{start}", "{duration}", "{profile}"], timeoutSec: 1 } });
+    expect((await runLookCheck("x.mp4", cfg, 5, undefined, join(dir, name))).state).toBe(expected);
+  }
+});

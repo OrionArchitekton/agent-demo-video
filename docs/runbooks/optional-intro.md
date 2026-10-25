@@ -8,6 +8,7 @@ references:
   - src/look-check.ts
   - src/manifest.ts
   - src/render.ts
+  - src/ffmpeg.ts
   - docs/guide/optional-intro.md
 ---
 
@@ -54,6 +55,10 @@ original first shot. Read the retained receipt/request and candidate under
 
 Transport, staged hash/path, main-render, source-attestation and output-ownership
 errors remain fatal. Reconcile those errors before starting another attempt.
+Source mutations during preparation remain fatal even if the scene command
+fails. Staged symbolic links are rejected, and the encoder consumes the verified
+open file. The optional input uses ffmpeg's standard `cache` and `pipe` protocols;
+check `ffmpeg -protocols` if a custom ffmpeg build rejects that input.
 There is no automatic renderer or main-render retry. Preparation is local; any
 future remote adapter needs explicit deadline and cancellation receipts before
 its retries can be admitted. Never terminate shared GPU work to make room.

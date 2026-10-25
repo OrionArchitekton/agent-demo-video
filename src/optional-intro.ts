@@ -1,5 +1,7 @@
 import { constants } from "node:fs";
-import { chmod, mkdir, mkdtemp, open, readFile, realpath, stat, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { chmod, mkdir, mkdtemp, open, readFile, realpath, stat, writeFile, type FileHandle } from "node:fs/promises";
+import type { Readable } from "node:stream";
 import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { z } from "zod";
 import type { DemoConfig } from "./types";
@@ -27,6 +29,7 @@ export interface IntroAsset {
 export interface IntroRecord {
   requested: true;
   used: boolean;
+  sourceSha256?: string;
   fallbackReason?: string;
   renderer?: string;
   asset?: Omit<IntroAsset, "path" | "inputRoot">;
@@ -42,11 +45,22 @@ const assetIdentitySchema = z.object({
 });
 export const portableIntroSchema = z.object({
   record: z.object({ requested: z.literal(true), used: z.boolean(),
+    sourceSha256: sha256.optional(),
     fallbackReason: z.string().optional(), renderer: z.string().optional(),
     asset: assetIdentitySchema.strict().optional(),
   }).strict(),
   asset: assetIdentitySchema.extend({ file: z.literal("optional/intro.mp4") }).strict().optional(),
 }).strict();
+
+class SourceIntegrityError extends Error {
+  constructor(cause?: unknown) { super("optional intro source integrity failure", { cause }); }
+}
+
+async function assertSourceIdentity(path: string, expected: string): Promise<void> {
+  try {
+    if (await digestFile(path) !== expected) throw new SourceIntegrityError();
+  } catch (error) { throw error instanceof SourceIntegrityError ? error : new SourceIntegrityError(error); }
+}
 
 /** Resolve both lexical and real paths; symlinks cannot escape staged inputs. */
 export async function containedIntroPath(root: string, path: string): Promise<string> {
@@ -93,38 +107,46 @@ export async function prepareIntro(config: DemoConfig, source: string): Promise<
     await writeFile(join(inputRoot, "preparation.json"), JSON.stringify(value.record, null, 2));
     return value;
   };
-  const skipped = (fallbackReason: string): PreparedIntro => ({ record: { requested: true, used: false, fallbackReason } });
+  const skipped = (fallbackReason: string, sourceSha256?: string): PreparedIntro => ({ record: {
+    requested: true, used: false, fallbackReason, ...(sourceSha256 ? { sourceSha256 } : {}),
+  } });
   if (config.brand?.titleCard) return persist(skipped("title_card_enabled"));
   // Source failures are ordinary capture/integrity failures, outside optional fallback.
   const sourceDuration = await probeDurationSec(source);
   if (!Number.isFinite(sourceDuration)) throw new Error("invalid first capture duration");
-  if (sourceDuration + 1e-6 < choice.durationSec) return persist(skipped("source_too_short"));
-  if (!choice.asset && !choice.renderer) return persist(skipped("missing_renderer"));
-  const path = join(inputRoot, "intro.mp4");
   const sourceSha256 = await digestFile(source);
+  if (sourceDuration + 1e-6 < choice.durationSec) return persist(skipped("source_too_short", sourceSha256));
+  if (!choice.asset && !choice.renderer) return persist(skipped("missing_renderer", sourceSha256));
+  const path = join(inputRoot, "intro.mp4");
   const deadline = Date.now() + choice.timeoutSec * 1000;
   const remainingSec = () => Math.max(0.001, (deadline - Date.now()) / 1000);
   const renderer = choice.renderer ? basename(choice.renderer[0]!) : "prepared_asset";
+  const sourceCopy = join(inputRoot, "source.mp4");
+  if (choice.renderer) {
+    // Source snapshot failures are fatal, before optional candidate preparation.
+    try {
+      await snapshot(source, sourceCopy);
+      await assertSourceIdentity(sourceCopy, sourceSha256);
+      await chmod(sourceCopy, 0o400);
+    } catch (error) { throw new SourceIntegrityError(error); }
+  }
   let prepared: PreparedIntro;
   try {
     let candidate: string;
     let receiptPath: string;
     if (choice.renderer) {
-      const sourceCopy = join(inputRoot, "source.mp4");
-      await snapshot(source, sourceCopy);
-      if (await digestFile(sourceCopy) !== sourceSha256) throw new Error("source changed during preparation");
-      await chmod(sourceCopy, 0o400);
       candidate = join(inputRoot, "candidate.mp4");
       receiptPath = join(inputRoot, "candidate.json");
       const request = join(inputRoot, "request.json");
       await writeFile(request, JSON.stringify({ version: 1, sourceSha256, sourceStartSec: 0,
         durationSec: choice.durationSec, ...config.resolution, fps: config.fps }));
-      await runCommand("optional intro renderer", choice.renderer, {
-        source: sourceCopy, out: candidate, receipt: receiptPath, request,
-        duration: String(choice.durationSec), width: String(config.resolution.width),
-        height: String(config.resolution.height), fps: String(config.fps),
-      }, remainingSec(), { gracefulKillMs: 5000, env: optionalToolEnv() });
-      if (await digestFile(sourceCopy) !== sourceSha256) throw new Error("renderer changed its source snapshot");
+      try {
+        await runCommand("optional intro renderer", choice.renderer, {
+          source: sourceCopy, out: candidate, receipt: receiptPath, request,
+          duration: String(choice.durationSec), width: String(config.resolution.width),
+          height: String(config.resolution.height), fps: String(config.fps),
+        }, remainingSec(), { gracefulKillMs: 5000, env: optionalToolEnv() });
+      } finally { await assertSourceIdentity(sourceCopy, sourceSha256); }
     } else {
       candidate = resolve(config.configDir ?? process.cwd(), choice.asset!);
       receiptPath = resolve(config.configDir ?? process.cwd(), choice.receipt ?? `${choice.asset}.json`);
@@ -155,13 +177,15 @@ export async function prepareIntro(config: DemoConfig, source: string): Promise<
       byteLength: (await stat(path)).size, durationSec: choice.durationSec, recipeId: receipt.recipeId };
     await chmod(path, 0o400);
     const { path: _path, inputRoot: _root, ...identity } = asset;
-    prepared = { asset, record: { requested: true, used: true, renderer, asset: identity } };
+    prepared = { asset, record: { requested: true, used: true, renderer, sourceSha256, asset: identity } };
   } catch (error) {
+    if (error instanceof SourceIntegrityError) throw error;
     const msg = (error as Error).message;
     const reason = msg.includes("timed out") ? "renderer_timeout" :
       msg.includes("program not found") ? "renderer_unavailable" : "invalid_candidate";
-    prepared = { record: { ...skipped(reason).record, renderer } };
+    prepared = { record: { ...skipped(reason, sourceSha256).record, renderer } };
   }
+  await assertSourceIdentity(source, sourceSha256);
   return persist(prepared);
 }
 
@@ -171,18 +195,51 @@ export function optionalToolEnv(): Record<string, string> {
     process.env[key] === undefined ? [] : [[key, process.env[key]!]]));
 }
 
+async function openVerifiedIntro(asset: IntroAsset): Promise<FileHandle> {
+  await containedIntroPath(asset.inputRoot, asset.path);
+  const handle = await open(asset.path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+  try {
+    const info = await handle.stat();
+    if (!info.isFile() || info.size !== asset.byteLength) throw new Error("optional intro staged input integrity failure");
+    const hash = createHash("sha256");
+    const buffer = Buffer.alloc(1024 * 1024);
+    let offset = 0;
+    for (;;) {
+      const { bytesRead } = await handle.read(buffer, 0, buffer.length, offset);
+      if (!bytesRead) break;
+      hash.update(buffer.subarray(0, bytesRead));
+      offset += bytesRead;
+    }
+    if (offset !== asset.byteLength || hash.digest("hex") !== asset.sha256) throw new Error("optional intro staged input integrity failure");
+    return handle;
+  } catch (error) { await handle.close(); throw error; }
+}
+
+/** Consumers read the verified inode, never reopen its mutable staged name. */
+export async function withVerifiedIntro<T>(asset: IntroAsset, consume: (input: Readable) => Promise<T>): Promise<T> {
+  const handle = await openVerifiedIntro(asset);
+  const input = handle.createReadStream({ start: 0, autoClose: false });
+  try { return await consume(input); }
+  finally { input.destroy(); await handle.close(); }
+}
+
+/** A changed or symbolic local name cannot ship unchecked bytes to a host. */
+export async function stageIntroAsset(asset: IntroAsset, path: string, inputRoot: string): Promise<void> {
+  await snapshot(asset.path, path);
+  const handle = await openVerifiedIntro({ ...asset, path, inputRoot });
+  await handle.close();
+}
+
 /** Fatal integrity check at each consumer, including after remote transport. */
 export async function verifyIntro(intro: PreparedIntro | undefined, source: string): Promise<void> {
   if (!intro) return;
   if (intro.record.used !== Boolean(intro.asset)) throw new Error("optional intro state does not match staged asset");
+  if (intro.record.sourceSha256) await assertSourceIdentity(source, intro.record.sourceSha256);
   if (!intro.asset) return;
   const a = intro.asset;
-  await containedIntroPath(a.inputRoot, a.path);
-  const info = await stat(a.path);
-  if (!info.isFile() || info.size !== a.byteLength || await digestFile(a.path) !== a.sha256 ||
-      await digestFile(source) !== a.sourceSha256) {
-    throw new Error("optional intro staged input integrity failure");
-  }
+  const handle = await openVerifiedIntro(a);
+  await handle.close();
+  await assertSourceIdentity(source, a.sourceSha256);
   const { path: _path, inputRoot: _root, ...identity } = a;
   if (!intro.record.asset || Object.entries(identity).some(([k, v]) => intro.record.asset![k as keyof typeof identity] !== v)) {
     throw new Error("optional intro receipt identity mismatch");

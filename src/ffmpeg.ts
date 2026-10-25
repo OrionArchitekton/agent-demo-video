@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import type { Readable } from "node:stream";
 import type { DeliverableProbe } from "./verify";
 
 const BASE = ["-y", "-hide_banner", "-loglevel", "error"];
@@ -137,6 +138,29 @@ export function run(bin: string, args: string[]): Promise<void> {
 }
 
 export const ffmpeg = (args: string[]) => run("ffmpeg", args);
+
+/** Feed a pinned input through stdin; cache:pipe:0 gives MP4 a seekable input
+ * without making the encoder reopen an untrusted staged pathname. */
+export function ffmpegWithInput(args: string[], input: Readable): Promise<void> {
+  return new Promise((resolveRun, reject) => {
+    const child = spawn("ffmpeg", args, { stdio: ["pipe", "ignore", "pipe"] });
+    let stderr = "";
+    child.stderr.on("data", (chunk) => { stderr = (stderr + chunk).slice(-4000); });
+    const fail = (error: Error) => {
+      if (child.exitCode === null && child.signalCode === null) child.kill("SIGTERM");
+      reject(error);
+    };
+    child.on("error", fail);
+    input.on("error", fail);
+    child.stdin.on("error", (error: NodeJS.ErrnoException) => { if (error.code !== "EPIPE") fail(error); });
+    child.on("close", (code) => {
+      input.unpipe(child.stdin);
+      if (code === 0) resolveRun();
+      else reject(new Error(`ffmpeg exited ${code}: ${stderr.slice(-800)}`));
+    });
+    input.pipe(child.stdin);
+  });
+}
 
 /** First video stream's square-pixel DISPLAY WxH, feeding the framed-aspect
  *  guard: coded size with any 90/270 display rotation (matrix side data or

@@ -70,7 +70,8 @@ export async function runLookCheck(video: string, config: DemoConfig, totalSec: 
       for (const line of lines) {
         try { parsed = resultSchema.parse(JSON.parse(line)); break; } catch { /* stderr/non-JSON */ }
       }
-      if (!parsed || unavailable || parsed.metrics.secs_measured + 0.1 + 1 / config.fps < w.durationSec) {
+      if (!parsed || w.durationSec <= 0 ||
+          Math.abs(parsed.metrics.secs_measured - w.durationSec) > 0.1 + 1 / config.fps) {
         current.reason = unavailable ? "checker_unavailable" : "incomplete_or_invalid_metrics";
       } else {
         current.metrics = parsed.metrics;

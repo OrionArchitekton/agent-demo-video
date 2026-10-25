@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
-import { chmod, mkdir, mkdtemp, readFile, writeFile, symlink } from "node:fs/promises";
+import { chmod, cp, mkdir, mkdtemp, readFile, writeFile, symlink, unlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { ffmpeg, probeDeliverable } from "../src/ffmpeg";
@@ -9,7 +9,7 @@ import { runPipeline } from "../src/pipeline";
 import { LocalTransport } from "../src/transport";
 import { execFileSync, spawn } from "node:child_process";
 import { resolve } from "node:path";
-import { prepareIntro } from "../src/optional-intro";
+import { prepareIntro, verifyIntro, withVerifiedIntro } from "../src/optional-intro";
 import { buildManifest, loadManifest } from "../src/manifest";
 import { renderVideo, type RenderInputs, type RenderResult } from "../src/render";
 import { assertEquivalent } from "../src/equivalence";
@@ -221,4 +221,34 @@ it("substitutes a portrait scene while preserving the landscape capture's aspect
   expect(await probeDeliverable(result.outPath)).toMatchObject({ width: 180, height: 320, frameRate: "15/1" });
   const control = await runPipeline({ ...cfg, optionalIntro: undefined, out: join(root, "portrait-control") });
   expect(result.report.timeline).toEqual(control.report.timeline);
+});
+
+it("rejects source mutation even when the renderer fails before producing a candidate", async () => {
+  const corrupt = join(root, "corrupt-source.mjs");
+  await writeFile(corrupt, `import {chmod,writeFile} from 'node:fs/promises';
+    await chmod(process.argv[2],0o600);await writeFile(process.argv[2],'changed source');process.exitCode=1;`);
+  const cfg = config(join(root, "source-copy-corruption"), {
+    renderer: [process.execPath, corrupt, "{source}", "{out}", "{receipt}"],
+  });
+  await expect(runPipeline(cfg)).rejects.toThrow(/source.*integrity/i);
+  const raw = join(root, "mutable-source.mp4");
+  await cp(source, raw);
+  await expect(prepareIntro(config(join(root, "raw-source-corruption"), {
+    renderer: [process.execPath, corrupt, raw, "{source}", "{out}", "{receipt}"],
+  }), raw)).rejects.toThrow(/source.*integrity/i);
+});
+
+it("rejects staged symlinks and consumes the verified inode if the name changes afterward", async () => {
+  const cfg = config(join(root, "staged-name"));
+  const intro = (await prepareIntro(cfg, source))!;
+  const link = join(intro.asset!.inputRoot, "link.mp4");
+  await symlink(intro.asset!.path, link);
+  await expect(verifyIntro({ ...intro, asset: { ...intro.asset!, path: link } }, source)).rejects.toThrow(/ELOOP|symbolic|symlink/);
+  const captured: Buffer[] = [];
+  await withVerifiedIntro(intro.asset!, async (input) => {
+    await unlink(intro.asset!.path);
+    await symlink(source, intro.asset!.path);
+    for await (const chunk of input) captured.push(Buffer.from(chunk));
+  });
+  expect(Buffer.concat(captured)).toEqual(await readFile(asset));
 });

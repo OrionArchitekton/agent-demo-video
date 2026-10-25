@@ -16,6 +16,8 @@ programs; the public package requires no private repository.
    and recipe identity. This records renderer/operator attestation; it cannot
    establish visual authenticity by itself. Captions and narration remain above
    the scene and retain their original timeline and segment count.
+   Source duration and identity come from the same private snapshot; replacing
+   the original capture during preparation is fatal.
 3. **Optional preparation failure.** A missing tool or invalid candidate leaves
    the original first shot in use and records the reason. An enabled title card
    or short first capture bypasses preparation entirely. Every external tool
@@ -24,6 +26,8 @@ programs; the public package requires no private repository.
    check that deadline. Optional sources and candidates are limited to 512 MiB;
    oversized candidates cancel the attempt and sources above that limit skip
    the scene. These acceptance limits do not sandbox operator programs.
+   Candidate metadata measurements omit irrelevant tags and retain at most
+   1 MiB of combined output; an output overrun rejects the candidate.
    No retries occur.
    Remote preparation adapters are outside this first public slice; operators
    must supply a locally prepared asset. No implicit SSH or credential transfer.

@@ -60,7 +60,10 @@ Read the retained receipt/request and candidate under
 Transport, staged hash/path, main-render, source-attestation and output-ownership
 errors remain fatal. Reconcile those errors before starting another attempt.
 Source mutations during preparation remain fatal even if the scene command
-fails. Staged symbolic links are rejected, and the encoder consumes the verified
+fails. Duration and identity are measured from the same private source snapshot;
+the original is checked against that identity before acceptance. Metadata probes
+retain at most 1 MiB of combined output and omit unrelated candidate tags.
+Staged symbolic links are rejected, and the encoder consumes the verified
 open file and checks the actual encoded input stream's checksum. The optional
 input uses ffmpeg's standard `cache` and `pipe` protocols;
 check `ffmpeg -protocols` if a custom ffmpeg build rejects that input.

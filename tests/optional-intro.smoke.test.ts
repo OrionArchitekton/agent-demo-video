@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
-import { chmod, cp, mkdir, mkdtemp, open, readFile, readdir, writeFile, symlink, unlink } from "node:fs/promises";
+import { chmod, cp, mkdir, mkdtemp, open, readFile, readdir, rename, writeFile, symlink, unlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
@@ -14,6 +14,7 @@ import { prepareIntro, verifyIntro, withVerifiedIntro } from "../src/optional-in
 import { buildManifest, loadManifest } from "../src/manifest";
 import { renderVideo, type RenderInputs, type RenderResult } from "../src/render";
 import { assertEquivalent } from "../src/equivalence";
+import * as commands from "../src/command-voice";
 
 let root: string;
 let source: string;
@@ -343,4 +344,36 @@ it("does not trust a renderer's read-only probe cache as candidate validation", 
     renderer: [process.execPath, program, "{source}", "{out}", "{receipt}", "{request}", wrong],
   }), source);
   expect(result?.record).toMatchObject({ used: false, fallbackReason: "invalid_candidate" });
+});
+
+it("rejects a source replacement between its duration probe and renderer dispatch", async () => {
+  const captured = join(root, "source-for-race.mp4"), replacement = join(root, "short-replacement.mp4");
+  await cp(source, captured);
+  await ffmpeg(["-y", "-i", source, "-t", "1", "-c", "copy", replacement]);
+  const renderer = join(root, "source-race-renderer.mjs");
+  await writeFile(renderer, `import {copyFile,readFile,writeFile} from 'node:fs/promises';import {createHash} from 'node:crypto';
+    const [source,out,receipt,request,asset]=process.argv.slice(2);const r=JSON.parse(await readFile(request,'utf8'));
+    await copyFile(asset,out);await writeFile(receipt,JSON.stringify({...r,assetSha256:createHash('sha256').update(await readFile(out)).digest('hex'),recipeId:'source-race-test'}));`);
+  const run = commands.runCommand;
+  const probe = vi.spyOn(commands, "runCommand").mockImplementation(async (label, ...args) => {
+    await run(label, ...args);
+    if (label === "optional intro source probe") await rename(replacement, captured);
+  });
+  try {
+    await expect(prepareIntro(config(join(root, "source-probe-race"), {
+      renderer: [process.execPath, renderer, "{source}", "{out}", "{receipt}", "{request}", asset],
+    }), captured)).rejects.toThrow(/source integrity/);
+  } finally { probe.mockRestore(); }
+});
+
+it("keeps irrelevant candidate metadata out of bounded probe output", async () => {
+  const metadata = join(root, "large-metadata.txt"), tagged = join(root, "tagged.mp4");
+  await writeFile(metadata, `;FFMETADATA1\ncomment=${"x".repeat(1200000)}\n`);
+  await ffmpeg(["-y", "-i", asset, "-f", "ffmetadata", "-i", metadata, "-map", "0:v:0", "-map_metadata", "1", "-c", "copy", tagged]);
+  const receipt = JSON.parse(await readFile(`${asset}.json`, "utf8"));
+  await writeFile(`${tagged}.json`, JSON.stringify({ ...receipt, assetSha256: await digestFile(tagged) }));
+  const prepared = await prepareIntro(config(join(root, "metadata-probe"), { asset: tagged }), source);
+  expect(prepared?.record.used).toBe(true);
+  const probeDir = (await readdir(prepared!.asset!.inputRoot)).find((name) => name.startsWith("probe-"))!;
+  expect((await readFile(join(prepared!.asset!.inputRoot, probeDir, "metrics.json"))).length).toBeLessThanOrEqual(1024 * 1024);
 });

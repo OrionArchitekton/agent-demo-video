@@ -10,6 +10,7 @@ import { runCommand } from "./command-voice";
 import { FRAME_RATE_EPSILON, frameRateValue } from "./verify";
 
 const MAX_INTRO_BYTES = 512 * 1024 * 1024;
+const MAX_PROBE_OUTPUT_BYTES = 1024 * 1024;
 
 const sha256 = z.string().regex(/^[a-f0-9]{64}$/);
 const receiptSchema = z.object({
@@ -84,6 +85,7 @@ async function hashWithBudget(path: string, deadline = Infinity): Promise<string
       if (bytes > MAX_INTRO_BYTES) throw new PreparationLimitError("asset_too_large");
       hash.update(buffer.subarray(0, bytesRead));
     }
+    if (bytes !== info.size || (await input.stat()).size !== info.size) throw new Error("intro input changed while hashing");
     return hash.digest("hex");
   } finally { await input.close(); }
 }
@@ -158,40 +160,38 @@ export async function prepareIntro(config: DemoConfig, source: string): Promise<
   const sourceInfo = await lstat(source);
   if (!sourceInfo.isFile()) throw new SourceIntegrityError();
   if (sourceInfo.size > MAX_INTRO_BYTES) return persist(skipped("source_too_large"));
+  const sourceCopy = join(inputRoot, "source.mp4");
+  let sourceSha256 = "";
+  try {
+    // Duration, identity and renderer input all describe the same private bytes.
+    await snapshot(source, sourceCopy, MAX_INTRO_BYTES, deadline);
+    sourceSha256 = await hashWithBudget(sourceCopy, deadline);
+    await assertSourceIdentity(source, sourceSha256, deadline);
+    await chmod(sourceCopy, 0o400);
+  } catch (error) {
+    if (error instanceof PreparationLimitError) return persist(skipped(error.reason, sourceSha256));
+    throw new SourceIntegrityError(error);
+  }
   // Source failures are ordinary capture/integrity failures, outside optional fallback.
   let sourceDuration: number;
   try {
     const sourceProbe = join(inputRoot, "source-probe.json");
     await runCommand("optional intro source probe", ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "json", "{source}"],
-      { source }, remainingSec(), { gracefulKillMs: 5000, env: optionalToolEnv(), logPath: sourceProbe });
+      { source: sourceCopy }, remainingSec(), { gracefulKillMs: 5000, env: optionalToolEnv(), logPath: sourceProbe,
+        maxOutputBytes: MAX_PROBE_OUTPUT_BYTES });
     sourceDuration = Number(JSON.parse(await readFile(sourceProbe, "utf8")).format?.duration);
     if (!Number.isFinite(sourceDuration) || sourceDuration <= 0) throw new SourceIntegrityError();
+    await assertSourceIdentity(source, sourceSha256, deadline);
   } catch (error) {
-    if ((error as Error).message.includes("timed out")) return persist(skipped("renderer_timeout"));
-    throw new SourceIntegrityError(error);
-  }
-  let sourceSha256: string;
-  try { sourceSha256 = await hashWithBudget(source, deadline); }
-  catch (error) {
-    if (error instanceof PreparationLimitError) return persist(skipped(error.reason));
+    if (error instanceof PreparationLimitError || (error as Error).message.includes("timed out")) {
+      return persist(skipped("renderer_timeout", sourceSha256));
+    }
     throw new SourceIntegrityError(error);
   }
   if (sourceDuration + 1e-6 < choice.durationSec) return persist(skipped("source_too_short", sourceSha256));
   if (!choice.asset && !choice.renderer) return persist(skipped("missing_renderer", sourceSha256));
   const path = join(inputRoot, "intro.mp4");
   const renderer = choice.renderer ? basename(choice.renderer[0]!) : "prepared_asset";
-  const sourceCopy = join(inputRoot, "source.mp4");
-  if (choice.renderer) {
-    // Source snapshot failures are fatal, before optional candidate preparation.
-    try {
-      await snapshot(source, sourceCopy, MAX_INTRO_BYTES, deadline);
-      await assertSourceIdentity(sourceCopy, sourceSha256, deadline);
-      await chmod(sourceCopy, 0o400);
-    } catch (error) {
-      if (error instanceof PreparationLimitError) return persist(skipped(error.reason, sourceSha256));
-      throw new SourceIntegrityError(error);
-    }
-  }
   let prepared: PreparedIntro;
   try {
     let candidate: string;
@@ -232,8 +232,10 @@ export async function prepareIntro(config: DemoConfig, source: string): Promise<
     const receipt = receiptSchema.parse(JSON.parse(await readFile(receiptCopy, "utf8")));
     const hash = await hashWithBudget(path, deadline);
     const probeLog = join(await mkdtemp(join(inputRoot, "probe-")), "metrics.json");
-    await runCommand("optional intro probe", ["ffprobe", "-v", "error", "-show_streams", "-show_format", "-of", "json", "{video}"],
-      { video: path }, remainingSec(), { gracefulKillMs: 5000, env: optionalToolEnv(), logPath: probeLog });
+    await runCommand("optional intro probe", ["ffprobe", "-v", "error", "-show_entries",
+      "stream=codec_type,width,height,r_frame_rate,avg_frame_rate,sample_aspect_ratio,duration:stream_tags=rotate:stream_side_data=rotation:format=duration",
+      "-of", "json", "{video}"], { video: path }, remainingSec(),
+    { gracefulKillMs: 5000, env: optionalToolEnv(), logPath: probeLog, maxOutputBytes: MAX_PROBE_OUTPUT_BYTES });
     const probe = parseDeliverableProbe(JSON.parse(await readFile(probeLog, "utf8")));
     const rates = [frameRateValue(probe.frameRate), frameRateValue(probe.avgFrameRate), receipt.fps];
     if (receipt.sourceSha256 !== sourceSha256 || receipt.assetSha256 !== hash ||

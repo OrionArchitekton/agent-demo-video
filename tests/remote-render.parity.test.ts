@@ -1,5 +1,4 @@
-import { describe, it, expect, beforeAll } from "vitest";
-import { execSync } from "node:child_process";
+import { describe, it, expect } from "vitest";
 import { mkdtempSync, mkdirSync, readFileSync, existsSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
@@ -64,10 +63,6 @@ async function makeInputs(dir: string): Promise<RenderInputs> {
 }
 
 describe("remote render parity", () => {
-  beforeAll(() => {
-    execSync("pnpm build:remote-entry", { stdio: "ignore" });
-  });
-
   it("renders on a render host (localhost transport) equivalently to a local render", async () => {
     const localBase = mkdtempSync(join(tmpdir(), "adv-local-"));
     const inputs = await makeInputs(localBase);

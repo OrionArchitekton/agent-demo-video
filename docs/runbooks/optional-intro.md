@@ -74,6 +74,10 @@ profile floors or treat a passing intro as complete-film acceptance.
 The checker reads a separate snapshot under its attempt directory. A modified
 snapshot invalidates its metrics. A modified or missing delivered MP4 is fatal;
 the output checksum and format are checked after analysis.
+`checker_output_limit` means the window exceeded 1 MiB of combined stdout/stderr.
+Only its owned process group is stopped; its metrics are unavailable and its
+retained log and later log reads stay bounded. Quiet the checker before another
+operator-invoked attempt.
 
 ## Validation and rollback
 

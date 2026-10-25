@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll } from "vitest";
-import { execFileSync, execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { mkdtemp, writeFile, readFile, rename, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -25,7 +25,6 @@ async function fixtureConfig(prefix: string) {
 describe("runPipeline remote offload (FAKE_TTS)", () => {
   beforeAll(() => {
     process.env.FAKE_TTS = "1";
-    execSync("pnpm build:remote-entry", { stdio: "ignore" });
   });
 
   it("offloads the render to a render host and returns a valid RenderResult", async () => {

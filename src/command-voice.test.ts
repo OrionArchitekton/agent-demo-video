@@ -92,6 +92,21 @@ describe("runCommand", () => {
     expect(log).toContain("rendering...");
     expect(log).toContain("PAGEERROR boom");
   });
+  it("bounds combined output and stops the owned command tree when the limit is exceeded", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "output-limit-"));
+    const logPath = join(dir, "command.log"), pidFile = join(dir, "helper.pid");
+    const script = `const {spawn}=require('node:child_process');const {writeFileSync}=require('node:fs');
+      const helper=spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{stdio:'ignore'});
+      writeFileSync(process.argv[1],String(helper.pid));
+      process.stdout.write(Buffer.alloc(700,'x'));process.stderr.write(Buffer.alloc(700,'y'));
+      setInterval(()=>{},1000);`;
+    await expect(runCommand("bounded checker", [process.execPath, "-e", script, pidFile], {}, 1,
+      { logPath, maxOutputBytes: 1024, gracefulKillMs: 50 })).rejects.toThrow(/output limit exceeded/);
+    expect((await readFile(logPath)).length).toBeLessThanOrEqual(1024);
+    const helper = await readPid(pidFile);
+    await waitGone(helper);
+    expect(alive(helper)).toBe(false);
+  });
   it("names a timeout", async () => {
     await expect(runCommand("voice command (shot s1)", [fx("slow.sh")], {}, 1)).rejects.toThrowError(/timed out after 1s/);
   });

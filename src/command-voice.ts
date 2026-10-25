@@ -150,6 +150,8 @@ export interface RunCommandOpts {
   env?: Record<string, string>;
   /** Tee the child's combined stdout and stderr to this file (created or truncated at start). */
   logPath?: string;
+  /** Bound combined stdout/stderr bytes, including retained logs; exceeding it stops the owned group. */
+  maxOutputBytes?: number;
   /**
    * On timeout or interrupt, send SIGTERM to the command's process group and wait up to
    * this long for it to exit before SIGKILL. For tools that start helpers (a browser, an
@@ -165,16 +167,22 @@ export async function runCommand(label: string, template: string[], vars: Record
   const [prog, ...args] = fillArgs(template, vars);
   if (!prog) throw new Error(`${label}: empty command`);
   if (opts?.signal?.aborted) throw new Error(`${label}: cancelled`);
+  if (opts?.maxOutputBytes !== undefined && (!Number.isSafeInteger(opts.maxOutputBytes) || opts.maxOutputBytes <= 0)) {
+    throw new Error(`${label}: maxOutputBytes must be a positive safe integer`);
+  }
   const gracefulKillMs = Math.max(0, opts?.gracefulKillMs ?? 0);
   await new Promise<void>((resolveRun, reject) => {
     let settled = false;
     let timedOut = false;
     let cancelled = false;
+    let outputLimited = false;
+    let outputBytes = 0;
     let drain: NodeJS.Timeout | undefined;
     let grace: NodeJS.Timeout | undefined;
     let commandResult: CommandResult | undefined;
     const live: LiveCommand = { gracefulKillMs, interrupted: false };
-    const timedOutError = () => new Error(cancelled ? `${label}: cancelled` : `${label}: timed out after ${timeoutSec}s`);
+    const timedOutError = () => new Error(outputLimited ? `${label}: output limit exceeded (${opts!.maxOutputBytes} bytes)` :
+      cancelled ? `${label}: cancelled` : `${label}: timed out after ${timeoutSec}s`);
     const done = (fn: () => void) => {
       if (settled) return;
       settled = true;
@@ -208,8 +216,15 @@ export async function runCommand(label: string, template: string[], vars: Record
       }
     });
     const tee = (d: Buffer | string) => {
-      if (!opts?.logPath) return;
-      try { appendFileSync(opts.logPath, d); } catch { /* the log is best-effort */ }
+      if (outputLimited || (!opts?.logPath && opts?.maxOutputBytes === undefined)) return;
+      const chunk = Buffer.isBuffer(d) ? d : Buffer.from(d);
+      const limit = opts?.maxOutputBytes ?? Infinity;
+      const retained = chunk.subarray(0, Math.max(0, limit - outputBytes));
+      outputBytes += chunk.length;
+      if (opts?.logPath && retained.length) {
+        try { appendFileSync(opts.logPath, retained); } catch { /* the log is best-effort */ }
+      }
+      if (outputBytes > limit && !timedOut) { outputLimited = true; stop(); }
     };
     if (opts?.logPath) {
       try { writeFileSync(opts.logPath, ""); } catch { /* the log is best-effort */ }

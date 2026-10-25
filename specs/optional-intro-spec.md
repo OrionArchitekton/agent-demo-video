@@ -40,6 +40,9 @@ programs; the public package requires no private repository.
    acceptance or publishes anything. Missing tools never fabricate a pass.
    The checker receives a separate copy; altered analysis input cannot supply
    passing metrics. Changes to the actual delivered video remain fatal.
+   Each checker window retains at most 1 MiB of combined standard output and
+   error. Exceeding that limit stops its owned process group and makes the
+   window unavailable, even if it previously emitted passing metrics.
 6. **Thumbnail candidate.** Thumbnail art remains a separate, operator-run
    workflow using reviewed scene stills and the existing editable-title image
    workflow. Ordinary video rendering emits no thumbnail and invokes no image

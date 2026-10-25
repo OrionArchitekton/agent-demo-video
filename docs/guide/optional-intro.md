@@ -130,6 +130,10 @@ JSON object with `profile: "motion"`, `passed`, and `metrics` containing
 `motion_pct`, `contrast`, `luma_mean` and `secs_measured`. A nonzero exit is a
 failure when valid metrics are available. Missing tools, invalid output and
 incomplete measurements are unavailable. The timeout accepts 1-3600 seconds.
+Each window has a 1 MiB combined stdout/stderr limit. Exceeding it terminates
+the owned checker group and records `checker_output_limit` as unavailable;
+earlier metrics from that window are discarded. Retained-log reads are bounded
+by the same limit. These limits do not sandbox operator programs.
 
 The pipeline measures the complete final MP4, and separately its intro and
 remaining body when a scene was used. Floors stay at 30 percent motion, 100

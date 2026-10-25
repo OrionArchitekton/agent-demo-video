@@ -70,7 +70,6 @@ it("substitutes a receipted first-shot interval without adding time or moving na
 
 it("stages the same intro identity for remote rendering and rejects tampered staged bytes", async () => {
   await candidate();
-  execFileSync("pnpm", ["build:remote-entry"], { stdio: "ignore" });
   class InspectTransport extends LocalTransport {
     tamper = false;
     override async exec(cwd: string, cmd: string[]) {

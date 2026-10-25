@@ -1,4 +1,5 @@
-import { chmod, copyFile, lstat, mkdir, mkdtemp, readFile } from "node:fs/promises";
+import { constants } from "node:fs";
+import { chmod, copyFile, lstat, mkdir, mkdtemp, open } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { z } from "zod";
 import { runCommand } from "./command-voice";
@@ -7,6 +8,23 @@ import type { DemoConfig } from "./types";
 import { digestFile } from "./provenance";
 
 type State = "pass" | "fail" | "unavailable";
+const MAX_CHECKER_OUTPUT_BYTES = 1024 * 1024;
+
+async function checkerOutput(path: string): Promise<string> {
+  const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+  try {
+    if (!(await file.stat()).isFile()) throw new Error("checker log is not a regular file");
+    const buffer = Buffer.alloc(MAX_CHECKER_OUTPUT_BYTES + 1);
+    let length = 0;
+    while (length < buffer.length) {
+      const { bytesRead } = await file.read(buffer, length, buffer.length - length, length);
+      if (!bytesRead) break;
+      length += bytesRead;
+    }
+    if (length > MAX_CHECKER_OUTPUT_BYTES) throw new Error("checker output limit exceeded");
+    return buffer.subarray(0, length).toString("utf8");
+  } finally { await file.close(); }
+}
 export interface LookWindow {
   name: "complete" | "intro" | "body";
   startSec: number;
@@ -76,12 +94,14 @@ export async function runLookCheck(video: string, config: DemoConfig, totalSec: 
     }
     let commandFailed = false;
     let unavailable = false;
+    let outputLimited = false;
     try {
       await runCommand("advisory look checker", choice.command, { video: snapshot, start: String(w.startSec),
         duration: String(w.durationSec), profile: "motion" }, choice.timeoutSec,
-      { gracefulKillMs: 5000, env: optionalToolEnv(), logPath: log });
+      { gracefulKillMs: 5000, env: optionalToolEnv(), logPath: log, maxOutputBytes: MAX_CHECKER_OUTPUT_BYTES });
     } catch (error) {
       commandFailed = true;
+      outputLimited = (error as Error).message.includes("output limit exceeded");
       unavailable = /program not found|could not start|timed out/.test((error as Error).message);
     }
     await assertDeliveredUnchanged();
@@ -90,8 +110,12 @@ export async function runLookCheck(video: string, config: DemoConfig, totalSec: 
       result.windows.push({ ...current, reason: "checker_modified_input" });
       continue;
     }
+    if (outputLimited) {
+      result.windows.push({ ...current, reason: "checker_output_limit" });
+      continue;
+    }
     try {
-      const lines = (await readFile(log, "utf8")).trim().split("\n").reverse();
+      const lines = (await checkerOutput(log)).trim().split("\n").reverse();
       let parsed: z.infer<typeof resultSchema> | undefined;
       for (const line of lines) {
         try { parsed = resultSchema.parse(JSON.parse(line)); break; } catch { /* stderr/non-JSON */ }
@@ -104,7 +128,7 @@ export async function runLookCheck(video: string, config: DemoConfig, totalSec: 
         current.state = !commandFailed && parsed.passed && parsed.metrics.motion_pct >= 30 &&
           parsed.metrics.contrast >= 100 && parsed.metrics.luma_mean >= 50 ? "pass" : "fail";
       }
-    } catch { current.reason = "checker_unavailable"; }
+    } catch (error) { current.reason = (error as Error).message.includes("output limit exceeded") ? "checker_output_limit" : "checker_unavailable"; }
     result.windows.push(current);
   }
   result.state = result.windows.some((w) => w.state === "fail") ? "fail" :

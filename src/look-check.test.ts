@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { chmod, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runLookCheck } from "./look-check";
@@ -105,4 +105,20 @@ it("fails rather than certifying a delivered file changed by a checker", async (
   const cfg = DemoConfigSchema.parse({ script: "x", dashboardBaseUrl: "x", lookCheck: {
     command: [process.execPath, checker, "{video}", video, "{start}", "{duration}", "{profile}"] } });
   await expect(runLookCheck(video, cfg, 5, undefined, dir)).rejects.toThrow(/delivered video.*changed/i);
+});
+
+it("bounds a noisy checker's combined output and rejects an earlier passing verdict", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "adv-look-flood-"));
+  const checker = join(dir, "flood.mjs");
+  await writeFile(checker, `const emit=(stream,byte)=>new Promise((resolve,reject)=>stream.write(Buffer.alloc(600000,byte),error=>error?reject(error):resolve()));
+    console.log(JSON.stringify({profile:'motion',passed:true,metrics:{motion_pct:100,contrast:200,luma_mean:100,secs_measured:5}}));
+    await emit(process.stdout,'x');await emit(process.stderr,'y');`);
+  const cfg = DemoConfigSchema.parse({ script: "x", dashboardBaseUrl: "x", lookCheck: {
+    command: [process.execPath, checker, "{video}", "{start}", "{duration}", "{profile}"] } });
+  const result = await runLookCheck(await fixtureVideo(dir), cfg, 5, undefined, dir);
+  expect(result.state).toBe("unavailable");
+  expect(result.windows[0]).toMatchObject({ state: "unavailable", reason: "checker_output_limit" });
+  expect(result.windows[0]?.metrics).toBeUndefined();
+  const [attempt] = await readdir(join(dir, "look-check"));
+  expect((await stat(join(dir, "look-check", attempt!, "complete.log"))).size).toBeLessThanOrEqual(1024 * 1024);
 });

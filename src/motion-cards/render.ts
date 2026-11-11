@@ -25,6 +25,17 @@ export const HYPERFRAMES_OPT_OUT_ENV: Readonly<Record<string, string>> = {
   DO_NOT_TRACK: "1",
 };
 
+/**
+ * HyperFrames 0.9.x runs one render per user account at a time: a render that finds the
+ * account's slot held waits for it, and that wait would count against the card's timeout
+ * (another job's long render could fail this one). Cards already render one after another,
+ * so the lock is turned off to keep the behaviour of the earlier 0.8 releases, which had no
+ * lock. A HYPERFRAMES_RENDER_LOCK value the user set is kept.
+ */
+export function hyperframesRenderLockEnv(env: Record<string, string | undefined> = process.env): Record<string, string> {
+  return { HYPERFRAMES_RENDER_LOCK: env.HYPERFRAMES_RENDER_LOCK ?? "off" };
+}
+
 /** The first CLI log line that reports a hard render error, or null. */
 export function findRenderLogError(log: string): string | null {
   for (const line of log.split(/\r?\n/)) {
@@ -54,7 +65,7 @@ export async function renderMotionCard(hyperframesBin: string, html: string, out
       [process.execPath, hyperframesBin, "render", project, "-o", outPath, "--no-best-effort", "--no-browser-gpu", "-w", "2", "-q", "standard"],
       {},
       timeoutSec,
-      { env: { ...headlessBrowserEnv(), ...HYPERFRAMES_OPT_OUT_ENV }, logPath, gracefulKillMs: MOTION_CARD_GRACEFUL_KILL_MS },
+      { env: { ...headlessBrowserEnv(), ...HYPERFRAMES_OPT_OUT_ENV, ...hyperframesRenderLockEnv() }, logPath, gracefulKillMs: MOTION_CARD_GRACEFUL_KILL_MS },
     );
     const log = await readFile(logPath, "utf8").catch(() => "");
     onLog?.(log);

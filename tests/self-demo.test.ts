@@ -33,7 +33,7 @@ describe("showcase generator", () => {
     hook: "set",
     transcriptCheck: { ran: true as const, droppedPhrases: [] as string[] },
     deliverable: { ok: true, problems: [] as string[] },
-    motionCards: { renderer: "hyperframes", version: "0.8.155" },
+    motionCards: { renderer: "hyperframes", version: "0.9.27" },
     contactSheet: { stills: [{ shotId: "__card-title" }, { shotId: "checklist" }] },
   };
 

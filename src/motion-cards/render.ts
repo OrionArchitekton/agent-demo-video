@@ -14,7 +14,7 @@ import { headlessBrowserEnv } from "../browser-env";
 const HARD_ERROR = /unresolved font|page ?error|net::ERR|Failed to load resource|Continuing render despite(?! lint issues)/i;
 
 /**
- * HyperFrames opt-outs, all read as "1" by the 0.8.155 CLI: no usage telemetry, no update
+ * HyperFrames opt-outs, all read as "1" by the 0.9.27 CLI: no usage telemetry, no update
  * check, and no automatic self-install of a newer version (the pinned version is the one
  * that was tested). DO_NOT_TRACK is the cross-tool telemetry opt-out it also honors.
  */
@@ -24,6 +24,17 @@ export const HYPERFRAMES_OPT_OUT_ENV: Readonly<Record<string, string>> = {
   HYPERFRAMES_NO_AUTO_INSTALL: "1",
   DO_NOT_TRACK: "1",
 };
+
+/**
+ * HyperFrames 0.9.x runs one render per user account at a time: a render that finds the
+ * account's slot held waits for it, and that wait would count against the card's timeout
+ * (another job's long render could fail this one). Cards already render one after another,
+ * so the lock is turned off to keep the behaviour of the earlier 0.8 releases, which had no
+ * lock. A HYPERFRAMES_RENDER_LOCK value the user set is kept.
+ */
+export function hyperframesRenderLockEnv(env: Record<string, string | undefined> = process.env): Record<string, string> {
+  return { HYPERFRAMES_RENDER_LOCK: env.HYPERFRAMES_RENDER_LOCK ?? "off" };
+}
 
 /** The first CLI log line that reports a hard render error, or null. */
 export function findRenderLogError(log: string): string | null {
@@ -54,7 +65,7 @@ export async function renderMotionCard(hyperframesBin: string, html: string, out
       [process.execPath, hyperframesBin, "render", project, "-o", outPath, "--no-best-effort", "--no-browser-gpu", "-w", "2", "-q", "standard"],
       {},
       timeoutSec,
-      { env: { ...headlessBrowserEnv(), ...HYPERFRAMES_OPT_OUT_ENV }, logPath, gracefulKillMs: MOTION_CARD_GRACEFUL_KILL_MS },
+      { env: { ...headlessBrowserEnv(), ...HYPERFRAMES_OPT_OUT_ENV, ...hyperframesRenderLockEnv() }, logPath, gracefulKillMs: MOTION_CARD_GRACEFUL_KILL_MS },
     );
     const log = await readFile(logPath, "utf8").catch(() => "");
     onLog?.(log);

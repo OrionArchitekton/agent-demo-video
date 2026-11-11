@@ -39,7 +39,7 @@ describe.skipIf(!reqs.ok)("motion cards (smoke)", { timeout: 600_000 }, () => {
     const { out, r, report } = await render({ title: "Demo Fixture", subtitle: "Ask once", url: "example.com", hook: "Stop pasting secrets", motion: true });
     expect(r.report.parity.ok).toBe(true);
     expect(report.deliverable.ok).toBe(true);
-    expect(report.motionCards).toEqual({ renderer: "hyperframes", version: "0.8.155" });
+    expect(report.motionCards).toEqual({ renderer: "hyperframes", version: "0.9.27" });
     expect(report.hook).toBe("set");
     // Hook region: the central band of the 1080x1920 frame, where the hook is drawn.
     expect(brightShare(join(out, "final.mp4"), 540, 960, 300, 700)).toBeGreaterThanOrEqual(0.01);

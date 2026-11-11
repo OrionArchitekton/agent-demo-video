@@ -32,15 +32,19 @@ describe("renderMotionCard log scan", () => {
     await expect(access(out)).rejects.toThrow();
   });
 
-  it("runs HyperFrames with telemetry, update checks and auto-install off, and no desktop display", async () => {
+  it("runs HyperFrames with telemetry, update checks, auto-install and the shared render lock off, and no desktop display", async () => {
     const out = join(await mkdtemp(join(tmpdir(), "mc-env-")), "o.mp4");
     const fake = resolve("tests/fixtures/voice/fake-hyperframes.mjs");
     const prev = process.env.DISPLAY;
+    const prevLock = process.env.HYPERFRAMES_RENDER_LOCK;
     process.env.DISPLAY = ":99";
+    // The default must not depend on whatever lock setting the caller's shell exports.
+    delete process.env.HYPERFRAMES_RENDER_LOCK;
     try {
       await expect(renderMotionCard(fake, "<html></html>", out, "env", 30)).rejects.toThrowError(/PAGEERROR boom/);
     } finally {
       if (prev === undefined) delete process.env.DISPLAY; else process.env.DISPLAY = prev;
+      if (prevLock === undefined) delete process.env.HYPERFRAMES_RENDER_LOCK; else process.env.HYPERFRAMES_RENDER_LOCK = prevLock;
     }
     const env = JSON.parse(await readFile(`${out}.env.json`, "utf8"));
     expect(env).toEqual({
@@ -48,8 +52,23 @@ describe("renderMotionCard log scan", () => {
       HYPERFRAMES_NO_UPDATE_CHECK: "1",
       HYPERFRAMES_NO_AUTO_INSTALL: "1",
       DO_NOT_TRACK: "1",
+      HYPERFRAMES_RENDER_LOCK: "off",
       DISPLAY: null,
     });
+  });
+
+  it("keeps a render lock setting the user chose instead of turning the lock off", async () => {
+    const out = join(await mkdtemp(join(tmpdir(), "mc-lock-")), "o.mp4");
+    const fake = resolve("tests/fixtures/voice/fake-hyperframes.mjs");
+    const prev = process.env.HYPERFRAMES_RENDER_LOCK;
+    process.env.HYPERFRAMES_RENDER_LOCK = "on";
+    try {
+      await expect(renderMotionCard(fake, "<html></html>", out, "lock", 30)).rejects.toThrowError(/PAGEERROR boom/);
+    } finally {
+      if (prev === undefined) delete process.env.HYPERFRAMES_RENDER_LOCK; else process.env.HYPERFRAMES_RENDER_LOCK = prev;
+    }
+    const env = JSON.parse(await readFile(`${out}.env.json`, "utf8"));
+    expect(env.HYPERFRAMES_RENDER_LOCK).toBe("on");
   });
 });
 

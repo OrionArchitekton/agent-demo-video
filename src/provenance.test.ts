@@ -45,7 +45,7 @@ describe("buildRenderReport", () => {
   });
 
   it("records motion cards only when they were rendered", () => {
-    const mc = { renderer: "hyperframes" as const, version: "0.8.155" };
+    const mc = { renderer: "hyperframes" as const, version: "0.9.27" };
     expect(buildRenderReport({ ...base, motionCards: mc }).motionCards).toEqual(mc);
     expect("motionCards" in buildRenderReport(base)).toBe(false);
   });

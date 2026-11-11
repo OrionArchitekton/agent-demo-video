@@ -6,7 +6,7 @@ import { dirname, join } from "node:path";
 export const MIN_NODE_MAJOR = 22;
 export const MIN_NODE_MINOR = 12;
 /** The one HyperFrames version motion cards are built and tested against; any other is rejected. */
-export const HYPERFRAMES_VERSION = "0.8.155";
+export const HYPERFRAMES_VERSION = "0.9.27";
 const INSTALL_HINT = `install it next to agent-demo-video: npm install hyperframes@${HYPERFRAMES_VERSION}`;
 
 export type MotionRequirements =

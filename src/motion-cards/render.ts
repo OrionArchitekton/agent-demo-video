@@ -14,7 +14,7 @@ import { headlessBrowserEnv } from "../browser-env";
 const HARD_ERROR = /unresolved font|page ?error|net::ERR|Failed to load resource|Continuing render despite(?! lint issues)/i;
 
 /**
- * HyperFrames opt-outs, all read as "1" by the 0.8.155 CLI: no usage telemetry, no update
+ * HyperFrames opt-outs, all read as "1" by the 0.9.27 CLI: no usage telemetry, no update
  * check, and no automatic self-install of a newer version (the pinned version is the one
  * that was tested). DO_NOT_TRACK is the cross-tool telemetry opt-out it also honors.
  */

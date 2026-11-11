@@ -11,7 +11,10 @@ without `motion` behaves exactly as before.
 - **Install.** HyperFrames is an optional peer dependency: it is not installed with
   agent-demo-video, so installs that never use motion cards keep the two-dependency footprint.
   To use motion cards, install exactly version 0.8.155 wherever agent-demo-video itself is
-  installed. The CLI looks for HyperFrames next to its own files, not in your project:
+  installed. 0.8.155 is the version for the published agent-demo-video 0.3.0; if you build
+  from this repository's master branch, use hyperframes@0.9.27 instead (the requirements check
+  below follows the same split). The CLI looks for HyperFrames next to its own files, not in
+  your project:
 
   ```bash
   # npx: put both packages in the same temporary install

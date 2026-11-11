@@ -36,11 +36,15 @@ describe("renderMotionCard log scan", () => {
     const out = join(await mkdtemp(join(tmpdir(), "mc-env-")), "o.mp4");
     const fake = resolve("tests/fixtures/voice/fake-hyperframes.mjs");
     const prev = process.env.DISPLAY;
+    const prevLock = process.env.HYPERFRAMES_RENDER_LOCK;
     process.env.DISPLAY = ":99";
+    // The default must not depend on whatever lock setting the caller's shell exports.
+    delete process.env.HYPERFRAMES_RENDER_LOCK;
     try {
       await expect(renderMotionCard(fake, "<html></html>", out, "env", 30)).rejects.toThrowError(/PAGEERROR boom/);
     } finally {
       if (prev === undefined) delete process.env.DISPLAY; else process.env.DISPLAY = prev;
+      if (prevLock === undefined) delete process.env.HYPERFRAMES_RENDER_LOCK; else process.env.HYPERFRAMES_RENDER_LOCK = prevLock;
     }
     const env = JSON.parse(await readFile(`${out}.env.json`, "utf8"));
     expect(env).toEqual({

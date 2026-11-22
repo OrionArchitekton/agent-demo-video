@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
 import { cameraMode, plannedCameraFilterExpr, type InteractionEvent } from "./motion";
 import { DemoConfigSchema } from "./types";
@@ -30,8 +31,8 @@ describe("planZoomShots: grouping", () => {
   });
 
   it("lowers the zoom so both clicks stay in frame", () => {
-    const [shot] = planZoomShots([click(5000, 0.2, 0.5), click(6000, 0.75, 0.5)], OPTS);
-    expect(shot!.zoom).toBeCloseTo(1 / (0.55 + 0.24), 6);
+    const [shot] = planZoomShots([click(5000, 0.2, 0.5), click(6000, 0.7, 0.5)], OPTS);
+    expect(shot!.zoom).toBeCloseTo(1 / (0.5 + 0.02 + 0.24), 6);
   });
 
   it("ignores invalid events and sorts input", () => {
@@ -147,5 +148,60 @@ describe("motion.shotPlanner config", () => {
     const base = { script: "x", dashboardBaseUrl: "http://localhost:3000", out: "out" };
     expect("shotPlanner" in DemoConfigSchema.parse(base).motion).toBe(false);
     expect(DemoConfigSchema.parse({ ...base, motion: { shotPlanner: true } }).motion.shotPlanner).toBe(true);
+  });
+});
+
+describe("review regressions", () => {
+  const CAM = { ...OPTS, fps: 5, baseZoom: 1.08, holdSec: 0.9, driftAmp: 0.012, driftPeriodSec: 11 };
+  const rect = (tMs: number, x: number, width: number): InteractionEvent => ({
+    kind: "highlight",
+    tMs,
+    box: { x, y: 450, width, height: 100 },
+  });
+
+  it("fits whole target rectangles, not just their centers", () => {
+    const shots = planZoomShots([rect(5000, 120, 300), rect(6000, 580, 300)], OPTS);
+    expect(shots).toHaveLength(1);
+    expect(shots[0]!.events).toBe(1);
+  });
+
+  it("does not zoom on a target too large to frame", () => {
+    expect(planZoomShots([rect(5000, 50, 900)], OPTS)).toEqual([]);
+  });
+
+  it("never renders a group tighter than its fit because of base zoom", () => {
+    const events = [click(5000, 0.2, 0.5), click(6000, 0.7, 0.5)];
+    const shots = planZoomShots(events, { ...OPTS, baseZoom: 1.45, zoom: 2 });
+    expect(shots.length).toBeGreaterThan(0);
+    expect(shots.every((shot) => shot.events === 1 && shot.zoom >= 1.45)).toBe(true);
+  });
+
+  it("keeps a later action when an earlier one is too early to show", () => {
+    const [shot, ...rest] = planZoomShots([click(200), click(1800)], OPTS);
+    expect(rest).toEqual([]);
+    expect(shot).toMatchObject({ startSec: 1.3, events: 1 });
+  });
+
+  it("holds through a slow action's completion", () => {
+    const [shot] = planZoomShots([{ ...click(5000), endMs: 9000 }], OPTS);
+    expect(shot).toMatchObject({ startSec: 4.5, endSec: 10.5 });
+  });
+
+  it("keeps ramps at or after zero", () => {
+    const kf = plannedCameraKeyframes([click(800)], CAM);
+    expect(kf[0]!.t).toBe(0);
+    expect(kf[1]).toMatchObject({ t: 0.6, z: 1.35 });
+  });
+
+  it("adds no drift, so the cap and the base zoom hold exactly", () => {
+    expect(plannedCameraFilterExpr([click(5000)], CAM)).not.toContain("sin(");
+  });
+
+  it("encodes a long plan in ffmpeg", () => {
+    const events = Array.from({ length: 30 }, (_, i) => click(3000 + i * 5000, i % 2 ? 0.2 : 0.8, 0.5));
+    const vf = plannedCameraFilterExpr(events, { ...CAM, width: 640, height: 360, durationSec: 160 });
+    expect(() =>
+      execFileSync("ffmpeg", ["-v", "error", "-f", "lavfi", "-i", "color=c=blue:s=640x360:r=5:d=1", "-vf", vf, "-f", "null", "-"], { stdio: "pipe" }),
+    ).not.toThrow();
   });
 });

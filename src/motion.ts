@@ -16,6 +16,8 @@ export interface InteractionEvent {
   tMs: number;
   /** Viewport bounding box of the interacted element. */
   box: { x: number; y: number; width: number; height: number };
+  /** Capture-relative time the action finished, when it was recorded. */
+  endMs?: number;
 }
 
 export interface ZoomOpts {
@@ -230,22 +232,34 @@ export function cameraStateAt(t: number, kf: CamKeyframe[]): { z: number; fx: nu
   return kf[kf.length - 1]!;
 }
 
+/** One keyframe interval of a channel, as a smoothstep expression. */
+function segmentExpr(a: CamKeyframe, b: CamKeyframe, pick: (k: CamKeyframe) => number): string {
+  const av = f3(pick(a));
+  const bv = f3(pick(b));
+  const span = b.t - a.t;
+  return av === bv || span <= 0
+    ? av
+    : `st(0,clip((it-${f3(a.t)})/${f3(span)},0,1));${av}+(${bv}-${av})*ld(0)*ld(0)*(3-2*ld(0))`;
+}
+
 /** Nested piecewise smoothstep expression over keyframes for one channel. */
 function piecewiseExpr(kf: CamKeyframe[], pick: (k: CamKeyframe) => number): string {
   let expr = f3(pick(kf[kf.length - 1]!));
   for (let i = kf.length - 2; i >= 0; i--) {
-    const a = kf[i]!;
-    const b = kf[i + 1]!;
-    const av = f3(pick(a));
-    const bv = f3(pick(b));
-    const span = b.t - a.t;
-    const seg =
-      av === bv || span <= 0
-        ? av
-        : `st(0,clip((it-${f3(a.t)})/${f3(span)},0,1));${av}+(${bv}-${av})*ld(0)*ld(0)*(3-2*ld(0))`;
-    expr = `if(lt(it,${f3(b.t)}),${seg},${expr})`;
+    expr = `if(lt(it,${f3(kf[i + 1]!.t)}),${segmentExpr(kf[i]!, kf[i + 1]!, pick)},${expr})`;
   }
   return expr;
+}
+
+/** The same curve as a balanced tree: ffmpeg rejects deep nesting on long plans. */
+function balancedPiecewiseExpr(kf: CamKeyframe[], pick: (k: CamKeyframe) => number): string {
+  if (kf.length < 2) return f3(pick(kf[0]!));
+  const build = (lo: number, hi: number): string => {
+    if (hi - lo === 1) return segmentExpr(kf[lo]!, kf[hi]!, pick);
+    const mid = (lo + hi) >> 1;
+    return `if(lt(it,${f3(kf[mid]!.t)}),${build(lo, mid)},${build(mid, hi)})`;
+  };
+  return build(0, kf.length - 1);
 }
 
 /**
@@ -253,18 +267,23 @@ function piecewiseExpr(kf: CamKeyframe[], pick: (k: CamKeyframe) => number): str
  * events the base zoom and drift still apply (no static full-wide shots).
  */
 export function cameraFilterExpr(events: InteractionEvent[], o: CameraOpts): string {
-  return keyframeFilterExpr(cameraKeyframes(events, o), o);
-}
-
-/** The same zoompan camera, on the click-driven shot plan (`motion.shotPlanner`). */
-export function plannedCameraFilterExpr(events: InteractionEvent[], o: CameraOpts): string {
-  return keyframeFilterExpr(plannedCameraKeyframes(events, o), o);
-}
-
-function keyframeFilterExpr(kf: CamKeyframe[], o: CameraOpts): string {
+  const kf = cameraKeyframes(events, o);
   const z = `(${piecewiseExpr(kf, (k) => k.z)})+${o.driftAmp}*sin(2*PI*it/${f3(o.driftPeriodSec)})`;
-  const fx = piecewiseExpr(kf, (k) => k.fx);
-  const fy = piecewiseExpr(kf, (k) => k.fy);
+  return zoompanExpr(z, piecewiseExpr(kf, (k) => k.fx), piecewiseExpr(kf, (k) => k.fy), o);
+}
+
+/**
+ * The camera on the click-driven shot plan (`motion.shotPlanner`). It carries
+ * no drift: drift would push a fitted shot past its zoom and leave the shot's
+ * ends off the base zoom.
+ */
+export function plannedCameraFilterExpr(events: InteractionEvent[], o: CameraOpts): string {
+  const kf = plannedCameraKeyframes(events, o);
+  const channel = (pick: (k: CamKeyframe) => number) => balancedPiecewiseExpr(kf, pick);
+  return zoompanExpr(channel((k) => k.z), channel((k) => k.fx), channel((k) => k.fy), o);
+}
+
+function zoompanExpr(z: string, fx: string, fy: string, o: { width: number; height: number; fps: number }): string {
   const x = `clip((${fx})*iw-iw/zoom/2,0,iw-iw/zoom)`;
   const y = `clip((${fy})*ih-ih/zoom/2,0,ih-ih/zoom)`;
   return `zoompan=z='${z}':x='${x}':y='${y}':d=1:s=${o.width}x${o.height}:fps=${o.fps}`;

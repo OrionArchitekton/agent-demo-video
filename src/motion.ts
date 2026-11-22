@@ -8,6 +8,8 @@
  * pan but never zoom per-frame. Zoom never alters frame count or duration.
  */
 
+import { plannedCameraKeyframes } from "./zoom-shots.js";
+
 export interface InteractionEvent {
   kind: string;
   /** Capture-relative time of the interaction in milliseconds. */
@@ -206,9 +208,10 @@ export function cameraKeyframes(events: InteractionEvent[], o: CameraOpts): CamK
 /** Camera-motion engine selection. `zoomOnAction` is the master motion
  *  off-switch (the documented pre-slate contract): false disables ALL camera
  *  motion, living camera included, so legacy configs keep a still capture. */
-export type CameraMode = "living" | "legacy" | "none";
-export function cameraMode(zoomOnAction: boolean, livingCamera: boolean): CameraMode {
+export type CameraMode = "planned" | "living" | "legacy" | "none";
+export function cameraMode(zoomOnAction: boolean, livingCamera: boolean, shotPlanner = false): CameraMode {
   if (!zoomOnAction) return "none";
+  if (shotPlanner) return "planned";
   return livingCamera ? "living" : "legacy";
 }
 
@@ -250,7 +253,15 @@ function piecewiseExpr(kf: CamKeyframe[], pick: (k: CamKeyframe) => number): str
  * events the base zoom and drift still apply (no static full-wide shots).
  */
 export function cameraFilterExpr(events: InteractionEvent[], o: CameraOpts): string {
-  const kf = cameraKeyframes(events, o);
+  return keyframeFilterExpr(cameraKeyframes(events, o), o);
+}
+
+/** The same zoompan camera, on the click-driven shot plan (`motion.shotPlanner`). */
+export function plannedCameraFilterExpr(events: InteractionEvent[], o: CameraOpts): string {
+  return keyframeFilterExpr(plannedCameraKeyframes(events, o), o);
+}
+
+function keyframeFilterExpr(kf: CamKeyframe[], o: CameraOpts): string {
   const z = `(${piecewiseExpr(kf, (k) => k.z)})+${o.driftAmp}*sin(2*PI*it/${f3(o.driftPeriodSec)})`;
   const fx = piecewiseExpr(kf, (k) => k.fx);
   const fy = piecewiseExpr(kf, (k) => k.fy);

@@ -18,7 +18,7 @@ import { join } from "node:path";
 import { frameDurations, framesConcatContent, frameTimestampsToSec, cursorMode } from "./screencast.js";
 import { headlessBrowserEnv } from "./browser-env.js";
 import { ffmpeg, framesEncodeArgs } from "./ffmpeg.js";
-import { zoomFilterExpr, cameraFilterExpr, cameraMode, type InteractionEvent } from "./motion.js";
+import { zoomFilterExpr, cameraFilterExpr, plannedCameraFilterExpr, cameraMode, type InteractionEvent } from "./motion.js";
 // Capture runs in VIEWPORT space (decoupled from the output canvas: a shorts
 // render captures 16:9 and composites onto a 9:16 canvas), so every geometry
 // consumer below resolves the viewport, never the canvas resolution.
@@ -367,15 +367,18 @@ async function recordWithScreencast(
       holdSec: m.zoomHoldMs / 1000,
       outSec: m.zoomOutMs / 1000,
     };
-    const mode = cameraMode(m.zoomOnAction, m.livingCamera);
+    const mode = cameraMode(m.zoomOnAction, m.livingCamera, m.shotPlanner);
+    const cameraShape = {
+      ...zoomShape,
+      baseZoom: m.baseZoom,
+      driftAmp: m.driftAmp,
+      driftPeriodSec: m.driftPeriodSec,
+    };
     const motionVf =
-      mode === "living"
-        ? cameraFilterExpr(recorder.events, {
-            ...zoomShape,
-            baseZoom: m.baseZoom,
-            driftAmp: m.driftAmp,
-            driftPeriodSec: m.driftPeriodSec,
-          })
+      mode === "planned"
+        ? plannedCameraFilterExpr(recorder.events, cameraShape)
+        : mode === "living"
+        ? cameraFilterExpr(recorder.events, cameraShape)
         : mode === "legacy"
           ? zoomFilterExpr(recorder.events, zoomShape)
           : undefined;

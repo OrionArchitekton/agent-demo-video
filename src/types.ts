@@ -221,6 +221,10 @@ export const DemoConfigSchema = z.object({
     baseZoom: z.number().min(1).max(1.5).default(1.08),
     driftAmp: z.number().min(0).max(0.05).default(0.012),
     driftPeriodSec: z.number().min(2).default(11),
+    // Click-driven shot plan (specs/zoom-shot-planner-spec.md). Deliberately
+    // optional with no default: a default would add a key to every parsed config
+    // and change the config digest of existing renders.
+    shotPlanner: z.boolean().optional(),
   }).strict().default({})
     .refine((m) => m.baseZoom - m.driftAmp >= 1, { message: "baseZoom - driftAmp must stay >= 1 (drift may never zoom out past full frame)" }),
   // Auth-walled SaaS live capture (target: "live"). The whole section is optional so

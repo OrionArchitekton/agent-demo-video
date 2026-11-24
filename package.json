@@ -11,7 +11,8 @@
     "dist-remote",
     "tools",
     "README.md",
-    "LICENSE"
+    "LICENSE",
+    "THIRD-PARTY-NOTICES.md"
   ],
   "keywords": [
     "demo-video",

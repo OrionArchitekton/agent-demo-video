@@ -18,7 +18,7 @@ import { join } from "node:path";
 import { frameDurations, framesConcatContent, frameTimestampsToSec, cursorMode } from "./screencast.js";
 import { headlessBrowserEnv } from "./browser-env.js";
 import { ffmpeg, framesEncodeArgs } from "./ffmpeg.js";
-import { zoomFilterExpr, cameraFilterExpr, cameraMode, type InteractionEvent } from "./motion.js";
+import { zoomFilterExpr, cameraFilterExpr, plannedCameraFilterExpr, cameraMode, type InteractionEvent } from "./motion.js";
 // Capture runs in VIEWPORT space (decoupled from the output canvas: a shorts
 // render captures 16:9 and composites onto a 9:16 canvas), so every geometry
 // consumer below resolves the viewport, never the canvas resolution.
@@ -37,11 +37,19 @@ function recordEvent(
   recorder: EventRecorder | undefined,
   kind: string,
   box: { x: number; y: number; width: number; height: number } | null,
-): void {
-  if (!recorder || !box) return;
+): InteractionEvent | undefined {
+  if (!recorder || !box) return undefined;
   const anchor = recorder.t0 || recorder.fallbackT0;
-  if (anchor === 0) return;
-  recorder.events.push({ kind, tMs: Math.max(0, Date.now() - anchor), box });
+  if (anchor === 0) return undefined;
+  const event: InteractionEvent = { kind, tMs: Math.max(0, Date.now() - anchor), box };
+  recorder.events.push(event);
+  return event;
+}
+
+/** Stamp when a recorded action finished, so a planned zoom can hold through it. */
+function markEventDone(recorder: EventRecorder | undefined, event: InteractionEvent | undefined): void {
+  if (!recorder || !event) return;
+  event.endMs = Math.max(event.tMs, Date.now() - (recorder.t0 || recorder.fallbackT0));
 }
 import {
   overlayInitScript,
@@ -149,7 +157,7 @@ async function runActions(
         await loc.scrollIntoViewIfNeeded();
         const box = await loc.boundingBox();
         if (!box) throw new Error(`shot ${shot.id}: selector not found or has no bounding box: ${a.selector}`);
-        recordEvent(recorder, "click", box);
+        const clickEvent = recordEvent(recorder, "click", box);
         if (mode === "overlay") {
           const cx = Math.round(box.x + box.width / 2);
           const cy = Math.round(box.y + box.height / 2);
@@ -158,19 +166,21 @@ async function runActions(
           await page.evaluate(clickExpr());
         }
         await page.click(a.selector);
+        markEventDone(recorder, clickEvent);
         break;
       }
       case "type": {
         if (!a.selector) throw new Error(`shot ${shot.id}: type action missing selector`);
         const loc = page.locator(a.selector);
         await loc.scrollIntoViewIfNeeded();
-        recordEvent(recorder, "type", await loc.boundingBox());
+        const typeEvent = recordEvent(recorder, "type", await loc.boundingBox());
         // Native action titles render the action's text on screen; for a type
         // action that would put the typed string (potentially a credential on
         // a live shot) INTO the video. Hide decorations while typing.
         if (mode === "native") await page.screencast.hideActions();
         try {
           await loc.pressSequentially(a.text ?? "", { delay: 60 });
+          markEventDone(recorder, typeEvent);
         } finally {
           if (mode === "native") {
             await page.screencast.showActions({
@@ -367,15 +377,18 @@ async function recordWithScreencast(
       holdSec: m.zoomHoldMs / 1000,
       outSec: m.zoomOutMs / 1000,
     };
-    const mode = cameraMode(m.zoomOnAction, m.livingCamera);
+    const mode = cameraMode(m.zoomOnAction, m.livingCamera, m.shotPlanner);
+    const cameraShape = {
+      ...zoomShape,
+      baseZoom: m.baseZoom,
+      driftAmp: m.driftAmp,
+      driftPeriodSec: m.driftPeriodSec,
+    };
     const motionVf =
-      mode === "living"
-        ? cameraFilterExpr(recorder.events, {
-            ...zoomShape,
-            baseZoom: m.baseZoom,
-            driftAmp: m.driftAmp,
-            driftPeriodSec: m.driftPeriodSec,
-          })
+      mode === "planned"
+        ? plannedCameraFilterExpr(recorder.events, cameraShape)
+        : mode === "living"
+        ? cameraFilterExpr(recorder.events, cameraShape)
         : mode === "legacy"
           ? zoomFilterExpr(recorder.events, zoomShape)
           : undefined;

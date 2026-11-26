@@ -82,7 +82,7 @@ For your own app:
 With the Claude Code plugin installed, ask in plain language:
 
 1. "Make a 60-second narrated demo video of my app at http://localhost:3000 covering signup and the dashboard."
-2. "Do a silent draft pass of demos/smoke/demo.config.json and have the render-reviewer check the contact sheet before we pay for narration."
+2. "Do a silent draft pass of my demo.config.json and have the render-reviewer check the contact sheet before we pay for narration." (In a source checkout of this repo you can point it at the bundled `demos/smoke/demo.config.json`; the npm package does not ship `demos/`.)
 3. "Render a 9:16 Shorts version of this demo with a hook on the first frame."
 4. "My app is behind a login. Set up a saved browser profile and record the settings page."
 
@@ -146,7 +146,7 @@ audio.
 
 ## Data and network
 
-agent-demo-video runs on your machine and has no telemetry. These are all the network calls it
+agent-demo-video runs on your machine and has no telemetry. These are the network calls it
 makes, and the one credential it reads:
 
 | When | Endpoint | What is sent |
@@ -154,17 +154,23 @@ makes, and the one credential it reads:
 | Narration with ElevenLabs (the default voice), unless `FAKE_TTS=1` | `https://api.elevenlabs.io/v1/text-to-speech/<voiceId>/with-timestamps` | Each shot's narration text and the configured voice settings, authenticated with `ELEVENLABS_API_KEY` in the `xi-api-key` header. Without the key the run stops before any request. |
 | The plugin's skill, or `npx agent-demo-video@0.3.0` | npm registry (`registry.npmjs.org`) | A normal package download of the pinned version. |
 | `playwright install chromium`, run once | Playwright's browser download hosts | A normal download of the Chromium build Playwright pins. |
-| Recording | The app URLs in your `demo.config.json` | The browser loads your own app (usually `localhost`) and any third-party tabs you configure, as a normal browser would. |
+| Recording | The app URLs in your `demo.config.json`, plus whatever those pages load | The browser loads your own app (usually `localhost`) and any third-party tabs you configure, as a normal browser would. Those pages can load scripts, fonts, APIs, analytics and other origins of their own; which ones, and what they send, depends on the app. |
 | `--render-host <host>` only | The host you name, over your own `ssh` and `rsync` | The staged render directory, so that host can render it. |
-| `voice.provider: "command"` or `voice.aligner` only | Whatever your command contacts | Your own program runs; the bundled `tools/align_whisper.py` downloads its Whisper model from Hugging Face on first use. |
+| `voice.provider: "command"` or `voice.aligner` only | Whatever your command contacts | Your own program runs with the narration text and audio it is given; the bundled `tools/align_whisper.py` downloads its Whisper model from Hugging Face on first use. |
+| `brand.motion: true` (optional HyperFrames motion cards) only | HyperFrames' browser download host | The first render may download a headless Chrome build. |
+| An optional intro `renderer` or advisory `lookCheck` command only | Whatever your command contacts | Your own program runs with the media it is given ([optional opening scene](docs/guide/optional-intro.md)). |
 
-`ELEVENLABS_API_KEY` is the only credential the tool reads, and it is sent only to ElevenLabs.
-Optional HyperFrames motion cards run with HyperFrames' telemetry, update check and self-install
-turned off.
+`ELEVENLABS_API_KEY` is the only credential the tool reads, and the tool itself sends it only to
+ElevenLabs. Commands you configure run as your own programs: a voice command, an aligner and
+HyperFrames inherit the process environment, so when the key is set they can read it, and what
+they do with it is up to them. Intro renderers and look checkers get only `PATH`, `LANG`,
+`LC_ALL`, `TMPDIR` and `SYSTEMROOT`. Optional HyperFrames motion cards run with HyperFrames'
+telemetry, update check and self-install turned off.
 
 Everything else stays local. Saved login profiles for `target: live` (cookies and session
-storage) live outside the repo, under `~/.cache/agent-demo-video` by default, and are never
-uploaded. Renders, captions, contact sheets and reports are written to your output directory;
+storage) live outside the repo, under `~/.cache/agent-demo-video` by default, and the profile
+directory is never uploaded. As with any browser, the saved cookies are sent to the sites they
+belong to when the recording visits them. Renders, captions, contact sheets and reports are written to your output directory;
 the only time they leave your machine is a `--render-host` render, to the host you name.
 
 ## License

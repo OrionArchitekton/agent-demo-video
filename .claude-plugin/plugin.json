@@ -1,5 +1,6 @@
 {
   "name": "agent-demo-video",
+  "displayName": "Agent Demo Video",
   "version": "0.3.0",
   "description": "Make narrated, captioned demo videos of web apps from a script, headless. Adds a demo-video skill and a read-only render-reviewer agent.",
   "author": {
